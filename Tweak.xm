@@ -5,12 +5,47 @@ static NSString *posXKey = @"SBCPUFloating_X";
 static NSString *posYKey = @"SBCPUFloating_Y";
 
 
+static UIWindow *floatWindow;
+static UILabel *label;
 
-static void updateCPU();
+
+
+static void updateCPU()
+{
+
+    double cpu =
+    arc4random_uniform(150);
+
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+
+
+        label.text =
+        [NSString stringWithFormat:
+        @"SB CPU\n%.0f%%",
+        cpu];
+
+
+        if(cpu >= 100)
+        {
+            label.textColor =
+            UIColor.redColor;
+        }
+        else
+        {
+            label.textColor =
+            UIColor.whiteColor;
+        }
+
+    });
+
+}
 
 
 
-@interface SBCPUFloatingLabel : UILabel
+
+
+@interface SBCPUFloatingView : UILabel
 
 @property(nonatomic,assign) CGPoint lastPoint;
 
@@ -18,11 +53,12 @@ static void updateCPU();
 
 
 
-@implementation SBCPUFloatingLabel
+@implementation SBCPUFloatingView
 
 
-- (void)touchesBegan:(NSSet<UITouch *> *)touches
-           withEvent:(UIEvent *)event
+
+- (void)touchesBegan:(NSSet *)touches
+withEvent:(UIEvent *)event
 {
 
     UITouch *touch =
@@ -36,10 +72,10 @@ static void updateCPU();
 
 
 
-- (void)touchesMoved:(NSSet<UITouch *> *)touches
-           withEvent:(UIEvent *)event
-{
 
+- (void)touchesMoved:(NSSet *)touches
+withEvent:(UIEvent *)event
+{
 
     UITouch *touch =
     [touches anyObject];
@@ -47,7 +83,6 @@ static void updateCPU();
 
     CGPoint now =
     [touch locationInView:self.superview];
-
 
 
     CGFloat dx =
@@ -63,57 +98,46 @@ static void updateCPU();
     self.center;
 
 
-
     center.x += dx;
     center.y += dy;
 
 
 
-    CGSize size =
+    CGSize screen =
     UIScreen.mainScreen.bounds.size;
 
 
 
     CGFloat halfW =
-    self.bounds.size.width / 2;
+    self.bounds.size.width/2;
 
 
     CGFloat halfH =
-    self.bounds.size.height / 2;
+    self.bounds.size.height/2;
 
 
 
-    // 左右限制
-
-    if(center.x < halfW)
-        center.x = halfW;
-
-
-    if(center.x > size.width-halfW)
-        center.x = size.width-halfW;
+    center.x =
+    MAX(halfW,
+    MIN(screen.width-halfW,
+    center.x));
 
 
 
-    // 上下限制
-
-    if(center.y < halfH+40)
-        center.y = halfH+40;
-
-
-    if(center.y > size.height-halfH)
-        center.y = size.height-halfH;
+    center.y =
+    MAX(halfH+40,
+    MIN(screen.height-halfH,
+    center.y));
 
 
 
-    self.center = center;
+    self.center=center;
 
 
 
-    self.lastPoint = now;
+    self.lastPoint=now;
 
 
-
-    // 保存位置
 
     [[NSUserDefaults standardUserDefaults]
      setFloat:center.x
@@ -131,57 +155,7 @@ static void updateCPU();
 }
 
 
-
 @end
-
-
-
-
-
-
-
-static SBCPUFloatingLabel *label;
-
-
-
-static void updateCPU()
-{
-
-
-    double cpu =
-    arc4random_uniform(150);
-
-
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-
-
-        label.text =
-        [NSString stringWithFormat:
-        @"SB CPU\n%.0f%%",
-        cpu];
-
-
-
-        if(cpu >= 100)
-        {
-
-            label.textColor =
-            UIColor.redColor;
-
-        }
-        else
-        {
-
-            label.textColor =
-            UIColor.whiteColor;
-
-        }
-
-
-    });
-
-}
 
 
 
@@ -214,34 +188,41 @@ dispatch_get_main_queue(),
 
 
 
-UIWindow *window =
+floatWindow =
 [[UIWindow alloc]
 initWithFrame:
 UIScreen.mainScreen.bounds];
 
 
-window.windowLevel =
+
+floatWindow.windowLevel =
 UIWindowLevelAlert + 100;
 
 
-window.backgroundColor =
+
+floatWindow.backgroundColor =
 UIColor.clearColor;
 
 
-window.rootViewController =
+
+floatWindow.rootViewController =
 [UIViewController new];
 
 
-window.hidden = NO;
+
+floatWindow.hidden = NO;
 
 
 
 
-
-label =
-[[SBCPUFloatingLabel alloc]
+SBCPUFloatingView *view =
+[[SBCPUFloatingView alloc]
 initWithFrame:
 CGRectMake(30,200,100,50)];
+
+
+
+label=view;
 
 
 
@@ -261,47 +242,42 @@ float y =
 
 if(x>0 && y>0)
 {
-    label.center =
+    view.center =
     CGPointMake(x,y);
 }
 
 
 
-label.backgroundColor =
+view.backgroundColor =
 [[UIColor blackColor]
 colorWithAlphaComponent:0.7];
 
 
 
-label.textAlignment =
+view.textAlignment =
 NSTextAlignmentCenter;
 
 
-
-label.numberOfLines=2;
-
+view.numberOfLines=2;
 
 
-label.layer.cornerRadius=12;
+view.layer.cornerRadius=12;
 
 
-
-label.clipsToBounds=YES;
-
+view.clipsToBounds=YES;
 
 
-label.textColor =
+view.textColor =
 UIColor.whiteColor;
 
 
 
-label.userInteractionEnabled =
-YES;
+view.userInteractionEnabled=YES;
 
 
 
-[window.rootViewController.view
- addSubview:label];
+[floatWindow.rootViewController.view
+ addSubview:view];
 
 
 
@@ -309,7 +285,6 @@ YES;
 repeats:YES
 block:^(NSTimer *timer)
 {
-
     updateCPU();
 
 }];
@@ -317,7 +292,5 @@ block:^(NSTimer *timer)
 
 
 });
-
-
 
 }
