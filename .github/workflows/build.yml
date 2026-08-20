@@ -27,13 +27,12 @@ jobs:
 
 
       # ==============================
-      # 安装 Theos
+      # 安装 RootHide Theos
       # ==============================
 
       - name: Install RootHide Theos
         run: |
           bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)"
-
 
 
       # ==============================
@@ -54,30 +53,53 @@ jobs:
             -C "$THEOS/sdks"
 
 
-
       # ==============================
-      # 创建输出目录
+      # 准备目录
       # ==============================
 
-      - name: Prepare build directory
+      - name: Prepare build directories
         run: |
+
+          set -e
+
           rm -rf build
-          mkdir -p build
+          rm -rf packages
+
+          mkdir -p build/rootless
+          mkdir -p build/roothide
+
+          echo "Build directories prepared."
 
 
-
-      # ==============================
-      # 编译 Rootless
-      # ==============================
+      # ============================================================
+      # ROOTLESS
+      # ============================================================
 
       - name: Build Rootless
         run: |
+
+          set -e
+
+          echo "=============================="
+          echo "Building ROOTLESS"
+          echo "=============================="
+
+          rm -rf packages
+          mkdir -p packages
 
           make clean
 
           THEOS_PACKAGE_SCHEME=rootless \
             make package FINALPACKAGE=1
 
+          echo ""
+          echo "Rootless packages:"
+
+          find packages \
+            -maxdepth 1 \
+            -type f \
+            -name "*.deb" \
+            -print
 
 
       # ==============================
@@ -87,30 +109,70 @@ jobs:
       - name: Copy Rootless package
         run: |
 
-          ROOTLESS_DEB=$(find packages -maxdepth 1 -type f -name "*.deb" | head -n 1)
+          set -e
+
+          ROOTLESS_DEB=$(find packages \
+            -maxdepth 1 \
+            -type f \
+            -name "*.deb" \
+            | head -n 1)
 
           if [ -z "$ROOTLESS_DEB" ]; then
-            echo "Rootless .deb not found"
+            echo "ERROR: Rootless .deb not found"
             exit 1
           fi
 
+          echo "Rootless package:"
+          echo "$ROOTLESS_DEB"
+
           cp "$ROOTLESS_DEB" \
-            "build/SBCPUFloating-V1.5.3-rootless.deb"
+            "build/rootless/SBCPUFloating-V1.5.3-rootless.deb"
 
+          ls -lh build/rootless/
 
 
       # ==============================
-      # 清理后编译 RootHide
+      # 上传 Rootless
       # ==============================
+
+      - name: Upload Rootless DEB
+        uses: actions/upload-artifact@v4
+
+        with:
+          name: SBCPUFloating-V1.5.3-rootless
+          path: build/rootless/SBCPUFloating-V1.5.3-rootless.deb
+          if-no-files-found: error
+
+
+      # ============================================================
+      # ROOT HIDE
+      # ============================================================
 
       - name: Build RootHide
         run: |
+
+          set -e
+
+          echo "=============================="
+          echo "Building ROOTHIDE"
+          echo "=============================="
+
+          rm -rf packages
+          mkdir -p packages
 
           make clean
 
           THEOS_PACKAGE_SCHEME=roothide \
             make package FINALPACKAGE=1
 
+          echo ""
+          echo "RootHide packages:"
+
+          find packages \
+            -maxdepth 1 \
+            -type f \
+            -name "*.deb" \
+            -print
 
 
       # ==============================
@@ -120,45 +182,99 @@ jobs:
       - name: Copy RootHide package
         run: |
 
-          ROOTHIDE_DEB=$(find packages -maxdepth 1 -type f -name "*.deb" | head -n 1)
+          set -e
+
+          ROOTHIDE_DEB=$(find packages \
+            -maxdepth 1 \
+            -type f \
+            -name "*.deb" \
+            | head -n 1)
 
           if [ -z "$ROOTHIDE_DEB" ]; then
-            echo "RootHide .deb not found"
+            echo "ERROR: RootHide .deb not found"
             exit 1
           fi
 
+          echo "RootHide package:"
+          echo "$ROOTHIDE_DEB"
+
           cp "$ROOTHIDE_DEB" \
-            "build/SBCPUFloating-V1.5.3-roothide.deb"
+            "build/roothide/SBCPUFloating-V1.5.3-roothide.deb"
 
-
-
-      # ==============================
-      # 检查最终文件
-      # ==============================
-
-      - name: Show build results
-        run: |
-
-          echo "=============================="
-          echo "SBCPUFloating V1.5.3"
-          echo "=============================="
-
-          ls -lh build/
-
-          echo ""
-          echo "Build completed successfully."
-
+          ls -lh build/roothide/
 
 
       # ==============================
-      # 上传两个 DEB
+      # 上传 RootHide
       # ==============================
 
-      - name: Upload DEB packages
+      - name: Upload RootHide DEB
         uses: actions/upload-artifact@v4
 
         with:
+          name: SBCPUFloating-V1.5.3-roothide
+          path: build/roothide/SBCPUFloating-V1.5.3-roothide.deb
+          if-no-files-found: error
 
-          name: SBCPUFloating-V1.5.3
 
-          path: build/*.deb
+      # ==============================
+      # 最终检查
+      # ==============================
+
+      - name: Final package check
+        run: |
+
+          set -e
+
+          echo ""
+          echo "========================================"
+          echo "SBCPUFloating V1.5.3 BUILD RESULTS"
+          echo "========================================"
+
+          echo ""
+          echo "[ROOTLESS]"
+          ls -lh build/rootless/
+
+          echo ""
+          echo "[ROOTHIDE]"
+          ls -lh build/roothide/
+
+          echo ""
+          echo "[ALL DEB FILES]"
+          find build \
+            -type f \
+            -name "*.deb" \
+            -print
+
+          ROOTLESS_COUNT=$(find build/rootless \
+            -type f \
+            -name "*.deb" \
+            | wc -l)
+
+          ROOTHIDE_COUNT=$(find build/roothide \
+            -type f \
+            -name "*.deb" \
+            | wc -l)
+
+          if [ "$ROOTLESS_COUNT" -ne 1 ]; then
+            echo "ERROR: Rootless package count is $ROOTLESS_COUNT"
+            exit 1
+          fi
+
+          if [ "$ROOTHIDE_COUNT" -ne 1 ]; then
+            echo "ERROR: RootHide package count is $ROOTHIDE_COUNT"
+            exit 1
+          fi
+
+          echo ""
+          echo "========================================"
+          echo "SUCCESS"
+          echo "========================================"
+
+          echo ""
+          echo "Rootless:"
+          echo "build/rootless/SBCPUFloating-V1.5.3-rootless.deb"
+
+          echo ""
+          echo "RootHide:"
+          echo "build/roothide/SBCPUFloating-V1.5.3-roothide.deb"
