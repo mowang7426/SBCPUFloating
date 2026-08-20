@@ -70,6 +70,7 @@ static void updateOrientation(void);
 
 @class SBCPUValuePickerController;
 @class SBCPUTimePickerController;
+@class SBCPUSettingsController;
 
 
 
@@ -1282,7 +1283,7 @@ static void openSettings()
 {
 
     NSString *process =
-    NSProcessInfo.processName;
+NSProcessInfo.processInfo.processName;
 
 
 
