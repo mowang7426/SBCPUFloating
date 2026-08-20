@@ -3,7 +3,7 @@
 #import <signal.h>
 
 
-#pragma mark - V1.5.2 全局
+#pragma mark - V1.5.3 全局
 
 
 static UIWindow *cpuWindow;
@@ -11,8 +11,6 @@ static UIWindow *cpuWindow;
 static UILabel *label;
 
 
-
-// 设置页面提前声明
 
 static void openSettings();
 
@@ -26,25 +24,18 @@ static void openSettings();
 static BOOL autoLogoutEnable = NO;
 
 
-// CPU触发值
-
 static double logoutCPUThreshold = 100.0;
 
-
-// 持续时间
 
 static NSInteger logoutDuration = 60;
 
 
 
-// 高CPU开始时间
-
 static NSDate *cpuHighStartTime = nil;
 
 
-// 防止重复触发
-
 static BOOL logoutCounting = NO;
+
 
 
 
@@ -65,10 +56,10 @@ static double getCPUUsage()
 
     kern_return_t kr =
     task_threads(
-                 mach_task_self(),
-                 &threads,
-                 &threadCount
-                 );
+        mach_task_self(),
+        &threads,
+        &threadCount
+    );
 
 
 
@@ -83,8 +74,8 @@ static double getCPUUsage()
 
 
 
-    for(int i = 0;
-        i < threadCount;
+    for(int i=0;
+        i<threadCount;
         i++)
     {
 
@@ -100,11 +91,11 @@ static double getCPUUsage()
 
         kr =
         thread_info(
-                    threads[i],
-                    THREAD_BASIC_INFO,
-                    (thread_info_t)info,
-                    &count
-                    );
+            threads[i],
+            THREAD_BASIC_INFO,
+            (thread_info_t)info,
+            &count
+        );
 
 
 
@@ -137,11 +128,12 @@ static double getCPUUsage()
 
 
 
+
     vm_deallocate(
-                  mach_task_self(),
-                  (vm_address_t)threads,
-                  threadCount*sizeof(thread_t)
-                  );
+        mach_task_self(),
+        (vm_address_t)threads,
+        threadCount*sizeof(thread_t)
+    );
 
 
 
@@ -165,9 +157,8 @@ static void checkHighCPU(double cpu)
     if(!autoLogoutEnable)
     {
 
-        cpuHighStartTime = nil;
-
-        logoutCounting = NO;
+        cpuHighStartTime=nil;
+        logoutCounting=NO;
 
         return;
 
@@ -179,9 +170,8 @@ static void checkHighCPU(double cpu)
     if(cpu < logoutCPUThreshold)
     {
 
-        cpuHighStartTime = nil;
-
-        logoutCounting = NO;
+        cpuHighStartTime=nil;
+        logoutCounting=NO;
 
         return;
 
@@ -190,13 +180,11 @@ static void checkHighCPU(double cpu)
 
 
 
-    if(cpuHighStartTime == nil)
+
+    if(cpuHighStartTime==nil)
     {
 
-
-        cpuHighStartTime =
-        [NSDate date];
-
+        cpuHighStartTime=[NSDate date];
 
         return;
 
@@ -214,22 +202,21 @@ static void checkHighCPU(double cpu)
 
 
 
-
     if(time >= logoutDuration
        &&
        !logoutCounting)
     {
 
 
-        logoutCounting = YES;
+        logoutCounting=YES;
 
 
 
         dispatch_async(
-                       dispatch_get_main_queue(),
-                       ^{
-            
-            
+        dispatch_get_main_queue(),
+        ^{
+
+
             UIAlertController *alert =
             [UIAlertController
              alertControllerWithTitle:
@@ -251,9 +238,8 @@ static void checkHighCPU(double cpu)
              ^(UIAlertAction *action)
              {
 
-                 logoutCounting = NO;
-
-                 cpuHighStartTime = nil;
+                 logoutCounting=NO;
+                 cpuHighStartTime=nil;
 
              }];
 
@@ -271,13 +257,12 @@ static void checkHighCPU(double cpu)
 
 
 
-
             dispatch_after(
-                           dispatch_time(
-                                         DISPATCH_TIME_NOW,
-                                         5*NSEC_PER_SEC),
-                           dispatch_get_main_queue(),
-                           ^{
+            dispatch_time(
+            DISPATCH_TIME_NOW,
+            5*NSEC_PER_SEC),
+            dispatch_get_main_queue(),
+            ^{
 
 
                 if(logoutCounting)
@@ -299,15 +284,7 @@ static void checkHighCPU(double cpu)
 
 
 }
-
-
-
-
-
-
-
-
-#pragma mark - 拖动视图 V1.4 保留
+#pragma mark - 拖动视图 V1.5.3 保留
 
 
 @interface SBCPUDragView : UIView
@@ -340,6 +317,7 @@ static void checkHighCPU(double cpu)
 
 
 }
+
 
 
 
@@ -413,6 +391,7 @@ static void checkHighCPU(double cpu)
 
 
 
+
     if(center.y < halfH+40)
 
         center.y = halfH+40;
@@ -422,6 +401,7 @@ static void checkHighCPU(double cpu)
     if(center.y > size.height-halfH)
 
         center.y = size.height-halfH;
+
 
 
 
@@ -440,7 +420,14 @@ static void checkHighCPU(double cpu)
 
 
 @end
-#pragma mark - Window
+
+
+
+
+
+
+
+#pragma mark - Window V1.5.3 修复
 
 
 @interface SBCPUWindow : UIWindow
@@ -448,10 +435,53 @@ static void checkHighCPU(double cpu)
 @end
 
 
+
+
+
+
 @implementation SBCPUWindow
 
-@end
 
+
+// 修复桌面、控制中心触摸失效
+
+
+- (UIView *)hitTest:(CGPoint)point
+          withEvent:(UIEvent *)event
+{
+
+
+    UIView *view =
+    [super hitTest:point
+        withEvent:event];
+
+
+
+    /*
+     
+     如果点到 Window 空白区域
+     放行给 SpringBoard
+     
+     */
+
+
+    if(view == self)
+    {
+
+        return nil;
+
+    }
+
+
+
+    return view;
+
+
+}
+
+
+
+@end
 
 
 
@@ -480,14 +510,7 @@ static void checkHighCPU(double cpu)
 
 
 @end
-
-
-
-
-
-
-
-#pragma mark - 创建浮窗
+#pragma mark - 创建浮窗 V1.5.3
 
 
 static void createCPUWindow()
@@ -498,6 +521,7 @@ static void createCPUWindow()
     [[SBCPUWindow alloc]
      initWithFrame:
      UIScreen.mainScreen.bounds];
+
 
 
 
@@ -528,8 +552,20 @@ static void createCPUWindow()
 
 
 
+
+    /*
+     
+     V1.5.3 修复
+     
+     不再压制 SpringBoard
+     
+     */
+
+
     cpuWindow.windowLevel =
-    UIWindowLevelAlert + 1;
+    UIWindowLevelAlert;
+
+
 
 
 
@@ -544,6 +580,7 @@ static void createCPUWindow()
 
 
     cpuWindow.hidden = NO;
+
 
 
 
@@ -601,11 +638,13 @@ static void createCPUWindow()
 
 
 
+
+
     /*
      
      拖动层
      
-     保持 V1.4 逻辑
+     保留 V1.4
      
      */
 
@@ -630,6 +669,7 @@ static void createCPUWindow()
 
 
 
+
     [cpuWindow.rootViewController.view
      addSubview:label];
 
@@ -648,16 +688,13 @@ static void createCPUWindow()
 
     /*
      
-     V1.5.2 双击修复
+     双击设置
      
-     不再绑定 label
+     绑定 drag
      
-     绑定 drag 层
-     
-     避免触摸被覆盖
+     避免 label 被覆盖
      
      */
-
 
 
     UITapGestureRecognizer *doubleTap =
@@ -678,8 +715,6 @@ static void createCPUWindow()
 
 
     drag.userInteractionEnabled = YES;
-
-
 
 
 
@@ -708,7 +743,6 @@ static void createCPUWindow()
     @"SBCPUFloating 设置";
 
 
-
 }
 
 
@@ -717,7 +751,7 @@ static void createCPUWindow()
 
 
 - (NSInteger)tableView:(UITableView *)tableView
-numberOfRowsInSection:(NSInteger)section
+ numberOfRowsInSection:(NSInteger)section
 {
 
     return 3;
@@ -790,8 +824,6 @@ cellForRowAtIndexPath:(NSIndexPath *)indexPath
 
 
     }
-
-
 
 
 
@@ -958,7 +990,6 @@ didSelectRowAtIndexPath:(NSIndexPath *)indexPath
                          completion:nil];
 
 
-
     }
 
 
@@ -1054,8 +1085,8 @@ didSelectRowAtIndexPath:(NSIndexPath *)indexPath
     }
 
 
-}
 
+}
 
 
 @end
@@ -1087,8 +1118,7 @@ static void openSettings()
 
 
     [cpuWindow.rootViewController
-     presentViewController:
-     nav
+     presentViewController:nav
      animated:YES
      completion:nil];
 
@@ -1183,6 +1213,7 @@ static void updateCPU()
 
 
 
+
     NSUserDefaults *def =
     [NSUserDefaults standardUserDefaults];
 
@@ -1217,7 +1248,6 @@ static void updateCPU()
     {
         logoutDuration = time;
     }
-
 
 
 
