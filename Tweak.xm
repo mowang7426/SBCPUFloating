@@ -2062,7 +2062,7 @@ didSelectRowAtIndexPath:
 #pragma mark -
 
 
-static void openSettings()
+
 {
 
     if(settingsShowing)
@@ -2147,7 +2147,7 @@ static void openSettings()
 {
 
     NSString *process =
-    NSProcessInfo.processName;
+   NSProcessInfo.processInfo.processName;
 
 
 
@@ -2325,3 +2325,4 @@ static void openSettings()
         });
 
 }
+
