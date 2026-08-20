@@ -2,6 +2,7 @@
 
 
 static UILabel *label;
+static UIView *dragView;
 
 
 
@@ -40,7 +41,8 @@ static void updateCPU()
 
 
 
-@interface SBCPUFloatingLabel : UILabel
+
+@interface SBCPUDragView : UIView
 
 @property(nonatomic,assign) CGPoint lastPoint;
 
@@ -50,25 +52,12 @@ static void updateCPU()
 
 
 
-@implementation SBCPUFloatingLabel
+@implementation SBCPUDragView
 
 
 
-// 强制接收触摸
-
-- (UIView *)hitTest:(CGPoint)point
-          withEvent:(UIEvent *)event
-{
-
-    return self;
-
-}
-
-
-
-
-- (void)touchesBegan:(NSSet<UITouch *> *)touches
-           withEvent:(UIEvent *)event
+- (void)touchesBegan:(NSSet *)touches
+withEvent:(UIEvent *)event
 {
 
     UITouch *touch =
@@ -79,18 +68,14 @@ static void updateCPU()
     [touch locationInView:self.superview];
 
 
-    NSLog(@"[SBCPUFloating] touch begin");
-
 }
 
 
 
 
-
-- (void)touchesMoved:(NSSet<UITouch *> *)touches
-           withEvent:(UIEvent *)event
+- (void)touchesMoved:(NSSet *)touches
+withEvent:(UIEvent *)event
 {
-
 
     UITouch *touch =
     [touches anyObject];
@@ -111,7 +96,7 @@ static void updateCPU()
 
 
     CGPoint center =
-    self.center;
+    label.center;
 
 
 
@@ -126,15 +111,16 @@ static void updateCPU()
 
 
     CGFloat halfW =
-    self.bounds.size.width / 2;
+    label.bounds.size.width/2;
 
 
     CGFloat halfH =
-    self.bounds.size.height / 2;
+    label.bounds.size.height/2;
 
 
 
-    // 限制左右
+
+    // 左右限制
 
     if(center.x < halfW)
         center.x = halfW;
@@ -145,7 +131,8 @@ static void updateCPU()
 
 
 
-    // 限制上下
+
+    // 上下限制
 
     if(center.y < halfH+40)
         center.y = halfH+40;
@@ -156,18 +143,17 @@ static void updateCPU()
 
 
 
-    self.center=center;
 
+    label.center=center;
+
+
+    self.center=center;
 
 
     self.lastPoint=now;
 
 
-    NSLog(@"[SBCPUFloating] moving");
-
 }
-
-
 
 
 
@@ -192,6 +178,7 @@ if(![processName isEqualToString:@"SpringBoard"])
 {
     return;
 }
+
 
 
 
@@ -245,8 +232,9 @@ UIApplication.sharedApplication.connectedScenes)
 
 
 
+
 label =
-[[SBCPUFloatingLabel alloc]
+[[UILabel alloc]
 initWithFrame:
 CGRectMake(30,200,100,50)];
 
@@ -262,11 +250,13 @@ label.textAlignment =
 NSTextAlignmentCenter;
 
 
+
 label.numberOfLines=2;
 
 
 
 label.layer.cornerRadius=12;
+
 
 
 label.clipsToBounds=YES;
@@ -278,11 +268,39 @@ UIColor.whiteColor;
 
 
 
+
+
 label.userInteractionEnabled=YES;
 
 
 
+
+
+// 创建透明拖动层
+
+dragView =
+[[SBCPUDragView alloc]
+initWithFrame:label.frame];
+
+
+
+dragView.backgroundColor =
+UIColor.clearColor;
+
+
+
+dragView.userInteractionEnabled =
+YES;
+
+
+
+
+
 [window addSubview:label];
+
+
+
+[window addSubview:dragView];
 
 
 
