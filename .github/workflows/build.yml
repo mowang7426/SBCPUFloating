@@ -40,10 +40,13 @@ jobs:
         cd $HOME/theos/sdks
 
 
-        git clone https://github.com/theos/sdks.git
+        git clone --depth=1 https://github.com/xybp888/iOS-SDKs.git sdkrepo
 
 
-        cp -r sdks/iPhoneOS16.5.sdk .
+        cp -R sdkrepo/iPhoneOS16.5.sdk .
+
+
+        rm -rf sdkrepo
 
 
         ls -la
