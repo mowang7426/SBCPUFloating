@@ -2,11 +2,12 @@
 #import <mach/mach.h>
 
 
+static UIWindow *cpuWindow;
 static UILabel *label;
 
 
 
-#pragma mark - Real SpringBoard CPU
+#pragma mark - SpringBoard CPU
 
 
 static double getCPUUsage()
@@ -38,9 +39,7 @@ static double getCPUUsage()
     for(int i = 0; i < threadCount; i++)
     {
 
-
         thread_info_data_t info;
-
 
         mach_msg_type_number_t count =
         THREAD_INFO_MAX;
@@ -60,27 +59,21 @@ static double getCPUUsage()
         if(kr == KERN_SUCCESS)
         {
 
-
             thread_basic_info_t basic =
             (thread_basic_info_t)info;
 
 
-
             if(!(basic->flags & TH_FLAGS_IDLE))
             {
-
 
                 total +=
                 (double)basic->cpu_usage /
                 TH_USAGE_SCALE *
                 100.0;
 
-
             }
 
-
         }
-
 
     }
 
@@ -102,10 +95,8 @@ static double getCPUUsage()
 
 
 
-
 static void updateCPU()
 {
-
 
     double cpu =
     getCPUUsage();
@@ -147,10 +138,15 @@ static void updateCPU()
 
 
 
-#pragma mark - Drag Label
 
 
-@interface SBCPUFloatingLabel : UILabel
+
+
+
+#pragma mark - Drag View
+
+
+@interface SBCPUDragView : UIView
 
 @property(nonatomic,assign) CGPoint lastPoint;
 
@@ -158,12 +154,12 @@ static void updateCPU()
 
 
 
-@implementation SBCPUFloatingLabel
+
+@implementation SBCPUDragView
 
 
-
--(void)touchesBegan:(NSSet<UITouch *> *)touches
-withEvent:(UIEvent *)event
+- (void)touchesBegan:(NSSet *)touches
+           withEvent:(UIEvent *)event
 {
 
     UITouch *touch =
@@ -173,14 +169,13 @@ withEvent:(UIEvent *)event
     self.lastPoint =
     [touch locationInView:self.superview];
 
-
 }
 
 
 
 
--(void)touchesMoved:(NSSet<UITouch *> *)touches
-withEvent:(UIEvent *)event
+- (void)touchesMoved:(NSSet *)touches
+           withEvent:(UIEvent *)event
 {
 
     UITouch *touch =
@@ -202,7 +197,7 @@ withEvent:(UIEvent *)event
 
 
     CGPoint center =
-    self.center;
+    label.center;
 
 
 
@@ -218,11 +213,11 @@ withEvent:(UIEvent *)event
 
 
     CGFloat halfW =
-    self.bounds.size.width/2;
+    label.bounds.size.width/2;
 
 
     CGFloat halfH =
-    self.bounds.size.height/2;
+    label.bounds.size.height/2;
 
 
 
@@ -245,7 +240,12 @@ withEvent:(UIEvent *)event
 
 
 
+
+    label.center = center;
+
+
     self.center = center;
+
 
 
     self.lastPoint = now;
@@ -254,9 +254,24 @@ withEvent:(UIEvent *)event
 }
 
 
-
 @end
 
+
+
+
+
+
+
+#pragma mark - Window
+
+
+@interface SBCPUWindow : UIWindow
+@end
+
+
+
+@implementation SBCPUWindow
+@end
 
 
 
@@ -268,15 +283,16 @@ withEvent:(UIEvent *)event
 {
 
 
-NSString *processName =
+NSString *process =
 [[NSProcessInfo processInfo] processName];
 
 
 
-if(![processName isEqualToString:@"SpringBoard"])
+if(![process isEqualToString:@"SpringBoard"])
 {
     return;
 }
+
 
 
 
@@ -289,7 +305,12 @@ dispatch_get_main_queue(),
 
 
 
-UIWindow *window = nil;
+cpuWindow =
+[[SBCPUWindow alloc]
+initWithFrame:
+UIScreen.mainScreen.bounds];
+
+
 
 
 
@@ -297,56 +318,49 @@ for(UIScene *scene in
 UIApplication.sharedApplication.connectedScenes)
 {
 
-
-    if(scene.activationState ==
-       UISceneActivationStateForegroundActive)
+    if([scene isKindOfClass:UIWindowScene.class])
     {
 
-
-        UIWindowScene *windowScene =
+        cpuWindow.windowScene =
         (UIWindowScene *)scene;
 
-
-
-        for(UIWindow *w in windowScene.windows)
-        {
-
-
-            if(w.isKeyWindow)
-            {
-
-                window = w;
-                break;
-
-            }
-
-        }
-
+        break;
 
     }
 
-
-
-    if(window)
-        break;
-
-
 }
 
 
 
 
-if(!window)
-{
-    return;
-}
+
+
+cpuWindow.windowLevel =
+UIWindowLevelAlert + 1;
+
+
+
+cpuWindow.backgroundColor =
+UIColor.clearColor;
+
+
+
+cpuWindow.rootViewController =
+[UIViewController new];
+
+
+
+cpuWindow.hidden = NO;
+
+
+
 
 
 
 
 
 label =
-[[SBCPUFloatingLabel alloc]
+[[UILabel alloc]
 initWithFrame:
 CGRectMake(30,200,100,50)];
 
@@ -362,13 +376,17 @@ label.textAlignment =
 NSTextAlignmentCenter;
 
 
+
 label.numberOfLines = 2;
+
 
 
 label.layer.cornerRadius = 12;
 
 
+
 label.clipsToBounds = YES;
+
 
 
 label.textColor =
@@ -382,11 +400,46 @@ weight:UIFontWeightBold];
 
 
 
-label.userInteractionEnabled = YES;
+label.text =
+@"SB CPU\n0%";
 
 
 
-[window addSubview:label];
+
+
+
+
+
+
+SBCPUDragView *drag =
+[[SBCPUDragView alloc]
+initWithFrame:label.frame];
+
+
+
+drag.backgroundColor =
+UIColor.clearColor;
+
+
+
+drag.userInteractionEnabled = YES;
+
+
+
+
+
+
+
+[cpuWindow.rootViewController.view
+ addSubview:label];
+
+
+
+[cpuWindow.rootViewController.view
+ addSubview:drag];
+
+
+
 
 
 
@@ -400,6 +453,7 @@ block:^(NSTimer *timer)
     updateCPU();
 
 }];
+
 
 
 
