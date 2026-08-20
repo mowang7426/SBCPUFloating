@@ -1,79 +1,164 @@
-name: Build SBCPUFloating
-
+name: Build SBCPUFloating V1.5.3
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-
 
 jobs:
+  build:
+    runs-on: macos-14
 
- build:
+    steps:
 
-  runs-on: macos-14
+      # ==============================
+      # 获取源码
+      # ==============================
 
-
-  steps:
-
-
-  - name: Checkout
-    uses: actions/checkout@v4
-
-
-  - name: Install Theos
-    run: |
-
-        git clone --recursive https://github.com/roothide/theos.git $HOME/theos
-
-        echo "THEOS installed"
-
-        ls $HOME/theos
-
-        
-  - name: Install ldid
-    run: |
-        brew install ldid
+      - name: Checkout
+        uses: actions/checkout@v4
 
 
-  - name: Install SDK
-    run: |
+      # ==============================
+      # 安装基础工具
+      # ==============================
 
-        mkdir -p $HOME/theos/sdks
-
-        cd $HOME/theos/sdks
-
-
-        git clone --depth=1 https://github.com/xybp888/iOS-SDKs.git sdkrepo
+      - name: Install dependencies
+        run: |
+          brew install make dpkg ldid
 
 
-        cp -R sdkrepo/iPhoneOS16.5.sdk .
+      # ==============================
+      # 安装 Theos
+      # ==============================
 
-
-        rm -rf sdkrepo
-
-
-        ls -la
+      - name: Install RootHide Theos
+        run: |
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)"
 
 
 
-  - name: Build
+      # ==============================
+      # 安装 iPhoneOS 16.5 SDK
+      # ==============================
 
-    run: |
+      - name: Install iPhoneOS 16.5 SDK
+        run: |
 
-      export THEOS=$HOME/theos
+          mkdir -p "$THEOS/sdks"
 
-      make package FINALPACKAGE=1
+          curl -L \
+            "https://github.com/theos/sdks/releases/download/16.5-1/iPhoneOS16.5.sdk.tar.xz" \
+            -o /tmp/iPhoneOS16.5.sdk.tar.xz
+
+          tar -xf \
+            /tmp/iPhoneOS16.5.sdk.tar.xz \
+            -C "$THEOS/sdks"
 
 
 
-  - name: Upload
+      # ==============================
+      # 创建输出目录
+      # ==============================
 
-    uses: actions/upload-artifact@v4
+      - name: Prepare build directory
+        run: |
+          rm -rf build
+          mkdir -p build
 
-    with:
 
-      name: SBCPUFloating
 
-      path: packages/*.deb
+      # ==============================
+      # 编译 Rootless
+      # ==============================
+
+      - name: Build Rootless
+        run: |
+
+          make clean
+
+          THEOS_PACKAGE_SCHEME=rootless \
+            make package FINALPACKAGE=1
+
+
+
+      # ==============================
+      # 保存 Rootless
+      # ==============================
+
+      - name: Copy Rootless package
+        run: |
+
+          ROOTLESS_DEB=$(find packages -maxdepth 1 -type f -name "*.deb" | head -n 1)
+
+          if [ -z "$ROOTLESS_DEB" ]; then
+            echo "Rootless .deb not found"
+            exit 1
+          fi
+
+          cp "$ROOTLESS_DEB" \
+            "build/SBCPUFloating-V1.5.3-rootless.deb"
+
+
+
+      # ==============================
+      # 清理后编译 RootHide
+      # ==============================
+
+      - name: Build RootHide
+        run: |
+
+          make clean
+
+          THEOS_PACKAGE_SCHEME=roothide \
+            make package FINALPACKAGE=1
+
+
+
+      # ==============================
+      # 保存 RootHide
+      # ==============================
+
+      - name: Copy RootHide package
+        run: |
+
+          ROOTHIDE_DEB=$(find packages -maxdepth 1 -type f -name "*.deb" | head -n 1)
+
+          if [ -z "$ROOTHIDE_DEB" ]; then
+            echo "RootHide .deb not found"
+            exit 1
+          fi
+
+          cp "$ROOTHIDE_DEB" \
+            "build/SBCPUFloating-V1.5.3-roothide.deb"
+
+
+
+      # ==============================
+      # 检查最终文件
+      # ==============================
+
+      - name: Show build results
+        run: |
+
+          echo "=============================="
+          echo "SBCPUFloating V1.5.3"
+          echo "=============================="
+
+          ls -lh build/
+
+          echo ""
+          echo "Build completed successfully."
+
+
+
+      # ==============================
+      # 上传两个 DEB
+      # ==============================
+
+      - name: Upload DEB packages
+        uses: actions/upload-artifact@v4
+
+        with:
+
+          name: SBCPUFloating-V1.5.3
+
+          path: build/*.deb
