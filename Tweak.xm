@@ -15,7 +15,7 @@ static UILabel *label;
 
 
 /*
- 设置页面是否正在显示
+ 设置页面是否显示
  */
 static BOOL settingsShowing = NO;
 
@@ -49,16 +49,17 @@ static CGFloat floatingAlpha = 0.70f;
 
 /*
  V1.5.9
- 当前横屏状态
+ 横屏状态
  */
 
 static BOOL landscapeMode = NO;
 
 
 
-/*
- 前置声明
- */
+#pragma mark -
+#pragma mark 前置声明
+#pragma mark -
+
 
 static void openSettings(void);
 
@@ -70,12 +71,11 @@ static void updateOrientation(void);
 
 @class SBCPUValuePickerController;
 @class SBCPUTimePickerController;
-@class SBCPUSettingsController;
 
 
 
 #pragma mark -
-#pragma mark 获取 WindowScene
+#pragma mark WindowScene
 #pragma mark -
 
 
@@ -107,6 +107,7 @@ static UIWindowScene *getWindowScene()
             (UIWindowScene *)scene;
 
 
+
             if(ws.activationState !=
                UISceneActivationStateUnattached)
             {
@@ -121,6 +122,7 @@ static UIWindowScene *getWindowScene()
 
 
     return nil;
+
 }
 
 
@@ -213,7 +215,6 @@ static double getCPUUsage()
     );
 
 
-
     return total;
 
 }
@@ -221,8 +222,9 @@ static double getCPUUsage()
 
 
 
+
 #pragma mark -
-#pragma mark V1.5.9 横屏与电量
+#pragma mark V1.5.9 横屏电量
 #pragma mark -
 
 
@@ -297,10 +299,6 @@ static void updateOrientation()
 
 
 
-            /*
-             横屏后重新限制浮窗位置
-             */
-
             CGSize size =
             cpuWindow.bounds.size;
 
@@ -321,7 +319,6 @@ static void updateOrientation()
 
 
 
-
             if(center.x < halfW)
             {
                 center.x = halfW;
@@ -338,10 +335,10 @@ static void updateOrientation()
 
 
 
-            if(center.y < halfH + 40)
+            if(center.y < halfH+40)
             {
                 center.y =
-                halfH + 40;
+                halfH+40;
             }
 
 
@@ -396,16 +393,17 @@ static void applyFloatingAlpha()
 
             }
 
-        }
-    );
+
+        });
 
 }
 
 
 
 
+
 #pragma mark -
-#pragma mark 可穿透 Window
+#pragma mark SBCPUWindow
 #pragma mark -
 
 
@@ -416,7 +414,6 @@ static void applyFloatingAlpha()
 
 
 @implementation SBCPUWindow
-
 
 
 - (UIView *)hitTest:
@@ -533,7 +530,6 @@ CGPoint lastPoint;
 @implementation SBCPUDragView
 
 
-
 - (void)touchesBegan:
 (NSSet *)touches
 withEvent:
@@ -614,7 +610,6 @@ withEvent:
 
 
 
-
     CGSize size =
     self.superview.bounds.size;
 
@@ -630,10 +625,10 @@ withEvent:
 
 
 
-
     if(center.x < halfW)
     {
-        center.x = halfW;
+        center.x =
+        halfW;
     }
 
 
@@ -721,6 +716,8 @@ withEvent:
 
 
 
+
+
 #pragma mark -
 #pragma mark 创建悬浮窗
 #pragma mark -
@@ -781,8 +778,8 @@ static void createCPUWindow()
 
 
     cpuWindow.rootViewController.view
-        .backgroundColor =
-        UIColor.clearColor;
+    .backgroundColor =
+    UIColor.clearColor;
 
 
 
@@ -791,9 +788,10 @@ static void createCPUWindow()
 
 
 
+
     /*
      V1.5.9
-     开启方向监听
+     横屏监听
      */
 
 
@@ -913,7 +911,6 @@ static void createCPUWindow()
 
 
 
-
     UITapGestureRecognizer *doubleTap =
     [[UITapGestureRecognizer alloc]
      initWithTarget:
@@ -938,7 +935,6 @@ static void createCPUWindow()
 
 
     applyFloatingAlpha();
-
 
 }
 #pragma mark -
@@ -1005,14 +1001,6 @@ static void checkHighCPU(double cpu)
         dispatch_async(
             dispatch_get_main_queue(),
             ^{
-
-
-                if(!cpuWindow)
-                {
-                    logoutCounting = NO;
-                    return;
-                }
-
 
 
                 UIViewController *root =
@@ -1093,7 +1081,6 @@ static void checkHighCPU(double cpu)
                     });
 
 
-
             });
 
     }
@@ -1133,16 +1120,20 @@ static void updateCPU()
 
 
 
-            /*
-             V1.5.9
-             横屏增加电量显示
-             */
-
-
             if(landscapeMode)
             {
 
                 label.numberOfLines = 3;
+
+
+                label.frame =
+                CGRectMake(
+                    label.frame.origin.x,
+                    label.frame.origin.y,
+                    100,
+                    70
+                );
+
 
 
                 label.text =
@@ -1158,6 +1149,16 @@ static void updateCPU()
             {
 
                 label.numberOfLines = 2;
+
+
+                label.frame =
+                CGRectMake(
+                    label.frame.origin.x,
+                    label.frame.origin.y,
+                    100,
+                    50
+                );
+
 
 
                 label.text =
@@ -1189,7 +1190,6 @@ static void updateCPU()
 
         });
 
-
 }
 
 
@@ -1197,211 +1197,81 @@ static void updateCPU()
 
 
 
+
 #pragma mark -
-#pragma mark 打开设置
+#pragma mark CPU值选择
 #pragma mark -
 
 
-static void openSettings()
+@interface SBCPUValuePickerController :
+UITableViewController
+
+@end
+
+
+
+@implementation SBCPUValuePickerController
+
+
+- (NSInteger)tableView:
+(UITableView *)tableView
+numberOfRowsInSection:
+(NSInteger)section
 {
 
-    if(settingsShowing)
-    {
-        return;
-    }
+    return 7;
+
+}
 
 
 
-    if(!cpuWindow)
-    {
-        return;
-    }
+- (NSString *)tableView:
+(UITableView *)tableView
+titleForHeaderInSection:
+(NSInteger)section
+{
+
+    return @"CPU触发值";
+
+}
 
 
 
-    UIViewController *root =
-    cpuWindow.rootViewController;
+- (UITableViewCell *)tableView:
+(UITableView *)tableView
+cellForRowAtIndexPath:
+(NSIndexPath *)indexPath
+{
 
-
-
-    if(!root)
-    {
-        return;
-    }
-
-
-
-    if(root.presentedViewController)
-    {
-        return;
-    }
-
-
-
-    settingsShowing = YES;
-
-
-
-    SBCPUSettingsController *vc =
-    [[SBCPUSettingsController alloc]
+    UITableViewCell *cell =
+    [[UITableViewCell alloc]
      initWithStyle:
-     UITableViewStyleInsetGrouped];
+     UITableViewCellStyleDefault
+     reuseIdentifier:nil];
 
 
 
-    UINavigationController *nav =
-    [[UINavigationController alloc]
-     initWithRootViewController:vc];
+    NSArray *titles =
+    @[
+      @"80%",
+      @"100%",
+      @"120%",
+      @"140%",
+      @"160%",
+      @"180%",
+      @"200%"
+    ];
 
 
 
-    nav.modalPresentationStyle =
-    UIModalPresentationFullScreen;
+    cell.textLabel.text =
+    titles[indexPath.row];
 
 
 
-    [root
-     presentViewController:
-     nav
-     animated:YES
-     completion:nil];
-
+    return cell;
 
 }
 
 
-
-
-
-
-#pragma mark -
-#pragma mark 初始化
-#pragma mark -
-
-
-%ctor
-{
-
-    NSString *process =
-NSProcessInfo.processInfo.processName;
-
-
-
-    if(![process
-         isEqualToString:
-         @"SpringBoard"])
-    {
-        return;
-    }
-
-
-
-    NSUserDefaults *def =
-    NSUserDefaults.standardUserDefaults;
-
-
-
-    autoLogoutEnable =
-    [def boolForKey:
-     @"SBCPU.AutoLogout"];
-
-
-
-
-    double cpu =
-    [def doubleForKey:
-     @"SBCPU.CPUThreshold"];
-
-
-
-    if(cpu >= 80.0 &&
-       cpu <= 1000.0)
-    {
-
-        logoutCPUThreshold =
-        cpu;
-
-    }
-
-
-
-
-    NSInteger time =
-    [def integerForKey:
-     @"SBCPU.LogoutTime"];
-
-
-
-    if(time >= 10)
-    {
-
-        logoutDuration =
-        time;
-
-    }
-
-
-
-
-    if([def objectForKey:
-        @"SBCPU.FloatingAlphaEnable"])
-    {
-
-        floatingAlphaEnable =
-        [def boolForKey:
-         @"SBCPU.FloatingAlphaEnable"];
-
-    }
-
-
-
-
-
-    CGFloat alpha =
-    [def floatForKey:
-     @"SBCPU.FloatingAlpha"];
-
-
-
-    if(alpha >= 0.2 &&
-       alpha <= 1.0)
-    {
-
-        floatingAlpha =
-        alpha;
-
-    }
-
-
-
-
-    dispatch_after(
-        dispatch_time(
-            DISPATCH_TIME_NOW,
-            5 *
-            NSEC_PER_SEC),
-        dispatch_get_main_queue(),
-        ^{
-
-
-            createCPUWindow();
-
-
-
-            [NSTimer
-             scheduledTimerWithTimeInterval:
-             1.0
-             repeats:YES
-             block:
-             ^(NSTimer *timer)
-             {
-
-                 updateCPU();
-
-             }];
-
-
-        });
-
-
-}
+@end
