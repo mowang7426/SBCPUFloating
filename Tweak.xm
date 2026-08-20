@@ -1,4 +1,7 @@
 #import <UIKit/UIKit.h>
+#import <mach/mach.h>
+#import <mach/task_info.h>
+#import <mach/mach_time.h>
 
 
 static UIWindow *cpuWindow;
@@ -6,63 +9,159 @@ static UILabel *label;
 
 
 
+static uint64_t lastCPUTime = 0;
+static uint64_t lastTime = 0;
+
+
+
+
+
+static double getSpringBoardCPU()
+{
+
+    task_thread_times_info_data_t info;
+
+    mach_msg_type_number_t count =
+    TASK_THREAD_TIMES_INFO_COUNT;
+
+
+
+    kern_return_t kr =
+    task_info(
+        mach_task_self(),
+        TASK_THREAD_TIMES_INFO,
+        (task_info_t)&info,
+        &count
+    );
+
+
+
+    if(kr != KERN_SUCCESS)
+    {
+        return 0;
+    }
+
+
+
+    uint64_t cpuTime =
+    ((uint64_t)info.user_time.seconds +
+     info.system_time.seconds)
+    *
+    1000000000ULL
+    +
+    info.user_time.nanoseconds
+    +
+    info.system_time.nanoseconds;
+
+
+
+    uint64_t now =
+    mach_absolute_time();
+
+
+
+    if(lastCPUTime == 0)
+    {
+
+        lastCPUTime = cpuTime;
+        lastTime = now;
+
+        return 0;
+
+    }
+
+
+
+    mach_timebase_info_data_t timebase;
+
+    mach_timebase_info(&timebase);
+
+
+
+    uint64_t elapsed =
+    (now-lastTime)
+    *
+    timebase.numer
+    /
+    timebase.denom;
+
+
+
+    uint64_t cpuDelta =
+    cpuTime-lastCPUTime;
+
+
+
+    lastCPUTime = cpuTime;
+    lastTime = now;
+
+
+
+    if(elapsed == 0)
+        return 0;
+
+
+
+    double cpu =
+    ((double)cpuDelta /
+    (double)elapsed)
+    *
+    100.0;
+
+
+
+    return cpu;
+
+}
+
+
+
+
+
+
+
+
 static void updateCPU()
 {
 
+
     double cpu =
-    arc4random_uniform(150);
+    getSpringBoardCPU();
+
 
 
     dispatch_async(dispatch_get_main_queue(), ^{
 
+
         label.text =
         [NSString stringWithFormat:
-        @"SB CPU\n%.0f%%",
+        @"SB CPU\n%.1f%%",
         cpu];
+
 
 
         if(cpu >= 100)
         {
+
             label.textColor =
             UIColor.redColor;
+
         }
         else
         {
+
             label.textColor =
             UIColor.whiteColor;
+
         }
+
 
     });
 
-}
-
-
-
-
-
-
-@interface SBCPUWindow : UIWindow
-@end
-
-
-@implementation SBCPUWindow
-
-
-- (UIView *)hitTest:(CGPoint)point
-          withEvent:(UIEvent *)event
-{
-
-    UIView *view =
-    [super hitTest:point
-         withEvent:event];
-
-
-    return view;
 
 }
 
 
-@end
 
 
 
@@ -79,12 +178,15 @@ static void updateCPU()
 
 
 
+
 @implementation SBCPUDragView
+
 
 
 - (void)touchesBegan:(NSSet *)touches
            withEvent:(UIEvent *)event
 {
+
 
     UITouch *touch =
     [touches anyObject];
@@ -94,7 +196,6 @@ static void updateCPU()
     [touch locationInView:self.superview];
 
 }
-
 
 
 
@@ -132,7 +233,6 @@ static void updateCPU()
 
 
 
-
     CGSize size =
     UIScreen.mainScreen.bounds.size;
 
@@ -152,8 +252,10 @@ static void updateCPU()
         center.x = halfW;
 
 
+
     if(center.x > size.width-halfW)
         center.x = size.width-halfW;
+
 
 
 
@@ -161,9 +263,9 @@ static void updateCPU()
         center.y = halfH+40;
 
 
+
     if(center.y > size.height-halfH)
         center.y = size.height-halfH;
-
 
 
 
@@ -176,10 +278,16 @@ static void updateCPU()
 
     self.lastPoint=now;
 
+
 }
 
 
+
 @end
+
+
+
+
 
 
 
@@ -193,6 +301,7 @@ static void updateCPU()
 
 NSString *processName =
 [[NSProcessInfo processInfo] processName];
+
 
 
 if(![processName isEqualToString:@"SpringBoard"])
@@ -213,7 +322,7 @@ dispatch_get_main_queue(),
 
 
 cpuWindow =
-[[SBCPUWindow alloc]
+[[UIWindow alloc]
 initWithFrame:
 UIScreen.mainScreen.bounds];
 
@@ -232,9 +341,11 @@ UIApplication.sharedApplication.connectedScenes)
         (UIWindowScene *)scene;
 
         break;
+
     }
 
 }
+
 
 
 
@@ -256,6 +367,8 @@ cpuWindow.rootViewController =
 
 
 cpuWindow.hidden = NO;
+
+
 
 
 
@@ -297,6 +410,13 @@ UIColor.whiteColor;
 
 
 
+label.text =
+@"SB CPU\n0%";
+
+
+
+
+
 
 
 
@@ -331,6 +451,7 @@ drag.userInteractionEnabled=YES;
 
 
 
+
 [NSTimer scheduledTimerWithTimeInterval:3
 repeats:YES
 block:^(NSTimer *timer)
@@ -339,6 +460,7 @@ block:^(NSTimer *timer)
     updateCPU();
 
 }];
+
 
 
 
