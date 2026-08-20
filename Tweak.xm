@@ -4,6 +4,7 @@
 static UILabel *label;
 
 
+
 static void updateCPU()
 {
 
@@ -31,7 +32,6 @@ static void updateCPU()
             UIColor.whiteColor;
         }
 
-
     });
 
 }
@@ -48,7 +48,22 @@ static void updateCPU()
 
 
 
+
+
 @implementation SBCPUFloatingLabel
+
+
+
+// 强制接收触摸
+
+- (UIView *)hitTest:(CGPoint)point
+          withEvent:(UIEvent *)event
+{
+
+    return self;
+
+}
+
 
 
 
@@ -64,7 +79,11 @@ static void updateCPU()
     [touch locationInView:self.superview];
 
 
+    NSLog(@"[SBCPUFloating] touch begin");
+
 }
+
+
 
 
 
@@ -95,12 +114,13 @@ static void updateCPU()
     self.center;
 
 
+
     center.x += dx;
     center.y += dy;
 
 
 
-    CGSize screen =
+    CGSize size =
     UIScreen.mainScreen.bounds.size;
 
 
@@ -114,35 +134,40 @@ static void updateCPU()
 
 
 
-    // 左右限制
+    // 限制左右
 
     if(center.x < halfW)
         center.x = halfW;
 
 
-    if(center.x > screen.width-halfW)
-        center.x = screen.width-halfW;
+    if(center.x > size.width-halfW)
+        center.x = size.width-halfW;
 
 
 
-    // 上下限制
+    // 限制上下
 
     if(center.y < halfH+40)
         center.y = halfH+40;
 
 
-    if(center.y > screen.height-halfH)
-        center.y = screen.height-halfH;
+    if(center.y > size.height-halfH)
+        center.y = size.height-halfH;
 
 
 
-    self.center = center;
+    self.center=center;
 
 
-    self.lastPoint = now;
 
+    self.lastPoint=now;
+
+
+    NSLog(@"[SBCPUFloating] moving");
 
 }
+
+
 
 
 
@@ -162,10 +187,12 @@ NSString *processName =
 [[NSProcessInfo processInfo] processName];
 
 
-if (![processName isEqualToString:@"SpringBoard"])
+
+if(![processName isEqualToString:@"SpringBoard"])
 {
     return;
 }
+
 
 
 
@@ -177,20 +204,23 @@ dispatch_get_main_queue(),
 
 
 
-UIWindow *window = nil;
+UIWindow *window=nil;
 
 
 
-for (UIScene *scene in
+for(UIScene *scene in
 UIApplication.sharedApplication.connectedScenes)
 {
+
 
     if(scene.activationState ==
        UISceneActivationStateForegroundActive)
     {
 
+
         UIWindowScene *windowScene =
         (UIWindowScene *)scene;
+
 
 
         for(UIWindow *w in windowScene.windows)
@@ -198,7 +228,7 @@ UIApplication.sharedApplication.connectedScenes)
 
             if(w.isKeyWindow)
             {
-                window = w;
+                window=w;
                 break;
             }
 
@@ -232,15 +262,14 @@ label.textAlignment =
 NSTextAlignmentCenter;
 
 
-
-label.numberOfLines = 2;
-
+label.numberOfLines=2;
 
 
-label.layer.cornerRadius = 12;
+
+label.layer.cornerRadius=12;
 
 
-label.clipsToBounds = YES;
+label.clipsToBounds=YES;
 
 
 
@@ -249,9 +278,7 @@ UIColor.whiteColor;
 
 
 
-// 开启触摸
-
-label.userInteractionEnabled = YES;
+label.userInteractionEnabled=YES;
 
 
 
