@@ -1,39 +1,28 @@
 #import <UIKit/UIKit.h>
 #import <mach/mach.h>
-#import <mach/task_info.h>
-#import <mach/mach_time.h>
 
 
-static UIWindow *cpuWindow;
-static UILabel *label;
-
-
-
-static uint64_t lastCPUTime = 0;
-static uint64_t lastTime = 0;
+static NSString *posXKey = @"SBCPUFloating_X";
+static NSString *posYKey = @"SBCPUFloating_Y";
 
 
 
+#pragma mark - 获取 SpringBoard CPU
 
 
-static double getSpringBoardCPU()
+static double getCPUUsage()
 {
 
-    task_thread_times_info_data_t info;
-
-    mach_msg_type_number_t count =
-    TASK_THREAD_TIMES_INFO_COUNT;
-
+    thread_array_t threads;
+    mach_msg_type_number_t threadCount = 0;
 
 
     kern_return_t kr =
-    task_info(
+    task_threads(
         mach_task_self(),
-        TASK_THREAD_TIMES_INFO,
-        (task_info_t)&info,
-        &count
+        &threads,
+        &threadCount
     );
-
 
 
     if(kr != KERN_SUCCESS)
@@ -43,135 +32,74 @@ static double getSpringBoardCPU()
 
 
 
-    uint64_t cpuTime =
-    ((uint64_t)info.user_time.seconds +
-     info.system_time.seconds)
-    *
-    1000000000ULL
-    +
-    info.user_time.nanoseconds
-    +
-    info.system_time.nanoseconds;
+    double totalCPU = 0;
 
 
 
-    uint64_t now =
-    mach_absolute_time();
-
-
-
-    if(lastCPUTime == 0)
+    for(int i=0;i<threadCount;i++)
     {
 
-        lastCPUTime = cpuTime;
-        lastTime = now;
+        thread_info_data_t info;
 
-        return 0;
+        mach_msg_type_number_t count =
+        THREAD_INFO_MAX;
+
+
+        kr =
+        thread_info(
+            threads[i],
+            THREAD_BASIC_INFO,
+            (thread_info_t)info,
+            &count
+        );
+
+
+        if(kr == KERN_SUCCESS)
+        {
+
+            thread_basic_info_t basic =
+            (thread_basic_info_t)info;
+
+
+            if(!(basic->flags & TH_FLAGS_IDLE))
+            {
+
+                totalCPU +=
+                basic->cpu_usage /
+                (double)TH_USAGE_SCALE *
+                100.0;
+
+            }
+
+        }
+
 
     }
 
 
 
-    mach_timebase_info_data_t timebase;
-
-    mach_timebase_info(&timebase);
-
-
-
-    uint64_t elapsed =
-    (now-lastTime)
-    *
-    timebase.numer
-    /
-    timebase.denom;
+    vm_deallocate(
+        mach_task_self(),
+        (vm_address_t)threads,
+        threadCount * sizeof(thread_t)
+    );
 
 
 
-    uint64_t cpuDelta =
-    cpuTime-lastCPUTime;
-
-
-
-    lastCPUTime = cpuTime;
-    lastTime = now;
-
-
-
-    if(elapsed == 0)
-        return 0;
-
-
-
-    double cpu =
-    ((double)cpuDelta /
-    (double)elapsed)
-    *
-    100.0;
-
-
-
-    return cpu;
+    return totalCPU;
 
 }
 
 
 
 
+#pragma mark - 拖动Label
 
 
+@interface SBCPUFloatingLabel : UILabel
 
-
-static void updateCPU()
-{
-
-
-    double cpu =
-    getSpringBoardCPU();
-
-
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-
-
-        label.text =
-        [NSString stringWithFormat:
-        @"SB CPU\n%.1f%%",
-        cpu];
-
-
-
-        if(cpu >= 100)
-        {
-
-            label.textColor =
-            UIColor.redColor;
-
-        }
-        else
-        {
-
-            label.textColor =
-            UIColor.whiteColor;
-
-        }
-
-
-    });
-
-
-}
-
-
-
-
-
-
-
-
-
-@interface SBCPUDragView : UIView
-
-@property(nonatomic,assign) CGPoint lastPoint;
+@property(nonatomic,assign)
+CGPoint lastPoint;
 
 @end
 
@@ -179,14 +107,13 @@ static void updateCPU()
 
 
 
-@implementation SBCPUDragView
+@implementation SBCPUFloatingLabel
 
 
 
-- (void)touchesBegan:(NSSet *)touches
-           withEvent:(UIEvent *)event
+-(void)touchesBegan:(NSSet<UITouch *> *)touches
+          withEvent:(UIEvent *)event
 {
-
 
     UITouch *touch =
     [touches anyObject];
@@ -200,10 +127,9 @@ static void updateCPU()
 
 
 
-- (void)touchesMoved:(NSSet *)touches
-           withEvent:(UIEvent *)event
+-(void)touchesMoved:(NSSet<UITouch *> *)touches
+          withEvent:(UIEvent *)event
 {
-
 
     UITouch *touch =
     [touches anyObject];
@@ -224,7 +150,7 @@ static void updateCPU()
 
 
     CGPoint center =
-    label.center;
+    self.center;
 
 
 
@@ -233,60 +159,122 @@ static void updateCPU()
 
 
 
-    CGSize size =
+    CGSize screen =
     UIScreen.mainScreen.bounds.size;
 
 
 
     CGFloat halfW =
-    label.bounds.size.width/2;
+    self.bounds.size.width/2;
 
 
     CGFloat halfH =
-    label.bounds.size.height/2;
+    self.bounds.size.height/2;
 
 
 
+    // 防止左右出去
 
     if(center.x < halfW)
         center.x = halfW;
 
 
-
-    if(center.x > size.width-halfW)
-        center.x = size.width-halfW;
-
+    if(center.x > screen.width-halfW)
+        center.x = screen.width-halfW;
 
 
 
-    if(center.y < halfH+40)
-        center.y = halfH+40;
+    // 防止上下出去
+
+    if(center.y < halfH+50)
+        center.y = halfH+50;
+
+
+    if(center.y > screen.height-halfH)
+        center.y = screen.height-halfH;
 
 
 
-    if(center.y > size.height-halfH)
-        center.y = size.height-halfH;
+    self.center = center;
 
 
 
-    label.center=center;
-
-
-    self.center=center;
+    self.lastPoint = now;
 
 
 
-    self.lastPoint=now;
+    NSUserDefaults *def =
+    [NSUserDefaults standardUserDefaults];
+
+
+    [def setFloat:center.x
+          forKey:posXKey];
+
+
+    [def setFloat:center.y
+          forKey:posYKey];
 
 
 }
-
-
 
 @end
 
 
 
+
+
+
+
+
+static SBCPUFloatingLabel *label;
+
+
+
+#pragma mark - 更新显示
+
+
+static void updateCPU()
+{
+
+
+    double cpu =
+    getCPUUsage();
+
+
+
+    dispatch_async(
+    dispatch_get_main_queue(),
+    ^{
+
+
+        label.text =
+        [NSString stringWithFormat:
+         @"SB CPU\n%.1f%%",
+         cpu];
+
+
+
+        if(cpu >= 80)
+        {
+
+            label.textColor =
+            UIColor.redColor;
+
+        }
+        else
+        {
+
+            label.textColor =
+            UIColor.whiteColor;
+
+        }
+
+
+
+    });
+
+
+}
 
 
 
@@ -299,12 +287,72 @@ static void updateCPU()
 {
 
 
-NSString *processName =
+NSString *process =
 [[NSProcessInfo processInfo] processName];
 
 
+if(![process isEqualToString:@"SpringBoard"])
+{
+    return;
+}
 
-if(![processName isEqualToString:@"SpringBoard"])
+
+
+dispatch_after(
+dispatch_time(
+DISPATCH_TIME_NOW,
+5*NSEC_PER_SEC),
+dispatch_get_main_queue(),
+^{
+
+
+
+UIWindow *window = nil;
+
+
+
+for(UIScene *scene in
+UIApplication.sharedApplication.connectedScenes)
+{
+
+
+    if(scene.activationState ==
+       UISceneActivationStateForegroundActive)
+    {
+
+
+        UIWindowScene *ws =
+        (UIWindowScene *)scene;
+
+
+
+        for(UIWindow *w in ws.windows)
+        {
+
+            if(w.isKeyWindow)
+            {
+
+                window=w;
+                break;
+
+            }
+
+        }
+
+
+    }
+
+
+    if(window)
+        break;
+
+
+}
+
+
+
+
+if(!window)
 {
     return;
 }
@@ -313,36 +361,34 @@ if(![processName isEqualToString:@"SpringBoard"])
 
 
 
-dispatch_after(
-dispatch_time(DISPATCH_TIME_NOW,
-5*NSEC_PER_SEC),
-dispatch_get_main_queue(),
-^{
-
-
-
-cpuWindow =
-[[UIWindow alloc]
-initWithFrame:
-UIScreen.mainScreen.bounds];
+label =
+[[SBCPUFloatingLabel alloc]
+ initWithFrame:
+ CGRectMake(30,200,110,55)];
 
 
 
 
 
-for(UIScene *scene in
-UIApplication.sharedApplication.connectedScenes)
+NSUserDefaults *def =
+[NSUserDefaults standardUserDefaults];
+
+
+
+float x =
+[def floatForKey:posXKey];
+
+
+float y =
+[def floatForKey:posYKey];
+
+
+
+if(x>0 && y>0)
 {
 
-    if([scene isKindOfClass:UIWindowScene.class])
-    {
-
-        cpuWindow.windowScene =
-        (UIWindowScene *)scene;
-
-        break;
-
-    }
+    label.center =
+    CGPointMake(x,y);
 
 }
 
@@ -351,40 +397,10 @@ UIApplication.sharedApplication.connectedScenes)
 
 
 
-cpuWindow.windowLevel =
-UIWindowLevelAlert + 1;
-
-
-
-cpuWindow.backgroundColor =
-UIColor.clearColor;
-
-
-
-cpuWindow.rootViewController =
-[UIViewController new];
-
-
-
-cpuWindow.hidden = NO;
-
-
-
-
-
-
-
-
-label =
-[[UILabel alloc]
-initWithFrame:
-CGRectMake(30,200,100,50)];
-
-
 
 label.backgroundColor =
 [[UIColor blackColor]
-colorWithAlphaComponent:0.7];
+ colorWithAlphaComponent:0.75];
 
 
 
@@ -393,15 +409,7 @@ NSTextAlignmentCenter;
 
 
 
-label.numberOfLines=2;
-
-
-
-label.layer.cornerRadius=12;
-
-
-
-label.clipsToBounds=YES;
+label.numberOfLines = 2;
 
 
 
@@ -410,61 +418,45 @@ UIColor.whiteColor;
 
 
 
-label.text =
-@"SB CPU\n0%";
+label.font =
+[UIFont monospacedDigitSystemFontOfSize:14
+                                weight:UIFontWeightBold];
+
+
+
+label.layer.cornerRadius = 12;
+
+
+
+label.clipsToBounds = YES;
+
+
+
+label.userInteractionEnabled = YES;
+
+
+
+[window addSubview:label];
 
 
 
 
 
-
-
-
-
-SBCPUDragView *drag =
-[[SBCPUDragView alloc]
-initWithFrame:
-label.frame];
-
-
-
-drag.backgroundColor =
-UIColor.clearColor;
-
-
-
-drag.userInteractionEnabled=YES;
-
-
-
-[cpuWindow.rootViewController.view
- addSubview:label];
-
-
-
-[cpuWindow.rootViewController.view
- addSubview:drag];
-
-
-
-
-
-
-
-
-[NSTimer scheduledTimerWithTimeInterval:3
-repeats:YES
-block:^(NSTimer *timer)
+[NSTimer scheduledTimerWithTimeInterval:1
+                                 repeats:YES
+                                   block:
+^(NSTimer *timer)
 {
 
     updateCPU();
+
 
 }];
 
 
 
-
 });
+
 
 
 }
