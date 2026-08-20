@@ -47,8 +47,9 @@ static void updateCPU()
 {
 
 
-if(![NSBundle.mainBundle.bundleIdentifier
-containsString:@"SpringBoard"])
+NSString *processName = [[NSProcessInfo processInfo] processName];
+
+if (![processName isEqualToString:@"SpringBoard"])
 {
     return;
 }
