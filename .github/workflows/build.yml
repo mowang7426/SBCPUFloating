@@ -1,0 +1,64 @@
+name: Build SBCPUFloating
+
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+
+jobs:
+
+ build:
+
+  runs-on: macos-14
+
+
+  steps:
+
+
+  - name: Checkout
+    uses: actions/checkout@v4
+
+
+
+  - name: Install Theos
+    run: |
+
+      bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)"
+
+
+
+  - name: Install SDK
+    run: |
+
+      mkdir -p $HOME/theos/sdks
+
+      cd $HOME/theos/sdks
+
+      curl -LO https://github.com/theos/sdks/releases/download/15.5/iPhoneOS16.5.sdk.tar.xz
+
+      tar xf iPhoneOS16.5.sdk.tar.xz
+
+
+
+  - name: Build
+
+    run: |
+
+      export THEOS=$HOME/theos
+
+      make package FINALPACKAGE=1
+
+
+
+  - name: Upload
+
+    uses: actions/upload-artifact@v4
+
+    with:
+
+      name: SBCPUFloating
+
+      path: packages/*.deb
