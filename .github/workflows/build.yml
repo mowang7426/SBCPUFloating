@@ -30,8 +30,8 @@ jobs:
 
 
 
-      - name: Install SDK
-      run: |
+  - name: Install SDK
+    run: |
 
         mkdir -p $HOME/theos/sdks
 
