@@ -1,0 +1,9 @@
+Package: com.sbcpu.floating
+Name: SB CPU Floating
+Version: 1.0
+Architecture: iphoneos-arm64
+Description: SpringBoard CPU Monitor Floating Window
+Maintainer: SBCPUFloating
+Author: SBCPUFloating
+Section: Tweaks
+Depends: mobilesubstrate
