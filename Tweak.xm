@@ -214,43 +214,25 @@ dispatch_get_main_queue(),
 
 
 
-UIWindow *window=nil;
+UIWindow *window =
+[[UIWindow alloc]
+initWithFrame:
+UIScreen.mainScreen.bounds];
 
 
-
-for(UIScene *scene in
-UIApplication.sharedApplication.connectedScenes)
-{
+window.windowLevel =
+UIWindowLevelAlert + 100;
 
 
-    if(scene.activationState ==
-       UISceneActivationStateForegroundActive)
-    {
+window.backgroundColor =
+UIColor.clearColor;
 
 
-        UIWindowScene *ws =
-        (UIWindowScene *)scene;
+window.rootViewController =
+[UIViewController new];
 
 
-
-        for(UIWindow *w in ws.windows)
-        {
-
-            if(w.isKeyWindow)
-            {
-                window=w;
-                break;
-            }
-
-        }
-
-    }
-
-
-    if(window)
-        break;
-
-}
+window.hidden = NO;
 
 
 
@@ -318,8 +300,8 @@ YES;
 
 
 
-[window addSubview:label];
-
+[window.rootViewController.view
+ addSubview:label];
 
 
 
