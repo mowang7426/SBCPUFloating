@@ -1,0 +1,8 @@
+Package: com.sbcpufloating.tweak
+Name: SBCPUFloating
+Version: 1.0
+Architecture: iphoneos-arm64
+Description: SpringBoard CPU Monitor
+Maintainer: User
+Author: User
+Section: Tweaks
