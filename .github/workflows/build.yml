@@ -22,12 +22,14 @@ jobs:
     uses: actions/checkout@v4
 
 
-
   - name: Install Theos
     run: |
 
-      bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)"
+        git clone --recursive https://github.com/roothide/theos.git $HOME/theos
 
+        echo "THEOS installed"
+
+        ls $HOME/theos
 
 
   - name: Install SDK
