@@ -37,13 +37,12 @@ jobs:
 
 
       # ==============================
-      # 克隆 RootHide Theos
-      # 不使用 install-theos
-      # 避免 GitHub API SDK 下载失败
+      # 安装 RootHide Theos
       # ==============================
 
       - name: Install RootHide Theos
         run: |
+
           rm -rf "$HOME/theos"
 
           git clone --recursive \
@@ -57,27 +56,65 @@ jobs:
 
       # ==============================
       # 安装 iPhoneOS 16.5 SDK
-      # 手动安装，绕过 GitHub API
+      #
+      # 不再使用 GitHub Release API
+      # 不再使用固定 release 下载地址
+      #
+      # 直接从 theos/sdks 仓库
+      # sparse checkout 16.5 SDK
       # ==============================
 
       - name: Install iPhoneOS 16.5 SDK
         run: |
 
+          set -e
+
+          echo "========================================"
+          echo " Download iPhoneOS 16.5 SDK"
+          echo "========================================"
+
+          rm -rf /tmp/theos-sdks
+
           mkdir -p "$HOME/theos/sdks"
 
-          curl -L \
-            --retry 5 \
-            --retry-delay 3 \
-            --fail \
-            "https://github.com/theos/sdks/releases/download/16.5-1/iPhoneOS16.5.sdk.tar.xz" \
-            -o /tmp/iPhoneOS16.5.sdk.tar.xz
+          git clone \
+            --depth=1 \
+            --filter=blob:none \
+            --sparse \
+            https://github.com/theos/sdks.git \
+            /tmp/theos-sdks
 
-          tar -xf \
-            /tmp/iPhoneOS16.5.sdk.tar.xz \
-            -C "$HOME/theos/sdks"
+          cd /tmp/theos-sdks
 
+          git sparse-checkout set iPhoneOS16.5.sdk
+
+          echo ""
+          echo "SDK repository downloaded."
+
+          ls -la
+
+          if [ ! -d "iPhoneOS16.5.sdk" ]; then
+            echo ""
+            echo "ERROR: iPhoneOS16.5.sdk not found!"
+            exit 1
+          fi
+
+          echo ""
+          echo "Copying SDK to Theos..."
+
+          rm -rf "$HOME/theos/sdks/iPhoneOS16.5.sdk"
+
+          cp -R \
+            "iPhoneOS16.5.sdk" \
+            "$HOME/theos/sdks/"
+
+          echo ""
           echo "Installed SDKs:"
           ls -lh "$HOME/theos/sdks"
+
+          echo ""
+          echo "SDK directory:"
+          ls -lh "$HOME/theos/sdks/iPhoneOS16.5.sdk"
 
 
       # ==============================
@@ -87,23 +124,34 @@ jobs:
       - name: Verify Theos
         run: |
 
-          echo "=============================="
-          echo "THEOS"
-          echo "=============================="
+          echo "========================================"
+          echo " THEOS"
+          echo "========================================"
 
           echo "$THEOS"
 
           echo ""
-          echo "=============================="
-          echo "SDK"
-          echo "=============================="
+          echo "========================================"
+          echo " SDK"
+          echo "========================================"
 
           ls -lh "$THEOS/sdks"
 
           echo ""
-          echo "=============================="
-          echo "Clang"
-          echo "=============================="
+          echo "Checking iPhoneOS16.5.sdk..."
+
+          if [ ! -d "$THEOS/sdks/iPhoneOS16.5.sdk" ]; then
+            echo "ERROR: iPhoneOS16.5.sdk is missing!"
+            exit 1
+          fi
+
+          echo ""
+          echo "iPhoneOS16.5.sdk OK."
+
+          echo ""
+          echo "========================================"
+          echo " Clang"
+          echo "========================================"
 
           "$THEOS/toolchain/linux/iphone/bin/clang" \
             --version || true
@@ -128,6 +176,8 @@ jobs:
       - name: Build Rootless
         run: |
 
+          set -e
+
           make clean
 
           THEOS_PACKAGE_SCHEME=rootless \
@@ -141,6 +191,8 @@ jobs:
       - name: Copy Rootless package
         run: |
 
+          set -e
+
           ROOTLESS_DEB=$(find packages \
             -maxdepth 1 \
             -type f \
@@ -148,7 +200,7 @@ jobs:
             | head -n 1)
 
           if [ -z "$ROOTLESS_DEB" ]; then
-            echo "Rootless .deb not found"
+            echo "ERROR: Rootless .deb not found!"
             exit 1
           fi
 
@@ -178,6 +230,8 @@ jobs:
       - name: Build RootHide
         run: |
 
+          set -e
+
           THEOS_PACKAGE_SCHEME=roothide \
             make package FINALPACKAGE=1
 
@@ -189,6 +243,8 @@ jobs:
       - name: Copy RootHide package
         run: |
 
+          set -e
+
           ROOTHIDE_DEB=$(find packages \
             -maxdepth 1 \
             -type f \
@@ -196,7 +252,7 @@ jobs:
             | head -n 1)
 
           if [ -z "$ROOTHIDE_DEB" ]; then
-            echo "RootHide .deb not found"
+            echo "ERROR: RootHide .deb not found!"
             exit 1
           fi
 
@@ -223,6 +279,25 @@ jobs:
           echo "Build directory:"
 
           ls -lh build/
+
+          echo ""
+          echo "Checking packages..."
+
+          test -f "build/SBCPUFloating-V1.5.5-rootless.deb"
+          test -f "build/SBCPUFloating-V1.5.5-roothide.deb"
+
+          echo ""
+          echo "========================================"
+          echo " Both DEB packages found!"
+          echo "========================================"
+
+          echo ""
+          echo "Rootless:"
+          ls -lh "build/SBCPUFloating-V1.5.5-rootless.deb"
+
+          echo ""
+          echo "RootHide:"
+          ls -lh "build/SBCPUFloating-V1.5.5-roothide.deb"
 
           echo ""
           echo "========================================"
