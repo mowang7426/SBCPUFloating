@@ -1,32 +1,54 @@
 #import <UIKit/UIKit.h>
 #import <mach/mach.h>
-#import <signal.h>
+
+
+#pragma mark - v1.5 配置
 
 
 static UIWindow *cpuWindow;
+
 static UILabel *label;
 
 
-// =======================
-// v1.4 自动注销功能
-// =======================
 
-static NSTimeInterval cpuHighStartTime = 0;
+// 自动注销设置
 
-static BOOL isAutoLogout = NO;
+static BOOL autoLogoutEnable = NO;
 
 
+// CPU触发值
+
+static double logoutCPUThreshold = 100.0;
+
+
+// 持续时间
+
+static NSInteger logoutDuration = 60;
 
 
 
-#pragma mark - SpringBoard CPU
+// 高CPU开始时间
+
+static NSDate *cpuHighStartTime = nil;
+
+
+
+// 防止重复触发
+
+static BOOL logoutCounting = NO;
+
+
+
+#pragma mark - 获取真实 SpringBoard CPU
 
 
 static double getCPUUsage()
 {
 
     thread_array_t threads;
+
     mach_msg_type_number_t threadCount = 0;
+
 
 
     kern_return_t kr =
@@ -35,6 +57,7 @@ static double getCPUUsage()
         &threads,
         &threadCount
     );
+
 
 
     if(kr != KERN_SUCCESS)
@@ -48,10 +71,14 @@ static double getCPUUsage()
 
 
 
-    for(int i = 0; i < threadCount; i++)
+    for(int i = 0;
+        i < threadCount;
+        i++)
     {
 
+
         thread_info_data_t info;
+
 
         mach_msg_type_number_t count =
         THREAD_INFO_MAX;
@@ -71,21 +98,27 @@ static double getCPUUsage()
         if(kr == KERN_SUCCESS)
         {
 
+
             thread_basic_info_t basic =
             (thread_basic_info_t)info;
 
 
+
             if(!(basic->flags & TH_FLAGS_IDLE))
             {
+
 
                 total +=
                 (double)basic->cpu_usage /
                 TH_USAGE_SCALE *
                 100.0;
 
+
             }
 
+
         }
+
 
     }
 
@@ -107,129 +140,156 @@ static double getCPUUsage()
 
 
 
-// =======================
-// v1.4 CPU持续高负载检测
-// =======================
+
+#pragma mark - v1.5 自动注销检测
 
 
 static void checkHighCPU(double cpu)
 {
 
 
-    if(isAutoLogout)
+    if(!autoLogoutEnable)
+    {
+        cpuHighStartTime = nil;
+        logoutCounting = NO;
+        return;
+    }
+
+
+
+
+    if(cpu < logoutCPUThreshold)
+    {
+
+        cpuHighStartTime = nil;
+
+        logoutCounting = NO;
+
         return;
 
+    }
 
 
-    if(cpu >= 100)
+
+
+    if(cpuHighStartTime == nil)
+    {
+
+        cpuHighStartTime =
+        [NSDate date];
+
+
+        return;
+
+    }
+
+
+
+
+    NSTimeInterval time =
+    [[NSDate date]
+     timeIntervalSinceDate:
+     cpuHighStartTime];
+
+
+
+
+    if(time >= logoutDuration
+       &&
+       !logoutCounting)
     {
 
 
-        if(cpuHighStartTime == 0)
-        {
-
-            cpuHighStartTime =
-            [[NSDate date] timeIntervalSince1970];
-
-        }
+        logoutCounting = YES;
 
 
 
-        NSTimeInterval now =
-        [[NSDate date] timeIntervalSince1970];
+        dispatch_async(
+        dispatch_get_main_queue(),
+        ^{
+
+
+            UIAlertController *alert =
+            [UIAlertController
+             alertControllerWithTitle:
+             @"SpringBoard CPU过高"
+             message:
+             @"将在5秒后注销"
+             preferredStyle:
+             UIAlertControllerStyleAlert];
 
 
 
-        NSTimeInterval duration =
-        now - cpuHighStartTime;
+            UIAlertAction *cancel =
+            [UIAlertAction
+             actionWithTitle:
+             @"取消"
+             style:
+             UIAlertActionStyleCancel
+             handler:
+             ^(UIAlertAction *action)
+             {
+
+                 logoutCounting = NO;
+
+                 cpuHighStartTime = nil;
+
+             }];
 
 
 
-        // CPU >=100 持续60秒
-
-        if(duration >= 60)
-        {
-
-
-            isAutoLogout = YES;
+            [alert addAction:cancel];
 
 
 
-            dispatch_async(
+
+            UIViewController *vc =
+            cpuWindow.rootViewController;
+
+
+
+            [vc presentViewController:
+             alert
+             animated:YES
+             completion:nil];
+
+
+
+            dispatch_after(
+            dispatch_time(
+            DISPATCH_TIME_NOW,
+            5*NSEC_PER_SEC),
             dispatch_get_main_queue(),
             ^{
 
 
-                kill(getpid(), SIGTERM);
+                if(logoutCounting)
+                {
+
+                    // SpringBoard注销
+
+                    kill(
+                    getpid(),
+                    SIGTERM
+                    );
+
+
+                }
 
 
             });
 
 
-        }
 
+        });
 
-    }
-    else
-    {
-
-        cpuHighStartTime = 0;
 
     }
 
 
 }
-
-
-
-
-
-
-static void updateCPU()
-{
-
-    double cpu =
-    getCPUUsage();
-
-
-
-    // v1.4 新增检测
-    checkHighCPU(cpu);
-
-
-
-    dispatch_async(
-    dispatch_get_main_queue(),
-    ^{
-
-
-        label.text =
-        [NSString stringWithFormat:
-        @"SB CPU\n%.1f%%",
-        cpu];
-
-
-
-        if(cpu >= 80)
-        {
-
-            label.textColor =
-            UIColor.redColor;
-
-        }
-        else
-        {
-
-            label.textColor =
-            UIColor.whiteColor;
-
-        }
-
-
-    });
-
-}
-#pragma mark - Drag View
+#pragma mark - 拖动视图
+// v1.4成功版本 保留
 
 
 @interface SBCPUDragView : UIView
@@ -244,6 +304,7 @@ static void updateCPU()
 @implementation SBCPUDragView
 
 
+
 - (void)touchesBegan:(NSSet *)touches
            withEvent:(UIEvent *)event
 {
@@ -252,10 +313,13 @@ static void updateCPU()
     [touches anyObject];
 
 
+
     self.lastPoint =
     [touch locationInView:self.superview];
 
+
 }
+
 
 
 
@@ -264,8 +328,10 @@ static void updateCPU()
            withEvent:(UIEvent *)event
 {
 
+
     UITouch *touch =
     [touches anyObject];
+
 
 
     CGPoint now =
@@ -277,8 +343,10 @@ static void updateCPU()
     now.x - self.lastPoint.x;
 
 
+
     CGFloat dy =
     now.y - self.lastPoint.y;
+
 
 
 
@@ -288,7 +356,9 @@ static void updateCPU()
 
 
     center.x += dx;
+
     center.y += dy;
+
 
 
 
@@ -298,8 +368,10 @@ static void updateCPU()
 
 
 
+
     CGFloat halfW =
     label.bounds.size.width/2;
+
 
 
     CGFloat halfH =
@@ -307,22 +379,37 @@ static void updateCPU()
 
 
 
+
+    // 左右限制
+
     if(center.x < halfW)
+
         center.x = halfW;
 
 
+
     if(center.x > size.width-halfW)
+
         center.x = size.width-halfW;
 
 
 
 
+
+    // 上下限制
+
+
     if(center.y < halfH+40)
+
         center.y = halfH+40;
 
 
+
     if(center.y > size.height-halfH)
+
         center.y = size.height-halfH;
+
+
 
 
 
@@ -337,7 +424,9 @@ static void updateCPU()
     self.lastPoint = now;
 
 
+
 }
+
 
 
 @end
@@ -352,11 +441,13 @@ static void updateCPU()
 
 
 @interface SBCPUWindow : UIWindow
+
 @end
 
 
 
 @implementation SBCPUWindow
+
 @end
 
 
@@ -365,36 +456,54 @@ static void updateCPU()
 
 
 
-%ctor
+#pragma mark - 双击手势
+
+
+static void addDoubleTap()
 {
 
 
-NSString *process =
-[[NSProcessInfo processInfo] processName];
+    label.userInteractionEnabled = YES;
 
 
 
-if(![process isEqualToString:@"SpringBoard"])
-{
-    return;
+    UITapGestureRecognizer *tap =
+    [[UITapGestureRecognizer alloc]
+     initWithTarget:nil
+     action:nil];
+
+
+
+    tap.numberOfTapsRequired = 2;
+
+
+
+    [label addGestureRecognizer:tap];
+
+
+
 }
 
 
 
 
-dispatch_after(
-dispatch_time(
-DISPATCH_TIME_NOW,
-5*NSEC_PER_SEC),
-dispatch_get_main_queue(),
-^{
 
+
+
+
+
+#pragma mark - 创建浮窗
+
+
+
+static void createCPUWindow()
+{
 
 
 cpuWindow =
 [[SBCPUWindow alloc]
-initWithFrame:
-UIScreen.mainScreen.bounds];
+ initWithFrame:
+ UIScreen.mainScreen.bounds];
 
 
 
@@ -404,18 +513,21 @@ for(UIScene *scene in
 UIApplication.sharedApplication.connectedScenes)
 {
 
-    if([scene isKindOfClass:UIWindowScene.class])
+
+    if([scene isKindOfClass:
+        UIWindowScene.class])
     {
+
 
         cpuWindow.windowScene =
         (UIWindowScene *)scene;
+
 
         break;
 
     }
 
 }
-
 
 
 
@@ -442,19 +554,16 @@ cpuWindow.hidden = NO;
 
 
 
-
-
-
 label =
 [[UILabel alloc]
-initWithFrame:
-CGRectMake(30,200,100,50)];
+ initWithFrame:
+ CGRectMake(30,200,100,50)];
 
 
 
 label.backgroundColor =
 [[UIColor blackColor]
-colorWithAlphaComponent:0.7];
+ colorWithAlphaComponent:0.7];
 
 
 
@@ -493,13 +602,10 @@ label.text =
 
 
 
-
-
-
-
 SBCPUDragView *drag =
 [[SBCPUDragView alloc]
-initWithFrame:label.frame];
+ initWithFrame:
+ label.frame];
 
 
 
@@ -509,8 +615,6 @@ UIColor.clearColor;
 
 
 drag.userInteractionEnabled = YES;
-
-
 
 
 
@@ -528,23 +632,442 @@ drag.userInteractionEnabled = YES;
 
 
 
+// 双击检测
+
+UITapGestureRecognizer *doubleTap =
+[[UITapGestureRecognizer alloc]
+ initWithTarget:nil
+ action:nil];
+
+
+doubleTap.numberOfTapsRequired = 2;
 
 
 
-[NSTimer scheduledTimerWithTimeInterval:1
-repeats:YES
-block:^(NSTimer *timer)
+[label addGestureRecognizer:doubleTap];
+
+
+
+
+
+return;
+
+}
+#pragma mark - 设置页面
+
+
+@interface SBCPUSettingsController : UITableViewController
+
+@end
+
+
+
+
+@implementation SBCPUSettingsController
+
+
+
+- (void)viewDidLoad
 {
 
-    updateCPU();
-
-}];
+    [super viewDidLoad];
 
 
+    self.title =
+    @"SBCPUFloating 设置";
 
 
-});
+    self.tableView =
+    [[UITableView alloc]
+     initWithFrame:CGRectZero
+     style:UITableViewStyleInsetGrouped];
 
+}
+
+
+
+
+
+- (NSInteger)tableView:(UITableView *)tableView
+ numberOfRowsInSection:(NSInteger)section
+{
+
+    return 3;
+
+}
+
+
+
+
+- (NSString *)tableView:(UITableView *)tableView
+ titleForHeaderInSection:(NSInteger)section
+{
+
+    return @"自动注销设置";
+
+}
+
+
+
+
+- (UITableViewCell *)tableView:(UITableView *)tableView
+ cellForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+
+
+    UITableViewCell *cell =
+    [[UITableViewCell alloc]
+     initWithStyle:UITableViewCellStyleValue1
+     reuseIdentifier:nil];
+
+
+
+    NSUserDefaults *def =
+    [NSUserDefaults standardUserDefaults];
+
+
+
+    if(indexPath.row == 0)
+    {
+
+
+        cell.textLabel.text =
+        @"自动注销";
+
+
+        UISwitch *sw =
+        [[UISwitch alloc]
+         init];
+
+
+        sw.on =
+        autoLogoutEnable;
+
+
+
+        [sw addTarget:self
+               action:@selector(switchChanged:)
+     forControlEvents:UIControlEventValueChanged];
+
+
+
+        cell.accessoryView = sw;
+
+
+    }
+
+
+    else if(indexPath.row == 1)
+    {
+
+
+        cell.textLabel.text =
+        @"CPU触发值";
+
+
+
+        cell.detailTextLabel.text =
+        [NSString stringWithFormat:
+         @"%.0f%%",
+         logoutCPUThreshold];
+
+
+    }
+
+
+
+    else if(indexPath.row == 2)
+    {
+
+
+        cell.textLabel.text =
+        @"持续时间";
+
+
+
+        cell.detailTextLabel.text =
+        [NSString stringWithFormat:
+         @"%ld秒",
+         logoutDuration];
+
+    }
+
+
+
+    return cell;
+
+
+}
+
+
+
+
+
+- (void)switchChanged:(UISwitch *)sw
+{
+
+    autoLogoutEnable =
+    sw.isOn;
+
+
+
+    [[NSUserDefaults standardUserDefaults]
+     setBool:autoLogoutEnable
+     forKey:@"SBCPU.AutoLogout"];
+
+
+
+}
+
+
+
+
+
+
+- (void)tableView:(UITableView *)tableView
+ didSelectRowAtIndexPath:(NSIndexPath *)indexPath
+{
+
+
+    if(indexPath.row == 1)
+    {
+
+
+        UIAlertController *alert =
+        [UIAlertController
+         alertControllerWithTitle:
+         @"CPU触发值"
+         message:
+         @"请输入CPU百分比"
+         preferredStyle:
+         UIAlertControllerStyleAlert];
+
+
+
+        [alert addTextFieldWithConfigurationHandler:
+         ^(UITextField *tf)
+         {
+
+             tf.text =
+             [NSString stringWithFormat:
+              @"%.0f",
+              logoutCPUThreshold];
+
+         }];
+
+
+
+
+        UIAlertAction *ok =
+        [UIAlertAction
+         actionWithTitle:
+         @"保存"
+         style:
+         UIAlertActionStyleDefault
+         handler:
+         ^(UIAlertAction *a)
+         {
+
+
+             double value =
+             [alert.textFields[0].text doubleValue];
+
+
+
+             if(value < 80)
+
+                 value = 80;
+
+
+
+             if(value > 200)
+
+                 value = 200;
+
+
+
+             logoutCPUThreshold =
+             value;
+
+
+
+             [[NSUserDefaults standardUserDefaults]
+              setDouble:value
+              forKey:@"SBCPU.CPUThreshold"];
+
+
+
+             [self.tableView reloadData];
+
+
+         }];
+
+
+
+        [alert addAction:ok];
+
+
+        [self presentViewController:alert
+                           animated:YES
+                         completion:nil];
+
+
+    }
+
+
+
+
+
+
+    if(indexPath.row == 2)
+    {
+
+
+        UIAlertController *alert =
+        [UIAlertController
+         alertControllerWithTitle:
+         @"持续时间"
+         message:
+         @"请输入秒数"
+         preferredStyle:
+         UIAlertControllerStyleAlert];
+
+
+
+        [alert addTextFieldWithConfigurationHandler:
+         ^(UITextField *tf)
+         {
+
+             tf.text =
+             [NSString stringWithFormat:
+              @"%ld",
+              logoutDuration];
+
+         }];
+
+
+
+        UIAlertAction *ok =
+        [UIAlertAction
+         actionWithTitle:
+         @"保存"
+         style:
+         UIAlertActionStyleDefault
+         handler:
+         ^(UIAlertAction *a)
+         {
+
+
+             NSInteger value =
+             [alert.textFields[0].text integerValue];
+
+
+
+             if(value < 10)
+
+                 value = 10;
+
+
+
+             if(value > 600)
+
+                 value = 600;
+
+
+
+             logoutDuration =
+             value;
+
+
+
+             [[NSUserDefaults standardUserDefaults]
+              setInteger:value
+              forKey:@"SBCPU.LogoutTime"];
+
+
+
+             [self.tableView reloadData];
+
+
+         }];
+
+
+
+        [alert addAction:ok];
+
+
+        [self presentViewController:alert
+                           animated:YES
+                         completion:nil];
+
+    }
+
+
+
+}
+
+
+@end
+
+
+
+
+
+
+
+#pragma mark - 打开设置
+
+
+static void openSettings()
+{
+
+
+    SBCPUSettingsController *vc =
+    [[SBCPUSettingsController alloc]
+     initWithStyle:
+     UITableViewStyleInsetGrouped];
+
+
+
+    UINavigationController *nav =
+    [[UINavigationController alloc]
+     initWithRootViewController:vc];
+
+
+
+    [cpuWindow.rootViewController
+     presentViewController:nav
+     animated:YES
+     completion:nil];
+
+}
+
+
+
+
+
+
+
+#pragma mark - 双击绑定
+
+
+static void setupDoubleTap()
+{
+
+
+    UITapGestureRecognizer *tap =
+    [[UITapGestureRecognizer alloc]
+     initWithTarget:
+     [NSBlockOperation class]
+     action:nil];
+
+
+
+    tap.numberOfTapsRequired = 2;
+
+
+
+    [label addGestureRecognizer:tap];
 
 
 }
