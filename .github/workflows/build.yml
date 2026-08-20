@@ -4,231 +4,142 @@ on:
   workflow_dispatch:
 
 jobs:
-
   build:
     runs-on: macos-14
 
     steps:
 
-      # ==========================================
-      # 1. 获取源码
-      # ==========================================
+      # ==============================
+      # 获取源码
+      # ==============================
 
       - name: Checkout
         uses: actions/checkout@v4
 
 
-      # ==========================================
-      # 2. 安装基础工具
-      # ==========================================
+      # ==============================
+      # 安装基础工具
+      # ==============================
 
       - name: Install dependencies
         run: |
-          brew install make dpkg ldid
+          brew install make dpkg ldid xz
 
 
-      # ==========================================
-      # 3. 安装 RootHide Theos
-      # ==========================================
+      # ==============================
+      # 设置 THEOS
+      # ==============================
+
+      - name: Set THEOS
+        run: |
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          echo "$HOME/theos/bin" >> $GITHUB_PATH
+
+
+      # ==============================
+      # 克隆 RootHide Theos
+      # 不使用 install-theos
+      # 避免 GitHub API SDK 下载失败
+      # ==============================
 
       - name: Install RootHide Theos
-        shell: bash
         run: |
+          rm -rf "$HOME/theos"
 
-          export THEOS="$HOME/theos"
+          git clone --recursive \
+            https://github.com/roothide/theos.git \
+            "$HOME/theos"
 
-          echo "=========================================="
-          echo "Installing RootHide Theos"
-          echo "THEOS=$THEOS"
-          echo "=========================================="
+          echo "RootHide Theos installed."
 
-          if [ ! -d "$THEOS" ]; then
-
-            bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)"
-
-          else
-
-            echo "Theos already exists."
-
-          fi
+          ls -la "$HOME/theos"
 
 
-          # 强制告诉后续 GitHub Actions 步骤 THEOS 在哪里
-          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
-
-
-          echo ""
-          echo "THEOS directory:"
-          echo "$THEOS"
-
-
-          if [ ! -d "$THEOS" ]; then
-            echo "ERROR: Theos installation failed."
-            exit 1
-          fi
-
-
-          ls -lah "$THEOS"
-
-
-      # ==========================================
-      # 4. 安装 iPhoneOS 16.5 SDK
-      # ==========================================
+      # ==============================
+      # 安装 iPhoneOS 16.5 SDK
+      # 手动安装，绕过 GitHub API
+      # ==============================
 
       - name: Install iPhoneOS 16.5 SDK
-        shell: bash
         run: |
 
-          export THEOS="$HOME/theos"
+          mkdir -p "$HOME/theos/sdks"
 
-          echo "=========================================="
-          echo "Installing iPhoneOS 16.5 SDK"
-          echo "THEOS=$THEOS"
-          echo "=========================================="
+          curl -L \
+            --retry 5 \
+            --retry-delay 3 \
+            --fail \
+            "https://github.com/theos/sdks/releases/download/16.5-1/iPhoneOS16.5.sdk.tar.xz" \
+            -o /tmp/iPhoneOS16.5.sdk.tar.xz
 
+          tar -xf \
+            /tmp/iPhoneOS16.5.sdk.tar.xz \
+            -C "$HOME/theos/sdks"
 
-          # 确保 SDK 目录存在
-          mkdir -p "$THEOS/sdks"
-
-
-          # 如果 SDK 已经存在，就不重复下载
-          if [ -d "$THEOS/sdks/iPhoneOS16.5.sdk" ]; then
-
-            echo "iPhoneOS 16.5 SDK already exists."
-            echo "Skipping download."
-
-          else
-
-            echo "Downloading iPhoneOS 16.5 SDK..."
-
-            curl -L \
-              --fail \
-              --retry 3 \
-              "https://github.com/theos/sdks/releases/download/16.5-1/iPhoneOS16.5.sdk.tar.xz" \
-              -o /tmp/iPhoneOS16.5.sdk.tar.xz
-
-
-            echo "Extracting SDK..."
-
-            tar -xf \
-              /tmp/iPhoneOS16.5.sdk.tar.xz \
-              -C "$THEOS/sdks"
-
-          fi
-
-
-          echo ""
           echo "Installed SDKs:"
-          ls -lah "$THEOS/sdks"
+          ls -lh "$HOME/theos/sdks"
 
 
-          # 检查 SDK 是否真的存在
-          if [ ! -d "$THEOS/sdks/iPhoneOS16.5.sdk" ]; then
+      # ==============================
+      # 检查 Theos
+      # ==============================
 
-            echo "ERROR: iPhoneOS16.5.sdk was not found."
-
-            exit 1
-
-          fi
-
-
-          echo ""
-          echo "SDK installation successful."
-
-
-      # ==========================================
-      # 5. 检查 Theos 环境
-      # ==========================================
-
-      - name: Verify Theos environment
-        shell: bash
+      - name: Verify Theos
         run: |
 
-          export THEOS="$HOME/theos"
+          echo "=============================="
+          echo "THEOS"
+          echo "=============================="
 
-          echo "=========================================="
-          echo "Theos environment check"
-          echo "=========================================="
-
-
-          echo "THEOS=$THEOS"
+          echo "$THEOS"
 
           echo ""
-          echo "Theos:"
-          ls -ld "$THEOS"
+          echo "=============================="
+          echo "SDK"
+          echo "=============================="
 
-
-          echo ""
-          echo "SDK:"
-          ls -ld "$THEOS/sdks/iPhoneOS16.5.sdk"
-
+          ls -lh "$THEOS/sdks"
 
           echo ""
-          echo "Theos version:"
-          "$THEOS/bin/nic.pl" --version || true
+          echo "=============================="
+          echo "Clang"
+          echo "=============================="
+
+          "$THEOS/toolchain/linux/iphone/bin/clang" \
+            --version || true
 
 
-          echo ""
-          echo "Architecture:"
-          uname -m
+      # ==============================
+      # 创建输出目录
+      # ==============================
 
-
-      # ==========================================
-      # 6. 创建输出目录
-      # ==========================================
-
-      - name: Prepare build directories
-        shell: bash
+      - name: Prepare build directory
         run: |
 
           rm -rf build
 
           mkdir -p build
 
-          rm -rf packages
 
-          mkdir -p packages
-
-
-      # ==========================================
-      # 7. Build Rootless
-      # ==========================================
+      # ==============================
+      # 编译 Rootless
+      # ==============================
 
       - name: Build Rootless
-        shell: bash
         run: |
-
-          export THEOS="$HOME/theos"
-
-          echo "=========================================="
-          echo "Building Rootless"
-          echo "=========================================="
-
 
           make clean
 
-
-          THEOS="$THEOS" \
           THEOS_PACKAGE_SCHEME=rootless \
-          make package FINALPACKAGE=1
+            make package FINALPACKAGE=1
 
 
-          echo ""
-          echo "Rootless build completed."
-
-
-      # ==========================================
-      # 8. 保存 Rootless DEB
-      # ==========================================
+      # ==============================
+      # 保存 Rootless
+      # ==============================
 
       - name: Copy Rootless package
-        shell: bash
         run: |
-
-          echo "=========================================="
-          echo "Searching Rootless package"
-          echo "=========================================="
-
 
           ROOTLESS_DEB=$(find packages \
             -maxdepth 1 \
@@ -236,81 +147,47 @@ jobs:
             -name "*.deb" \
             | head -n 1)
 
-
           if [ -z "$ROOTLESS_DEB" ]; then
-
-            echo "ERROR: Rootless .deb not found."
-
-            echo ""
-            echo "packages directory:"
-            ls -lah packages
-
+            echo "Rootless .deb not found"
             exit 1
-
           fi
 
-
-          echo "Found:"
+          echo "Rootless package:"
           echo "$ROOTLESS_DEB"
 
-
           cp "$ROOTLESS_DEB" \
-            "build/SBCPUFloating-V1.5.4-rootless.deb"
+            "build/SBCPUFloating-V1.5.5-rootless.deb"
 
 
-          echo ""
-          echo "Rootless package saved."
-
-
-      # ==========================================
-      # 9. 清理 Rootless 构建
-      # ==========================================
+      # ==============================
+      # 清理 Rootless
+      # ==============================
 
       - name: Clean before RootHide
-        shell: bash
         run: |
 
           make clean
 
-          rm -f packages/*.deb
+          rm -rf packages
 
 
-      # ==========================================
-      # 10. Build RootHide
-      # ==========================================
+      # ==============================
+      # 编译 RootHide
+      # ==============================
 
       - name: Build RootHide
-        shell: bash
         run: |
 
-          export THEOS="$HOME/theos"
-
-          echo "=========================================="
-          echo "Building RootHide"
-          echo "=========================================="
-
-
-          THEOS="$THEOS" \
           THEOS_PACKAGE_SCHEME=roothide \
-          make package FINALPACKAGE=1
+            make package FINALPACKAGE=1
 
 
-          echo ""
-          echo "RootHide build completed."
-
-
-      # ==========================================
-      # 11. 保存 RootHide DEB
-      # ==========================================
+      # ==============================
+      # 保存 RootHide
+      # ==============================
 
       - name: Copy RootHide package
-        shell: bash
         run: |
-
-          echo "=========================================="
-          echo "Searching RootHide package"
-          echo "=========================================="
-
 
           ROOTHIDE_DEB=$(find packages \
             -maxdepth 1 \
@@ -318,108 +195,50 @@ jobs:
             -name "*.deb" \
             | head -n 1)
 
-
           if [ -z "$ROOTHIDE_DEB" ]; then
-
-            echo "ERROR: RootHide .deb not found."
-
-            echo ""
-            echo "packages directory:"
-            ls -lah packages
-
+            echo "RootHide .deb not found"
             exit 1
-
           fi
 
-
-          echo "Found:"
+          echo "RootHide package:"
           echo "$ROOTHIDE_DEB"
 
-
           cp "$ROOTHIDE_DEB" \
-            "build/SBCPUFloating-V1.5.4-roothide.deb"
+            "build/SBCPUFloating-V1.5.5-roothide.deb"
 
 
-          echo ""
-          echo "RootHide package saved."
+      # ==============================
+      # 最终检查
+      # ==============================
 
-
-      # ==========================================
-      # 12. 最终检查
-      # ==========================================
-
-      - name: Verify final packages
-        shell: bash
+      - name: Show build results
         run: |
 
           echo ""
-          echo "=========================================="
-          echo "SBCPUFloating V1.5.4"
-          echo "FINAL BUILD RESULTS"
-          echo "=========================================="
-
-
-          ls -lah build/
-
+          echo "========================================"
+          echo " SBCPUFloating V1.5.5"
+          echo "========================================"
 
           echo ""
-          echo "Checking Rootless..."
+          echo "Build directory:"
 
-          if [ ! -f "build/SBCPUFloating-V1.5.4-rootless.deb" ]; then
-
-            echo "ERROR: Rootless package missing."
-
-            exit 1
-
-          fi
-
-
-          echo "Rootless OK."
-
+          ls -lh build/
 
           echo ""
-          echo "Checking RootHide..."
-
-          if [ ! -f "build/SBCPUFloating-V1.5.4-roothide.deb" ]; then
-
-            echo "ERROR: RootHide package missing."
-
-            exit 1
-
-          fi
+          echo "========================================"
+          echo " Build completed successfully!"
+          echo "========================================"
 
 
-          echo "RootHide OK."
-
-
-          echo ""
-          echo "=========================================="
-          echo "SUCCESS"
-          echo "=========================================="
-
-
-          echo ""
-          echo "Generated files:"
-
-
-          ls -lh \
-            build/SBCPUFloating-V1.5.4-rootless.deb \
-            build/SBCPUFloating-V1.5.4-roothide.deb
-
-
-      # ==========================================
-      # 13. 上传两个 DEB
-      # ==========================================
+      # ==============================
+      # 上传两个 DEB
+      # ==============================
 
       - name: Upload DEB packages
         uses: actions/upload-artifact@v4
 
         with:
 
-          name: SBCPUFloating-V1.5.4
+          name: SBCPUFloating-V1.5.5
 
-          path: |
-            build/SBCPUFloating-V1.5.4-rootless.deb
-            build/SBCPUFloating-V1.5.4-roothide.deb
-
-          if-no-files-found: error
+          path: build/*.deb
