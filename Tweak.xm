@@ -1426,20 +1426,16 @@ static void loadSettings()
 {
 
 
-    NSString *process =
-    NSProcessInfo.processName;
+NSString *process =
+[[NSProcessInfo processInfo] arguments][0];
 
 
-
-
-    if(![process
-        isEqualToString:
-        @"SpringBoard"])
-    {
-
-        return;
-
-    }
+if(![process.lastPathComponent
+     isEqualToString:
+     @"SpringBoard"])
+{
+    return;
+}
 
 
 
