@@ -33,13 +33,44 @@ jobs:
   - name: Install SDK
     run: |
 
-      mkdir -p $HOME/theos/sdks
+        mkdir -p $HOME/theos/sdks
 
-      cd $HOME/theos/sdks
 
-      curl -LO https://github.com/theos/sdks/releases/download/15.5/iPhoneOS16.5.sdk.tar.xz
+        cd $HOME/theos/sdks
 
-      tar xf iPhoneOS16.5.sdk.tar.xz
+
+
+        echo "Downloading iPhoneOS SDK..."
+
+
+
+        curl -L \
+        https://github.com/theos/sdks/releases/download/master/iPhoneOS16.5.sdk.tar.xz \
+        -o iPhoneOS16.5.sdk.tar.xz
+
+
+
+        echo "Checking downloaded file..."
+
+
+
+        file iPhoneOS16.5.sdk.tar.xz
+
+
+
+        echo "Extracting SDK..."
+
+
+
+        tar -xf iPhoneOS16.5.sdk.tar.xz
+
+
+
+        echo "SDK installed"
+
+
+
+        ls -la
 
 
 
