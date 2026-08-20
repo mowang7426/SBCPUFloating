@@ -722,8 +722,7 @@ return;
 
 
 
-    NSUserDefaults *def =
-    [NSUserDefaults standardUserDefaults];
+    
 
 
 
