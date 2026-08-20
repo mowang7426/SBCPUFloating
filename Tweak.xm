@@ -2,12 +2,11 @@
 #import <mach/mach.h>
 
 
-static NSString *posXKey = @"SBCPUFloating_X";
-static NSString *posYKey = @"SBCPUFloating_Y";
+static UILabel *label;
 
 
 
-#pragma mark - 获取 SpringBoard CPU
+#pragma mark - Real SpringBoard CPU
 
 
 static double getCPUUsage()
@@ -32,17 +31,20 @@ static double getCPUUsage()
 
 
 
-    double totalCPU = 0;
+    double total = 0;
 
 
 
-    for(int i=0;i<threadCount;i++)
+    for(int i = 0; i < threadCount; i++)
     {
+
 
         thread_info_data_t info;
 
+
         mach_msg_type_number_t count =
         THREAD_INFO_MAX;
+
 
 
         kr =
@@ -54,22 +56,28 @@ static double getCPUUsage()
         );
 
 
+
         if(kr == KERN_SUCCESS)
         {
+
 
             thread_basic_info_t basic =
             (thread_basic_info_t)info;
 
 
+
             if(!(basic->flags & TH_FLAGS_IDLE))
             {
 
-                totalCPU +=
-                basic->cpu_usage /
-                (double)TH_USAGE_SCALE *
+
+                total +=
+                (double)basic->cpu_usage /
+                TH_USAGE_SCALE *
                 100.0;
 
+
             }
+
 
         }
 
@@ -81,29 +89,72 @@ static double getCPUUsage()
     vm_deallocate(
         mach_task_self(),
         (vm_address_t)threads,
-        threadCount * sizeof(thread_t)
+        threadCount*sizeof(thread_t)
     );
 
 
 
-    return totalCPU;
+    return total;
 
 }
 
 
 
 
-#pragma mark - 拖动Label
+
+
+static void updateCPU()
+{
+
+
+    double cpu =
+    getCPUUsage();
+
+
+
+    dispatch_async(
+    dispatch_get_main_queue(),
+    ^{
+
+
+        label.text =
+        [NSString stringWithFormat:
+        @"SB CPU\n%.1f%%",
+        cpu];
+
+
+
+        if(cpu >= 80)
+        {
+
+            label.textColor =
+            UIColor.redColor;
+
+        }
+        else
+        {
+
+            label.textColor =
+            UIColor.whiteColor;
+
+        }
+
+
+    });
+
+}
+
+
+
+
+#pragma mark - Drag Label
 
 
 @interface SBCPUFloatingLabel : UILabel
 
-@property(nonatomic,assign)
-CGPoint lastPoint;
+@property(nonatomic,assign) CGPoint lastPoint;
 
 @end
-
-
 
 
 
@@ -112,7 +163,7 @@ CGPoint lastPoint;
 
 
 -(void)touchesBegan:(NSSet<UITouch *> *)touches
-          withEvent:(UIEvent *)event
+withEvent:(UIEvent *)event
 {
 
     UITouch *touch =
@@ -122,13 +173,14 @@ CGPoint lastPoint;
     self.lastPoint =
     [touch locationInView:self.superview];
 
+
 }
 
 
 
 
 -(void)touchesMoved:(NSSet<UITouch *> *)touches
-          withEvent:(UIEvent *)event
+withEvent:(UIEvent *)event
 {
 
     UITouch *touch =
@@ -159,7 +211,8 @@ CGPoint lastPoint;
 
 
 
-    CGSize screen =
+
+    CGSize size =
     UIScreen.mainScreen.bounds.size;
 
 
@@ -173,108 +226,36 @@ CGPoint lastPoint;
 
 
 
-    // 防止左右出去
-
     if(center.x < halfW)
         center.x = halfW;
 
 
-    if(center.x > screen.width-halfW)
-        center.x = screen.width-halfW;
+    if(center.x > size.width-halfW)
+        center.x = size.width-halfW;
 
 
 
-    // 防止上下出去
 
-    if(center.y < halfH+50)
-        center.y = halfH+50;
+    if(center.y < halfH+40)
+        center.y = halfH+40;
 
 
-    if(center.y > screen.height-halfH)
-        center.y = screen.height-halfH;
+    if(center.y > size.height-halfH)
+        center.y = size.height-halfH;
 
 
 
     self.center = center;
 
 
-
     self.lastPoint = now;
 
 
-
-    NSUserDefaults *def =
-    [NSUserDefaults standardUserDefaults];
-
-
-    [def setFloat:center.x
-          forKey:posXKey];
-
-
-    [def setFloat:center.y
-          forKey:posYKey];
-
-
 }
+
+
 
 @end
-
-
-
-
-
-
-
-
-static SBCPUFloatingLabel *label;
-
-
-
-#pragma mark - 更新显示
-
-
-static void updateCPU()
-{
-
-
-    double cpu =
-    getCPUUsage();
-
-
-
-    dispatch_async(
-    dispatch_get_main_queue(),
-    ^{
-
-
-        label.text =
-        [NSString stringWithFormat:
-         @"SB CPU\n%.1f%%",
-         cpu];
-
-
-
-        if(cpu >= 80)
-        {
-
-            label.textColor =
-            UIColor.redColor;
-
-        }
-        else
-        {
-
-            label.textColor =
-            UIColor.whiteColor;
-
-        }
-
-
-
-    });
-
-
-}
 
 
 
@@ -287,11 +268,12 @@ static void updateCPU()
 {
 
 
-NSString *process =
+NSString *processName =
 [[NSProcessInfo processInfo] processName];
 
 
-if(![process isEqualToString:@"SpringBoard"])
+
+if(![processName isEqualToString:@"SpringBoard"])
 {
     return;
 }
@@ -321,18 +303,19 @@ UIApplication.sharedApplication.connectedScenes)
     {
 
 
-        UIWindowScene *ws =
+        UIWindowScene *windowScene =
         (UIWindowScene *)scene;
 
 
 
-        for(UIWindow *w in ws.windows)
+        for(UIWindow *w in windowScene.windows)
         {
+
 
             if(w.isKeyWindow)
             {
 
-                window=w;
+                window = w;
                 break;
 
             }
@@ -341,6 +324,7 @@ UIApplication.sharedApplication.connectedScenes)
 
 
     }
+
 
 
     if(window)
@@ -363,44 +347,14 @@ if(!window)
 
 label =
 [[SBCPUFloatingLabel alloc]
- initWithFrame:
- CGRectMake(30,200,110,55)];
-
-
-
-
-
-NSUserDefaults *def =
-[NSUserDefaults standardUserDefaults];
-
-
-
-float x =
-[def floatForKey:posXKey];
-
-
-float y =
-[def floatForKey:posYKey];
-
-
-
-if(x>0 && y>0)
-{
-
-    label.center =
-    CGPointMake(x,y);
-
-}
-
-
-
-
+initWithFrame:
+CGRectMake(30,200,100,50)];
 
 
 
 label.backgroundColor =
 [[UIColor blackColor]
- colorWithAlphaComponent:0.75];
+colorWithAlphaComponent:0.7];
 
 
 
@@ -408,9 +362,13 @@ label.textAlignment =
 NSTextAlignmentCenter;
 
 
-
 label.numberOfLines = 2;
 
+
+label.layer.cornerRadius = 12;
+
+
+label.clipsToBounds = YES;
 
 
 label.textColor =
@@ -420,15 +378,7 @@ UIColor.whiteColor;
 
 label.font =
 [UIFont monospacedDigitSystemFontOfSize:14
-                                weight:UIFontWeightBold];
-
-
-
-label.layer.cornerRadius = 12;
-
-
-
-label.clipsToBounds = YES;
+weight:UIFontWeightBold];
 
 
 
@@ -443,13 +393,11 @@ label.userInteractionEnabled = YES;
 
 
 [NSTimer scheduledTimerWithTimeInterval:1
-                                 repeats:YES
-                                   block:
-^(NSTimer *timer)
+repeats:YES
+block:^(NSTimer *timer)
 {
 
     updateCPU();
-
 
 }];
 
