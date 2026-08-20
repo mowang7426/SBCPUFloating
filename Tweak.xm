@@ -62,8 +62,26 @@ dispatch_get_main_queue(),
 
 
 
-UIWindow *window =
-UIApplication.sharedApplication.keyWindow;
+UIWindow *window = nil;
+
+for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+
+    if (scene.activationState == UISceneActivationStateForegroundActive) {
+
+        UIWindowScene *windowScene = (UIWindowScene *)scene;
+
+        for (UIWindow *w in windowScene.windows) {
+
+            if (w.isKeyWindow) {
+                window = w;
+                break;
+            }
+
+        }
+    }
+
+    if (window) break;
+}
 
 
 
