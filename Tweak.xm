@@ -1,8 +1,8 @@
 #import <UIKit/UIKit.h>
 
 
+static UIWindow *cpuWindow;
 static UILabel *label;
-static UIView *dragView;
 
 
 
@@ -14,7 +14,6 @@ static void updateCPU()
 
 
     dispatch_async(dispatch_get_main_queue(), ^{
-
 
         label.text =
         [NSString stringWithFormat:
@@ -42,6 +41,35 @@ static void updateCPU()
 
 
 
+@interface SBCPUWindow : UIWindow
+@end
+
+
+@implementation SBCPUWindow
+
+
+- (UIView *)hitTest:(CGPoint)point
+          withEvent:(UIEvent *)event
+{
+
+    UIView *view =
+    [super hitTest:point
+         withEvent:event];
+
+
+    return view;
+
+}
+
+
+@end
+
+
+
+
+
+
+
 @interface SBCPUDragView : UIView
 
 @property(nonatomic,assign) CGPoint lastPoint;
@@ -51,13 +79,11 @@ static void updateCPU()
 
 
 
-
 @implementation SBCPUDragView
 
 
-
 - (void)touchesBegan:(NSSet *)touches
-withEvent:(UIEvent *)event
+           withEvent:(UIEvent *)event
 {
 
     UITouch *touch =
@@ -67,15 +93,16 @@ withEvent:(UIEvent *)event
     self.lastPoint =
     [touch locationInView:self.superview];
 
-
 }
 
 
 
 
+
 - (void)touchesMoved:(NSSet *)touches
-withEvent:(UIEvent *)event
+           withEvent:(UIEvent *)event
 {
+
 
     UITouch *touch =
     [touches anyObject];
@@ -105,6 +132,7 @@ withEvent:(UIEvent *)event
 
 
 
+
     CGSize size =
     UIScreen.mainScreen.bounds.size;
 
@@ -120,8 +148,6 @@ withEvent:(UIEvent *)event
 
 
 
-    // 左右限制
-
     if(center.x < halfW)
         center.x = halfW;
 
@@ -130,9 +156,6 @@ withEvent:(UIEvent *)event
         center.x = size.width-halfW;
 
 
-
-
-    // 上下限制
 
     if(center.y < halfH+40)
         center.y = halfH+40;
@@ -150,11 +173,10 @@ withEvent:(UIEvent *)event
     self.center=center;
 
 
+
     self.lastPoint=now;
 
-
 }
-
 
 
 @end
@@ -171,7 +193,6 @@ withEvent:(UIEvent *)event
 
 NSString *processName =
 [[NSProcessInfo processInfo] processName];
-
 
 
 if(![processName isEqualToString:@"SpringBoard"])
@@ -191,7 +212,12 @@ dispatch_get_main_queue(),
 
 
 
-UIWindow *window=nil;
+cpuWindow =
+[[SBCPUWindow alloc]
+initWithFrame:
+UIScreen.mainScreen.bounds];
+
+
 
 
 
@@ -199,35 +225,38 @@ for(UIScene *scene in
 UIApplication.sharedApplication.connectedScenes)
 {
 
-
-    if(scene.activationState ==
-       UISceneActivationStateForegroundActive)
+    if([scene isKindOfClass:UIWindowScene.class])
     {
 
-
-        UIWindowScene *windowScene =
+        cpuWindow.windowScene =
         (UIWindowScene *)scene;
 
-
-
-        for(UIWindow *w in windowScene.windows)
-        {
-
-            if(w.isKeyWindow)
-            {
-                window=w;
-                break;
-            }
-
-        }
-
+        break;
     }
 
-
-    if(window)
-        break;
-
 }
+
+
+
+
+
+cpuWindow.windowLevel =
+UIWindowLevelAlert + 1;
+
+
+
+cpuWindow.backgroundColor =
+UIColor.clearColor;
+
+
+
+cpuWindow.rootViewController =
+[UIViewController new];
+
+
+
+cpuWindow.hidden = NO;
+
 
 
 
@@ -270,37 +299,33 @@ UIColor.whiteColor;
 
 
 
-label.userInteractionEnabled=YES;
 
 
-
-
-
-// 创建透明拖动层
-
-dragView =
+SBCPUDragView *drag =
 [[SBCPUDragView alloc]
-initWithFrame:label.frame];
+initWithFrame:
+label.frame];
 
 
 
-dragView.backgroundColor =
+drag.backgroundColor =
 UIColor.clearColor;
 
 
 
-dragView.userInteractionEnabled =
-YES;
+drag.userInteractionEnabled=YES;
 
 
 
+[cpuWindow.rootViewController.view
+ addSubview:label];
 
 
-[window addSubview:label];
+
+[cpuWindow.rootViewController.view
+ addSubview:drag];
 
 
-
-[window addSubview:dragView];
 
 
 
