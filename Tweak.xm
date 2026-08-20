@@ -4,12 +4,18 @@
 #import <signal.h>
 
 
-#pragma mark - SBCPUFloating V1.5.8
+
+#pragma mark - SBCPUFloating V1.5.8 FIX
+
 
 
 static UIWindow *cpuWindow;
 
+
 static UILabel *label;
+
+
+static UIView *dragView;
 
 
 
@@ -25,11 +31,15 @@ static BOOL settingsShowing = NO;
 
 static BOOL autoLogoutEnable = NO;
 
+
 static double logoutCPUThreshold = 100.0;
+
 
 static NSInteger logoutDuration = 60;
 
+
 static NSDate *cpuHighStartTime = nil;
+
 
 static BOOL logoutCounting = NO;
 
@@ -40,11 +50,12 @@ static BOOL logoutCounting = NO;
 
 static BOOL floatingAlphaEnable = YES;
 
+
 static CGFloat floatingAlpha = 0.7f;
 
 
 
-#pragma mark - 横竖屏
+#pragma mark - 横竖屏状态
 
 
 static BOOL landscapeMode = NO;
@@ -56,22 +67,83 @@ static BOOL landscapeMode = NO;
 
 static void openSettings(void);
 
+
 static void updateOrientation(void);
 
-static void updateFloatingText(void);
+
+static void updateFloatingText(double cpu);
+
+
+
+#pragma mark - 获取当前 UIWindowScene
+
+
+static UIWindowScene *getCurrentWindowScene()
+{
+
+    UIApplication *app =
+    UIApplication.sharedApplication;
+
+
+
+    for(UIScene *scene in
+        app.connectedScenes)
+    {
+
+
+        if([scene
+            isKindOfClass:
+            UIWindowScene.class])
+        {
+
+            UIWindowScene *windowScene =
+            (UIWindowScene *)scene;
+
+
+
+            if(windowScene.activationState !=
+               UISceneActivationStateUnattached)
+            {
+
+                return windowScene;
+
+            }
+
+        }
+
+    }
+
+
+
+    return nil;
+
+}
 
 
 
 
-#pragma mark - 获取当前方向
+
+#pragma mark - 判断横屏
 
 
 static BOOL isLandscape()
 {
 
+    UIWindowScene *scene =
+    getCurrentWindowScene();
+
+
+
+    if(!scene)
+    {
+        return NO;
+    }
+
+
+
     UIInterfaceOrientation orientation =
-    UIApplication.sharedApplication
-    .windows.firstObject.windowScene.interfaceOrientation;
+    scene.interfaceOrientation;
+
 
 
     return
@@ -86,6 +158,7 @@ static BOOL isLandscape()
 
 
 
+
 #pragma mark - 获取电量
 
 
@@ -96,7 +169,10 @@ static NSInteger getBatteryLevel()
     UIDevice.currentDevice;
 
 
-    device.batteryMonitoringEnabled = YES;
+
+    device.batteryMonitoringEnabled =
+    YES;
+
 
 
     float level =
@@ -110,11 +186,20 @@ static NSInteger getBatteryLevel()
     }
 
 
+
     return
-    (NSInteger)(level*100);
+    (NSInteger)(level * 100);
 
 }
-#pragma mark - CPU 获取
+
+
+
+
+
+
+
+#pragma mark - 获取 SpringBoard CPU
+
 
 
 static double getCPUUsage()
@@ -122,7 +207,10 @@ static double getCPUUsage()
 
     thread_array_t threads;
 
-    mach_msg_type_number_t count = 0;
+
+    mach_msg_type_number_t count =
+    0;
+
 
 
     kern_return_t kr =
@@ -133,6 +221,7 @@ static double getCPUUsage()
     );
 
 
+
     if(kr != KERN_SUCCESS)
     {
         return 0;
@@ -140,12 +229,17 @@ static double getCPUUsage()
 
 
 
+
+
     double total = 0;
 
 
 
-    for(int i=0;i<count;i++)
+    for(int i = 0;
+        i < count;
+        i++)
     {
+
 
         thread_info_data_t info;
 
@@ -168,6 +262,7 @@ static double getCPUUsage()
         if(kr == KERN_SUCCESS)
         {
 
+
             thread_basic_info_t basic =
             (thread_basic_info_t)info;
 
@@ -177,17 +272,21 @@ static double getCPUUsage()
                  TH_FLAGS_IDLE))
             {
 
+
                 total +=
                 ((double)basic->cpu_usage /
                  TH_USAGE_SCALE)
-                 *
-                 100.0;
+                *
+                100.0;
+
 
             }
 
         }
 
     }
+
+
 
 
 
@@ -199,6 +298,7 @@ static double getCPUUsage()
 
 
 
+
     return total;
 
 }
@@ -207,7 +307,10 @@ static double getCPUUsage()
 
 
 
-#pragma mark - 更新透明度
+
+
+#pragma mark - 应用透明度
+
 
 
 static void applyFloatingAlpha()
@@ -237,223 +340,47 @@ static void applyFloatingAlpha()
 
             }
 
-
         });
 
 }
+#pragma mark - Root Controller 支持旋转
+
+
+@interface SBCPURootController : UIViewController
+
+@end
 
 
 
+@implementation SBCPURootController
 
 
-#pragma mark - 横竖屏更新
-
-
-static void updateOrientation()
+- (BOOL)shouldAutorotate
 {
-
-    dispatch_async(
-        dispatch_get_main_queue(),
-        ^{
-
-
-            if(!label)
-                return;
-
-
-
-            BOOL nowLandscape =
-            isLandscape();
-
-
-
-            if(nowLandscape ==
-               landscapeMode)
-            {
-                return;
-            }
-
-
-
-            landscapeMode =
-            nowLandscape;
-
-
-
-            if(landscapeMode)
-            {
-
-                /*
-                 横屏
-                 */
-
-                label.frame =
-                CGRectMake(
-                    30,
-                    120,
-                    180,
-                    50
-                );
-
-
-
-                label.font =
-                [
-                 UIFont
-                 monospacedDigitSystemFontOfSize:
-                 16
-                 weight:
-                 UIFontWeightBold
-                ];
-
-
-
-            }
-            else
-            {
-
-                /*
-                 竖屏
-                 */
-
-                label.frame =
-                CGRectMake(
-                    30,
-                    200,
-                    100,
-                    50
-                );
-
-
-
-                label.font =
-                [
-                 UIFont
-                 monospacedDigitSystemFontOfSize:
-                 14
-                 weight:
-                 UIFontWeightBold
-                ];
-
-
-            }
-
-
-
-            updateFloatingText();
-
-
-        });
-
+    return YES;
 }
 
 
 
-
-
-#pragma mark - 更新悬浮文字
-
-
-static void updateFloatingText()
+- (UIInterfaceOrientationMask)
+supportedInterfaceOrientations
 {
 
-    if(!label)
-        return;
-
-
-
-    double cpu =
-    getCPUUsage();
-
-
-
-
-    if(landscapeMode)
-    {
-
-        NSInteger battery =
-        getBatteryLevel();
-
-
-
-        label.text =
-        [
-         NSString
-         stringWithFormat:
-         @"SB CPU %.1f%%\n🔋 %ld%%",
-         cpu,
-         (long)battery
-        ];
-
-    }
-    else
-    {
-
-        label.text =
-        [
-         NSString
-         stringWithFormat:
-         @"SB CPU\n%.1f%%",
-         cpu
-        ];
-
-    }
-
-
-
-
-    if(cpu >= 80)
-    {
-
-        label.textColor =
-        UIColor.redColor;
-
-    }
-    else
-    {
-
-        label.textColor =
-        UIColor.whiteColor;
-
-    }
+    return UIInterfaceOrientationMaskAll;
 
 }
 
 
+@end
 
 
 
-#pragma mark - 监听旋转
 
 
-static void registerOrientationObserver()
-{
-
-    [[NSNotificationCenter defaultCenter]
-     addObserverForName:
-     UIDeviceOrientationDidChangeNotification
-     object:nil
-     queue:
-     [NSOperationQueue mainQueue]
-     usingBlock:
-     ^(NSNotification *n)
-     {
-
-        updateOrientation();
-
-     }];
 
 
-    UIDevice *device =
-    UIDevice.currentDevice;
+#pragma mark - 拖动层
 
-
-    device
-    .batteryMonitoringEnabled = YES;
-
-
-}
-#pragma mark - 拖动层 V1.5.8
 
 
 @interface SBCPUDragView : UIView
@@ -461,7 +388,10 @@ static void registerOrientationObserver()
 @property(nonatomic,assign)
 CGPoint lastPoint;
 
+
 @end
+
+
 
 
 
@@ -477,11 +407,14 @@ CGPoint lastPoint;
     touches.anyObject;
 
 
+
     self.lastPoint =
     [touch locationInView:
      self.superview];
 
+
 }
+
 
 
 
@@ -490,7 +423,6 @@ CGPoint lastPoint;
 - (void)touchesMoved:(NSSet *)touches
            withEvent:(UIEvent *)event
 {
-
 
     UITouch *touch =
     touches.anyObject;
@@ -515,6 +447,7 @@ CGPoint lastPoint;
 
 
 
+
     CGPoint center =
     label.center;
 
@@ -527,21 +460,8 @@ CGPoint lastPoint;
 
 
 
-
-    /*
-     V1.5.8
-
-     使用 Window 实际大小
-
-     不再使用 UIScreen
-
-     修复横屏游戏拖动
-     */
-
-
     CGSize size =
     cpuWindow.bounds.size;
-
 
 
 
@@ -552,7 +472,6 @@ CGPoint lastPoint;
 
     CGFloat halfH =
     label.bounds.size.height / 2;
-
 
 
 
@@ -593,6 +512,7 @@ CGPoint lastPoint;
 
 
 
+
     label.center =
     center;
 
@@ -611,6 +531,7 @@ CGPoint lastPoint;
 
 
 
+
 @end
 
 
@@ -622,39 +543,18 @@ CGPoint lastPoint;
 #pragma mark - Window
 
 
+
 @interface SBCPUWindow : UIWindow
 
 @end
 
 
 
+
+
 @implementation SBCPUWindow
 
 
-
-/*
- V1.5.8
-
- 允许旋转
-
- */
-
-- (BOOL)shouldAutorotate
-{
-    return YES;
-}
-
-
-
-- (UIInterfaceOrientationMask)
-supportedInterfaceOrientations
-{
-
-    return UIInterfaceOrientationMaskAll;
-
-}
-
-
 @end
 
 
@@ -663,27 +563,208 @@ supportedInterfaceOrientations
 
 
 
-#pragma mark - 双击
-
-
-@interface SBCPUAction : NSObject
-
-@end
 
 
 
-@implementation SBCPUAction
+#pragma mark - 更新横竖屏布局
 
 
-+ (void)doubleTapAction
+
+static void updateOrientation()
 {
 
-    openSettings();
+    dispatch_async(
+        dispatch_get_main_queue(),
+        ^{
+
+
+            if(!label)
+                return;
+
+
+
+
+            BOOL nowLandscape =
+            isLandscape();
+
+
+
+
+
+            landscapeMode =
+            nowLandscape;
+
+
+
+
+
+            if(nowLandscape)
+            {
+
+
+                /*
+                 横屏模式
+
+                 显示 CPU + 电量
+
+                 */
+
+
+                label.frame =
+                CGRectMake(
+                    40,
+                    120,
+                    170,
+                    60
+                );
+
+
+
+                label.font =
+                [
+                 UIFont
+                 monospacedDigitSystemFontOfSize:
+                 16
+                 weight:
+                 UIFontWeightBold
+                ];
+
+
+
+            }
+            else
+            {
+
+
+                /*
+                 竖屏模式
+
+                 只显示 CPU
+
+                 */
+
+
+                label.frame =
+                CGRectMake(
+                    30,
+                    200,
+                    100,
+                    50
+                );
+
+
+
+                label.font =
+                [
+                 UIFont
+                 monospacedDigitSystemFontOfSize:
+                 14
+                 weight:
+                 UIFontWeightBold
+                ];
+
+
+            }
+
+
+
+
+
+            if(dragView)
+            {
+
+                dragView.frame =
+                label.frame;
+
+            }
+
+
+
+
+        });
 
 }
 
 
-@end
+
+
+
+
+
+
+#pragma mark - 更新文字
+
+
+
+static void updateFloatingText(double cpu)
+{
+
+    if(!label)
+        return;
+
+
+
+
+    if(landscapeMode)
+    {
+
+
+        NSInteger battery =
+        getBatteryLevel();
+
+
+
+
+        label.text =
+        [
+         NSString
+         stringWithFormat:
+         @"SB CPU\n%.1f%%\nBAT %ld%%",
+         cpu,
+         (long)battery
+        ];
+
+
+    }
+    else
+    {
+
+
+        label.text =
+        [
+         NSString
+         stringWithFormat:
+         @"SB CPU\n%.1f%%",
+         cpu
+        ];
+
+
+    }
+
+
+
+
+
+
+    if(cpu >= 80)
+    {
+
+        label.textColor =
+        UIColor.redColor;
+
+    }
+    else
+    {
+
+        label.textColor =
+        UIColor.whiteColor;
+
+    }
+
+
+}
+
+
 
 
 
@@ -694,35 +775,35 @@ supportedInterfaceOrientations
 #pragma mark - 创建悬浮窗
 
 
+
 static void createCPUWindow()
 {
+
+
+    CGRect frame =
+    UIScreen.mainScreen.bounds;
+
+
 
     cpuWindow =
     [[SBCPUWindow alloc]
      initWithFrame:
-     UIScreen.mainScreen.bounds];
+     frame];
 
 
 
 
 
-    for(UIScene *scene in
-        UIApplication.sharedApplication.connectedScenes)
+    UIWindowScene *scene =
+    getCurrentWindowScene();
+
+
+
+    if(scene)
     {
 
-
-        if([scene
-            isKindOfClass:
-            UIWindowScene.class])
-        {
-
-            cpuWindow.windowScene =
-            (UIWindowScene *)scene;
-
-
-            break;
-
-        }
+        cpuWindow.windowScene =
+        scene;
 
     }
 
@@ -730,15 +811,6 @@ static void createCPUWindow()
 
 
 
-
-    /*
-     V1.5.8
-
-     保持显示
-
-     但是不抢触摸
-
-     */
 
     cpuWindow.windowLevel =
     UIWindowLevelAlert + 1;
@@ -751,12 +823,15 @@ static void createCPUWindow()
 
 
     cpuWindow.rootViewController =
-    [UIViewController new];
+    [SBCPURootController new];
 
 
 
     cpuWindow.hidden =
     NO;
+
+
+
 
 
 
@@ -791,7 +866,7 @@ static void createCPUWindow()
 
 
     label.numberOfLines =
-    2;
+    3;
 
 
 
@@ -828,27 +903,23 @@ static void createCPUWindow()
 
 
 
-    /*
-     拖动透明层
-     */
 
-
-    SBCPUDragView *drag =
-    [
-     [SBCPUDragView alloc]
+    dragView =
+    [[SBCPUDragView alloc]
      initWithFrame:
-     label.frame
-    ];
+     label.frame];
 
 
 
-    drag.backgroundColor =
+    dragView.backgroundColor =
     UIColor.clearColor;
 
 
 
-    drag.userInteractionEnabled =
+    dragView.userInteractionEnabled =
     YES;
+
+
 
 
 
@@ -860,37 +931,28 @@ static void createCPUWindow()
 
 
     [cpuWindow.rootViewController.view
-     addSubview:drag];
+     addSubview:dragView];
 
 
 
 
 
-
-    /*
-     双击打开设置
-
-     */
-
-    UITapGestureRecognizer *doubleTap =
-    [
-     [UITapGestureRecognizer alloc]
+    UITapGestureRecognizer *tap =
+    [[UITapGestureRecognizer alloc]
      initWithTarget:
      [SBCPUAction class]
      action:
-     @selector(doubleTapAction)
-    ];
+     @selector(doubleTapAction)];
 
 
 
-    doubleTap.numberOfTapsRequired =
+    tap.numberOfTapsRequired =
     2;
 
 
 
-    [drag addGestureRecognizer:
-     doubleTap];
-
+    [dragView addGestureRecognizer:
+     tap];
 
 
 
@@ -900,25 +962,130 @@ static void createCPUWindow()
 
 
 
-    /*
-     注册旋转监听
-
-     */
-
-    registerOrientationObserver();
-
-
-
-    /*
-     初始化方向
-
-     */
-
     updateOrientation();
 
 
 }
+#pragma mark - 双击事件
+
+
+@interface SBCPUAction : NSObject
+
+@end
+
+
+
+@implementation SBCPUAction
+
+
++ (void)doubleTapAction
+{
+
+    openSettings();
+
+}
+
+
+@end
+
+
+
+
+
+
+
+
+#pragma mark - 打开设置
+
+
+static void openSettings()
+{
+
+    if(settingsShowing)
+    {
+        return;
+    }
+
+
+
+    if(!cpuWindow)
+    {
+        return;
+    }
+
+
+
+    settingsShowing = YES;
+
+
+
+
+
+    UIViewController *root =
+    cpuWindow.rootViewController;
+
+
+
+    if(!root)
+    {
+        settingsShowing = NO;
+        return;
+    }
+
+
+
+
+
+
+    UITableViewController *vc =
+    [[UITableViewController alloc]
+     initWithStyle:
+     UITableViewStyleInsetGrouped];
+
+
+
+    vc.title =
+    @"SBCPUFloating";
+
+
+
+
+
+    UINavigationController *nav =
+    [[UINavigationController alloc]
+     initWithRootViewController:
+     vc];
+
+
+
+    nav.modalPresentationStyle =
+    UIModalPresentationPageSheet;
+
+
+
+
+
+
+    [root
+     presentViewController:
+     nav
+     animated:YES
+     completion:nil];
+
+
+
+}
+
+
+
+
+
+
+
+
+
 #pragma mark - 自动注销检测
+
 
 
 static void checkHighCPU(double cpu)
@@ -954,18 +1121,15 @@ static void checkHighCPU(double cpu)
 
 
 
-
-    if(cpuHighStartTime == nil)
+    if(!cpuHighStartTime)
     {
 
         cpuHighStartTime =
         [NSDate date];
 
-
         return;
 
     }
-
 
 
 
@@ -986,6 +1150,7 @@ static void checkHighCPU(double cpu)
     if(time >= logoutDuration &&
        !logoutCounting)
     {
+
 
         logoutCounting = YES;
 
@@ -1022,7 +1187,7 @@ static void checkHighCPU(double cpu)
                   style:
                   UIAlertActionStyleCancel
                   handler:
-                  ^(UIAlertAction *a)
+                  ^(UIAlertAction *action)
                   {
 
                     logoutCounting = NO;
@@ -1045,17 +1210,11 @@ static void checkHighCPU(double cpu)
 
 
 
-
-                if(root)
-                {
-
-                    [root
-                     presentViewController:
-                     alert
-                     animated:YES
-                     completion:nil];
-
-                }
+                [root
+                 presentViewController:
+                 alert
+                 animated:YES
+                 completion:nil];
 
 
 
@@ -1070,6 +1229,7 @@ static void checkHighCPU(double cpu)
                     dispatch_get_main_queue(),
                     ^{
 
+
                         if(logoutCounting)
                         {
 
@@ -1080,7 +1240,9 @@ static void checkHighCPU(double cpu)
 
                         }
 
+
                     });
+
 
 
             });
@@ -1099,7 +1261,9 @@ static void checkHighCPU(double cpu)
 
 
 
+
 #pragma mark - CPU刷新
+
 
 
 static void updateCPU()
@@ -1127,14 +1291,11 @@ static void updateCPU()
 
 
 
-            /*
-             V1.5.8
+            updateOrientation();
 
-             根据当前方向显示
 
-             */
 
-            updateFloatingText();
+            updateFloatingText(cpu);
 
 
 
@@ -1151,11 +1312,54 @@ static void updateCPU()
 
 
 
-#pragma mark - 设置加载
+#pragma mark - 监听旋转
+
+
+
+static void registerRotation()
+{
+
+
+    [[NSNotificationCenter defaultCenter]
+     addObserverForName:
+     UIDeviceOrientationDidChangeNotification
+     object:nil
+     queue:
+     [NSOperationQueue mainQueue]
+     usingBlock:
+     ^(NSNotification *note)
+     {
+
+
+        updateOrientation();
+
+
+     }];
+
+
+
+
+    UIDevice.currentDevice
+    .batteryMonitoringEnabled = YES;
+
+
+}
+
+
+
+
+
+
+
+
+
+#pragma mark - 加载配置
+
 
 
 static void loadSettings()
 {
+
 
     NSUserDefaults *def =
     NSUserDefaults.standardUserDefaults;
@@ -1163,9 +1367,11 @@ static void loadSettings()
 
 
 
+
     autoLogoutEnable =
     [def boolForKey:
      @"SBCPU.AutoLogout"];
+
 
 
 
@@ -1198,6 +1404,7 @@ static void loadSettings()
 
 
 
+
     if(time >= 10)
     {
 
@@ -1211,16 +1418,18 @@ static void loadSettings()
 
 
 
+
     if([def objectForKey:
         @"SBCPU.FloatingAlphaEnable"])
     {
+
 
         floatingAlphaEnable =
         [def boolForKey:
          @"SBCPU.FloatingAlphaEnable"];
 
-    }
 
+    }
 
 
 
@@ -1234,15 +1443,15 @@ static void loadSettings()
 
 
 
-
-    if(alpha>=0.2 &&
-       alpha<=1.0)
+    if(alpha >= 0.2 &&
+       alpha <= 1.0)
     {
 
         floatingAlpha =
         alpha;
 
     }
+
 
 }
 
@@ -1257,6 +1466,7 @@ static void loadSettings()
 #pragma mark - 初始化
 
 
+
 %ctor
 {
 
@@ -1266,15 +1476,11 @@ static void loadSettings()
 
 
 
-
-
     if(![process
-         isEqualToString:
-         @"SpringBoard"])
+        isEqualToString:
+        @"SpringBoard"])
     {
-
         return;
-
     }
 
 
@@ -1289,6 +1495,13 @@ static void loadSettings()
 
 
 
+    UIDevice.currentDevice
+    .batteryMonitoringEnabled = YES;
+
+
+
+
+
 
     dispatch_after(
         dispatch_time(
@@ -1298,9 +1511,13 @@ static void loadSettings()
         ^{
 
 
-
-
             createCPUWindow();
+
+
+
+
+            registerRotation();
+
 
 
 
@@ -1323,5 +1540,6 @@ static void loadSettings()
 
 
         });
+
 
 }
