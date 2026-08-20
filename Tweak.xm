@@ -1,13 +1,7 @@
 #import <UIKit/UIKit.h>
 
 
-static NSString *posXKey = @"SBCPUFloating_X";
-static NSString *posYKey = @"SBCPUFloating_Y";
-
-
-static UIWindow *floatWindow;
 static UILabel *label;
-
 
 
 static void updateCPU()
@@ -37,6 +31,7 @@ static void updateCPU()
             UIColor.whiteColor;
         }
 
+
     });
 
 }
@@ -45,7 +40,7 @@ static void updateCPU()
 
 
 
-@interface SBCPUFloatingView : UILabel
+@interface SBCPUFloatingLabel : UILabel
 
 @property(nonatomic,assign) CGPoint lastPoint;
 
@@ -53,12 +48,12 @@ static void updateCPU()
 
 
 
-@implementation SBCPUFloatingView
+@implementation SBCPUFloatingLabel
 
 
 
-- (void)touchesBegan:(NSSet *)touches
-withEvent:(UIEvent *)event
+- (void)touchesBegan:(NSSet<UITouch *> *)touches
+           withEvent:(UIEvent *)event
 {
 
     UITouch *touch =
@@ -68,14 +63,15 @@ withEvent:(UIEvent *)event
     self.lastPoint =
     [touch locationInView:self.superview];
 
+
 }
 
 
 
-
-- (void)touchesMoved:(NSSet *)touches
-withEvent:(UIEvent *)event
+- (void)touchesMoved:(NSSet<UITouch *> *)touches
+           withEvent:(UIEvent *)event
 {
+
 
     UITouch *touch =
     [touches anyObject];
@@ -83,6 +79,7 @@ withEvent:(UIEvent *)event
 
     CGPoint now =
     [touch locationInView:self.superview];
+
 
 
     CGFloat dx =
@@ -109,54 +106,47 @@ withEvent:(UIEvent *)event
 
 
     CGFloat halfW =
-    self.bounds.size.width/2;
+    self.bounds.size.width / 2;
 
 
     CGFloat halfH =
-    self.bounds.size.height/2;
+    self.bounds.size.height / 2;
 
 
 
-    center.x =
-    MAX(halfW,
-    MIN(screen.width-halfW,
-    center.x));
+    // 左右限制
+
+    if(center.x < halfW)
+        center.x = halfW;
+
+
+    if(center.x > screen.width-halfW)
+        center.x = screen.width-halfW;
 
 
 
-    center.y =
-    MAX(halfH+40,
-    MIN(screen.height-halfH,
-    center.y));
+    // 上下限制
+
+    if(center.y < halfH+40)
+        center.y = halfH+40;
+
+
+    if(center.y > screen.height-halfH)
+        center.y = screen.height-halfH;
 
 
 
-    self.center=center;
+    self.center = center;
 
 
+    self.lastPoint = now;
 
-    self.lastPoint=now;
-
-
-
-    [[NSUserDefaults standardUserDefaults]
-     setFloat:center.x
-     forKey:posXKey];
-
-
-    [[NSUserDefaults standardUserDefaults]
-     setFloat:center.y
-     forKey:posYKey];
-
-
-    [[NSUserDefaults standardUserDefaults]
-     synchronize];
 
 }
 
 
-@end
 
+@end
 
 
 
@@ -172,11 +162,10 @@ NSString *processName =
 [[NSProcessInfo processInfo] processName];
 
 
-if(![processName isEqualToString:@"SpringBoard"])
+if (![processName isEqualToString:@"SpringBoard"])
 {
     return;
 }
-
 
 
 
@@ -188,96 +177,87 @@ dispatch_get_main_queue(),
 
 
 
-floatWindow =
-[[UIWindow alloc]
-initWithFrame:
-UIScreen.mainScreen.bounds];
+UIWindow *window = nil;
 
 
 
-floatWindow.windowLevel =
-UIWindowLevelAlert + 100;
+for (UIScene *scene in
+UIApplication.sharedApplication.connectedScenes)
+{
+
+    if(scene.activationState ==
+       UISceneActivationStateForegroundActive)
+    {
+
+        UIWindowScene *windowScene =
+        (UIWindowScene *)scene;
+
+
+        for(UIWindow *w in windowScene.windows)
+        {
+
+            if(w.isKeyWindow)
+            {
+                window = w;
+                break;
+            }
+
+        }
+
+    }
+
+
+    if(window)
+        break;
+
+}
 
 
 
-floatWindow.backgroundColor =
-UIColor.clearColor;
 
-
-
-floatWindow.rootViewController =
-[UIViewController new];
-
-
-
-floatWindow.hidden = NO;
-
-
-
-
-SBCPUFloatingView *view =
-[[SBCPUFloatingView alloc]
+label =
+[[SBCPUFloatingLabel alloc]
 initWithFrame:
 CGRectMake(30,200,100,50)];
 
 
 
-label=view;
-
-
-
-NSUserDefaults *def =
-[NSUserDefaults standardUserDefaults];
-
-
-
-float x =
-[def floatForKey:posXKey];
-
-
-float y =
-[def floatForKey:posYKey];
-
-
-
-if(x>0 && y>0)
-{
-    view.center =
-    CGPointMake(x,y);
-}
-
-
-
-view.backgroundColor =
+label.backgroundColor =
 [[UIColor blackColor]
 colorWithAlphaComponent:0.7];
 
 
 
-view.textAlignment =
+label.textAlignment =
 NSTextAlignmentCenter;
 
 
-view.numberOfLines=2;
+
+label.numberOfLines = 2;
 
 
-view.layer.cornerRadius=12;
+
+label.layer.cornerRadius = 12;
 
 
-view.clipsToBounds=YES;
+label.clipsToBounds = YES;
 
 
-view.textColor =
+
+label.textColor =
 UIColor.whiteColor;
 
 
 
-view.userInteractionEnabled=YES;
+// 开启触摸
+
+label.userInteractionEnabled = YES;
 
 
 
-[floatWindow.rootViewController.view
- addSubview:view];
+[window addSubview:label];
+
+
 
 
 
@@ -285,6 +265,7 @@ view.userInteractionEnabled=YES;
 repeats:YES
 block:^(NSTimer *timer)
 {
+
     updateCPU();
 
 }];
@@ -292,5 +273,6 @@ block:^(NSTimer *timer)
 
 
 });
+
 
 }
