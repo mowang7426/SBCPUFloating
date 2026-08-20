@@ -4,9 +4,7 @@
 #import <signal.h>
 
 
-#pragma mark -
-#pragma mark V1.5.8 Global
-#pragma mark -
+#pragma mark - SBCPUFloating V1.5.8
 
 
 static UIWindow *cpuWindow;
@@ -14,15 +12,17 @@ static UIWindow *cpuWindow;
 static UILabel *label;
 
 
-/*
- 设置页面是否正在显示
- */
+
+#pragma mark - 设置状态
+
+
 static BOOL settingsShowing = NO;
 
 
-/*
- 自动注销
- */
+
+#pragma mark - 自动注销
+
+
 static BOOL autoLogoutEnable = NO;
 
 static double logoutCPUThreshold = 100.0;
@@ -34,83 +34,87 @@ static NSDate *cpuHighStartTime = nil;
 static BOOL logoutCounting = NO;
 
 
-/*
- 透明度
- */
+
+#pragma mark - 透明度
+
+
 static BOOL floatingAlphaEnable = YES;
 
-static CGFloat floatingAlpha = 0.70f;
+static CGFloat floatingAlpha = 0.7f;
 
 
-/*
- 前置声明
- */
+
+#pragma mark - 横竖屏
+
+
+static BOOL landscapeMode = NO;
+
+
+
+#pragma mark - 前置声明
+
+
 static void openSettings(void);
 
-static void checkHighCPU(double cpu);
+static void updateOrientation(void);
 
-
-/*
- 提前声明两个控制器
- 避免 Objective-C 未声明错误
- */
-@class SBCPUValuePickerController;
-@class SBCPUTimePickerController;
+static void updateFloatingText(void);
 
 
 
-#pragma mark -
-#pragma mark 获取 WindowScene
-#pragma mark -
+
+#pragma mark - 获取当前方向
 
 
-static UIWindowScene *getWindowScene()
+static BOOL isLandscape()
 {
 
-    if(cpuWindow &&
-       cpuWindow.windowScene)
-    {
-        return cpuWindow.windowScene;
-    }
+    UIInterfaceOrientation orientation =
+    UIApplication.sharedApplication
+    .windows.firstObject.windowScene.interfaceOrientation;
 
 
-    UIApplication *app =
-    UIApplication.sharedApplication;
+    return
+    orientation ==
+    UIInterfaceOrientationLandscapeLeft
+    ||
+    orientation ==
+    UIInterfaceOrientationLandscapeRight;
 
-
-    for(UIScene *scene in app.connectedScenes)
-    {
-
-        if([scene
-            isKindOfClass:
-            UIWindowScene.class])
-        {
-
-            UIWindowScene *ws =
-            (UIWindowScene *)scene;
-
-
-            if(ws.activationState !=
-               UISceneActivationStateUnattached)
-            {
-
-                return ws;
-
-            }
-
-        }
-
-    }
-
-
-    return nil;
 }
 
 
 
-#pragma mark -
-#pragma mark CPU
-#pragma mark -
+
+#pragma mark - 获取电量
+
+
+static NSInteger getBatteryLevel()
+{
+
+    UIDevice *device =
+    UIDevice.currentDevice;
+
+
+    device.batteryMonitoringEnabled = YES;
+
+
+    float level =
+    device.batteryLevel;
+
+
+
+    if(level < 0)
+    {
+        return 0;
+    }
+
+
+    return
+    (NSInteger)(level*100);
+
+}
+#pragma mark - CPU 获取
 
 
 static double getCPUUsage()
@@ -135,18 +139,20 @@ static double getCPUUsage()
     }
 
 
+
     double total = 0;
 
 
-    for(mach_msg_type_number_t i = 0;
-        i < count;
-        i++)
+
+    for(int i=0;i<count;i++)
     {
 
         thread_info_data_t info;
 
+
         mach_msg_type_number_t infoCount =
         THREAD_INFO_MAX;
+
 
 
         kr =
@@ -158,11 +164,13 @@ static double getCPUUsage()
         );
 
 
+
         if(kr == KERN_SUCCESS)
         {
 
             thread_basic_info_t basic =
             (thread_basic_info_t)info;
+
 
 
             if(!(basic->flags &
@@ -172,8 +180,8 @@ static double getCPUUsage()
                 total +=
                 ((double)basic->cpu_usage /
                  TH_USAGE_SCALE)
-                *
-                100.0;
+                 *
+                 100.0;
 
             }
 
@@ -182,21 +190,24 @@ static double getCPUUsage()
     }
 
 
+
     vm_deallocate(
         mach_task_self(),
         (vm_address_t)threads,
-        count * sizeof(thread_t)
+        count*sizeof(thread_t)
     );
 
 
+
     return total;
+
 }
 
 
 
-#pragma mark -
-#pragma mark 透明度
-#pragma mark -
+
+
+#pragma mark - 更新透明度
 
 
 static void applyFloatingAlpha()
@@ -207,9 +218,8 @@ static void applyFloatingAlpha()
         ^{
 
             if(!label)
-            {
                 return;
-            }
+
 
 
             if(floatingAlphaEnable)
@@ -227,140 +237,223 @@ static void applyFloatingAlpha()
 
             }
 
-        }
-    );
+
+        });
 
 }
 
 
 
-#pragma mark -
-#pragma mark 可穿透 Window
-#pragma mark -
 
 
-@interface SBCPUWindow : UIWindow
-
-@end
+#pragma mark - 横竖屏更新
 
 
-
-@implementation SBCPUWindow
-
-
-/*
- V1.5.8 最关键的触摸修复
-
- 浮窗 Window 本身是全屏的。
-
- 如果不重写 hitTest：
- 即使背景透明，
- Window 仍然可能把整个屏幕的触摸吃掉。
-
- 现在：
-
- 1. 设置页面打开：
-    正常接收全部触摸。
-
- 2. 设置页面关闭：
-    只有浮窗区域接收触摸。
-
- 3. 其他区域：
-    返回 nil，让 SpringBoard 接收。
- */
-
-
-- (UIView *)hitTest:
-( CGPoint)point
-withEvent:
-(UIEvent *)event
+static void updateOrientation()
 {
 
-    if(settingsShowing)
-    {
-
-        return
-        [super hitTest:
-         point
-         withEvent:event];
-
-    }
+    dispatch_async(
+        dispatch_get_main_queue(),
+        ^{
 
 
-    UIView *view =
-    [super hitTest:
-     point
-     withEvent:event];
+            if(!label)
+                return;
 
 
-    if(!view)
-    {
-        return nil;
-    }
+
+            BOOL nowLandscape =
+            isLandscape();
 
 
-    /*
-     只有 label / drag 区域接受事件
-     */
+
+            if(nowLandscape ==
+               landscapeMode)
+            {
+                return;
+            }
 
 
-    if([view isDescendantOfView:
-        label])
-    {
-        return view;
-    }
+
+            landscapeMode =
+            nowLandscape;
 
 
-    UIView *root =
-    self.rootViewController.view;
 
-
-    if(root)
-    {
-
-        for(UIView *subview in root.subviews)
-        {
-
-            if(subview != label &&
-               [subview isKindOfClass:
-                NSClassFromString(@"SBCPUDragView")])
+            if(landscapeMode)
             {
 
-                CGRect frame =
-                [subview.superview
-                 convertRect:
-                 subview.frame
-                 toView:self];
+                /*
+                 横屏
+                 */
 
-                if(CGRectContainsPoint(
-                    frame,
-                    point))
-                {
-                    return subview;
-                }
+                label.frame =
+                CGRectMake(
+                    30,
+                    120,
+                    180,
+                    50
+                );
+
+
+
+                label.font =
+                [
+                 UIFont
+                 monospacedDigitSystemFontOfSize:
+                 16
+                 weight:
+                 UIFontWeightBold
+                ];
+
+
+
+            }
+            else
+            {
+
+                /*
+                 竖屏
+                 */
+
+                label.frame =
+                CGRectMake(
+                    30,
+                    200,
+                    100,
+                    50
+                );
+
+
+
+                label.font =
+                [
+                 UIFont
+                 monospacedDigitSystemFontOfSize:
+                 14
+                 weight:
+                 UIFontWeightBold
+                ];
+
 
             }
 
-        }
+
+
+            updateFloatingText();
+
+
+        });
+
+}
+
+
+
+
+
+#pragma mark - 更新悬浮文字
+
+
+static void updateFloatingText()
+{
+
+    if(!label)
+        return;
+
+
+
+    double cpu =
+    getCPUUsage();
+
+
+
+
+    if(landscapeMode)
+    {
+
+        NSInteger battery =
+        getBatteryLevel();
+
+
+
+        label.text =
+        [
+         NSString
+         stringWithFormat:
+         @"SB CPU %.1f%%\n🔋 %ld%%",
+         cpu,
+         (long)battery
+        ];
+
+    }
+    else
+    {
+
+        label.text =
+        [
+         NSString
+         stringWithFormat:
+         @"SB CPU\n%.1f%%",
+         cpu
+        ];
 
     }
 
 
-    /*
-     浮窗以外全部穿透
-     */
 
-    return nil;
+
+    if(cpu >= 80)
+    {
+
+        label.textColor =
+        UIColor.redColor;
+
+    }
+    else
+    {
+
+        label.textColor =
+        UIColor.whiteColor;
+
+    }
+
 }
 
 
-@end
 
 
 
-#pragma mark -
-#pragma mark 拖动层
-#pragma mark -
+#pragma mark - 监听旋转
+
+
+static void registerOrientationObserver()
+{
+
+    [[NSNotificationCenter defaultCenter]
+     addObserverForName:
+     UIDeviceOrientationDidChangeNotification
+     object:nil
+     queue:
+     [NSOperationQueue mainQueue]
+     usingBlock:
+     ^(NSNotification *n)
+     {
+
+        updateOrientation();
+
+     }];
+
+
+    UIDevice *device =
+    UIDevice.currentDevice;
+
+
+    device
+    .batteryMonitoringEnabled = YES;
+
+
+}
+#pragma mark - 拖动层 V1.5.8
 
 
 @interface SBCPUDragView : UIView
@@ -375,50 +468,33 @@ CGPoint lastPoint;
 @implementation SBCPUDragView
 
 
-- (void)touchesBegan:
-(NSSet *)touches
-withEvent:
-(UIEvent *)event
+
+- (void)touchesBegan:(NSSet *)touches
+           withEvent:(UIEvent *)event
 {
 
     UITouch *touch =
     touches.anyObject;
-
-
-    if(!touch)
-    {
-        return;
-    }
 
 
     self.lastPoint =
     [touch locationInView:
      self.superview];
 
-
-
-    [super touchesBegan:
-     touches
-     withEvent:event];
-
 }
 
 
 
-- (void)touchesMoved:
-(NSSet *)touches
-withEvent:
-(UIEvent *)event
+
+
+- (void)touchesMoved:(NSSet *)touches
+           withEvent:(UIEvent *)event
 {
+
 
     UITouch *touch =
     touches.anyObject;
 
-
-    if(!touch)
-    {
-        return;
-    }
 
 
     CGPoint now =
@@ -426,9 +502,11 @@ withEvent:
      self.superview];
 
 
+
     CGFloat dx =
     now.x -
     self.lastPoint.x;
+
 
 
     CGFloat dy =
@@ -436,8 +514,10 @@ withEvent:
     self.lastPoint.y;
 
 
+
     CGPoint center =
     label.center;
+
 
 
     center.x += dx;
@@ -445,16 +525,36 @@ withEvent:
     center.y += dy;
 
 
+
+
+
+    /*
+     V1.5.8
+
+     使用 Window 实际大小
+
+     不再使用 UIScreen
+
+     修复横屏游戏拖动
+     */
+
+
     CGSize size =
-    self.superview.bounds.size;
+    cpuWindow.bounds.size;
+
+
 
 
     CGFloat halfW =
-    label.bounds.size.width / 2.0;
+    label.bounds.size.width / 2;
+
 
 
     CGFloat halfH =
-    label.bounds.size.height / 2.0;
+    label.bounds.size.height / 2;
+
+
+
 
 
     if(center.x < halfW)
@@ -463,44 +563,94 @@ withEvent:
     }
 
 
+
     if(center.x >
-       size.width - halfW)
+       size.width-halfW)
     {
         center.x =
-        size.width - halfW;
+        size.width-halfW;
     }
 
 
-    if(center.y < halfH + 40)
+
+
+    if(center.y < halfH+30)
     {
         center.y =
-        halfH + 40;
+        halfH+30;
     }
+
 
 
     if(center.y >
-       size.height - halfH)
+       size.height-halfH)
     {
         center.y =
-        size.height - halfH;
+        size.height-halfH;
     }
+
+
+
 
 
     label.center =
     center;
 
 
+
     self.center =
     center;
+
 
 
     self.lastPoint =
     now;
 
 
-    [super touchesMoved:
-     touches
-     withEvent:event];
+}
+
+
+
+@end
+
+
+
+
+
+
+
+#pragma mark - Window
+
+
+@interface SBCPUWindow : UIWindow
+
+@end
+
+
+
+@implementation SBCPUWindow
+
+
+
+/*
+ V1.5.8
+
+ 允许旋转
+
+ */
+
+- (BOOL)shouldAutorotate
+{
+    return YES;
+}
+
+
+
+- (UIInterfaceOrientationMask)
+supportedInterfaceOrientations
+{
+
+    return UIInterfaceOrientationMaskAll;
 
 }
 
@@ -509,9 +659,11 @@ withEvent:
 
 
 
-#pragma mark -
-#pragma mark 双击
-#pragma mark -
+
+
+
+
+#pragma mark - 双击
 
 
 @interface SBCPUAction : NSObject
@@ -535,29 +687,15 @@ withEvent:
 
 
 
-#pragma mark -
-#pragma mark 创建悬浮窗
-#pragma mark -
+
+
+
+
+#pragma mark - 创建悬浮窗
 
 
 static void createCPUWindow()
 {
-
-    if(cpuWindow)
-    {
-        return;
-    }
-
-
-    UIWindowScene *scene =
-    getWindowScene();
-
-
-    if(!scene)
-    {
-        return;
-    }
-
 
     cpuWindow =
     [[SBCPUWindow alloc]
@@ -565,37 +703,62 @@ static void createCPUWindow()
      UIScreen.mainScreen.bounds];
 
 
-    cpuWindow.windowScene =
-    scene;
+
+
+
+    for(UIScene *scene in
+        UIApplication.sharedApplication.connectedScenes)
+    {
+
+
+        if([scene
+            isKindOfClass:
+            UIWindowScene.class])
+        {
+
+            cpuWindow.windowScene =
+            (UIWindowScene *)scene;
+
+
+            break;
+
+        }
+
+    }
+
+
+
+
 
 
     /*
-     不使用 Alert+1
+     V1.5.8
+
+     保持显示
+
+     但是不抢触摸
+
      */
 
     cpuWindow.windowLevel =
-    UIWindowLevelStatusBar + 1;
+    UIWindowLevelAlert + 1;
+
 
 
     cpuWindow.backgroundColor =
     UIColor.clearColor;
 
 
-    cpuWindow.opaque =
-    NO;
-
 
     cpuWindow.rootViewController =
     [UIViewController new];
 
 
-    cpuWindow.rootViewController.view
-        .backgroundColor =
-        UIColor.clearColor;
-
 
     cpuWindow.hidden =
     NO;
+
+
 
 
 
@@ -610,66 +773,90 @@ static void createCPUWindow()
      )];
 
 
+
+
+
     label.backgroundColor =
-    [[UIColor blackColor]
-     colorWithAlphaComponent:0.70];
+    [
+     UIColor.blackColor
+     colorWithAlphaComponent:
+     0.7
+    ];
+
 
 
     label.textAlignment =
     NSTextAlignmentCenter;
 
 
+
     label.numberOfLines =
     2;
+
 
 
     label.layer.cornerRadius =
     12;
 
 
+
     label.clipsToBounds =
     YES;
+
 
 
     label.textColor =
     UIColor.whiteColor;
 
 
+
     label.font =
-    [UIFont
+    [
+     UIFont
      monospacedDigitSystemFontOfSize:
      14
-     weight:UIFontWeightBold];
+     weight:
+     UIFontWeightBold
+    ];
+
 
 
     label.text =
     @"SB CPU\n0%";
 
 
+
+
+
     /*
-     拖动区域
+     拖动透明层
      */
 
+
     SBCPUDragView *drag =
-    [[SBCPUDragView alloc]
+    [
+     [SBCPUDragView alloc]
      initWithFrame:
-     label.frame];
+     label.frame
+    ];
+
 
 
     drag.backgroundColor =
     UIColor.clearColor;
 
 
+
     drag.userInteractionEnabled =
     YES;
 
 
-    drag.multipleTouchEnabled =
-    NO;
+
 
 
     [cpuWindow.rootViewController.view
      addSubview:label];
+
 
 
     [cpuWindow.rootViewController.view
@@ -677,38 +864,61 @@ static void createCPUWindow()
 
 
 
+
+
+
     /*
-     双击
+     双击打开设置
+
      */
 
     UITapGestureRecognizer *doubleTap =
-    [[UITapGestureRecognizer alloc]
+    [
+     [UITapGestureRecognizer alloc]
      initWithTarget:
      [SBCPUAction class]
-     action:@selector(doubleTapAction)];
+     action:
+     @selector(doubleTapAction)
+    ];
+
 
 
     doubleTap.numberOfTapsRequired =
     2;
 
 
-    doubleTap.numberOfTouchesRequired =
-    1;
-
 
     [drag addGestureRecognizer:
      doubleTap];
 
 
+
+
+
+
     applyFloatingAlpha();
 
+
+
+    /*
+     注册旋转监听
+
+     */
+
+    registerOrientationObserver();
+
+
+
+    /*
+     初始化方向
+
+     */
+
+    updateOrientation();
+
+
 }
-
-
-
-#pragma mark -
-#pragma mark 自动注销
-#pragma mark -
+#pragma mark - 自动注销检测
 
 
 static void checkHighCPU(double cpu)
@@ -726,6 +936,9 @@ static void checkHighCPU(double cpu)
     }
 
 
+
+
+
     if(cpu < logoutCPUThreshold)
     {
 
@@ -738,100 +951,122 @@ static void checkHighCPU(double cpu)
     }
 
 
-    if(!cpuHighStartTime)
+
+
+
+
+    if(cpuHighStartTime == nil)
     {
 
         cpuHighStartTime =
         [NSDate date];
+
 
         return;
 
     }
 
 
-    NSTimeInterval duration =
+
+
+
+
+
+    NSTimeInterval time =
     [[NSDate date]
      timeIntervalSinceDate:
      cpuHighStartTime];
 
 
-    if(duration >= logoutDuration &&
+
+
+
+
+
+    if(time >= logoutDuration &&
        !logoutCounting)
     {
 
         logoutCounting = YES;
 
 
+
+
+
         dispatch_async(
             dispatch_get_main_queue(),
             ^{
 
-                if(!cpuWindow)
-                {
+
+                UIAlertController *alert =
+                [
+                 UIAlertController
+                 alertControllerWithTitle:
+                 @"SpringBoard CPU过高"
+                 message:
+                 @"5秒后自动注销"
+                 preferredStyle:
+                 UIAlertControllerStyleAlert
+                ];
+
+
+
+
+
+
+                [alert addAction:
+                 [
+                  UIAlertAction
+                  actionWithTitle:
+                  @"取消"
+                  style:
+                  UIAlertActionStyleCancel
+                  handler:
+                  ^(UIAlertAction *a)
+                  {
+
                     logoutCounting = NO;
-                    return;
-                }
+
+                    cpuHighStartTime = nil;
+
+                  }
+                 ]
+                ];
+
+
+
+
 
 
                 UIViewController *root =
                 cpuWindow.rootViewController;
 
 
-                if(!root)
+
+
+
+
+                if(root)
                 {
-                    logoutCounting = NO;
-                    return;
+
+                    [root
+                     presentViewController:
+                     alert
+                     animated:YES
+                     completion:nil];
+
                 }
 
 
-                /*
-                 防止重复弹窗
-                 */
-
-                if(root.presentedViewController)
-                {
-                    return;
-                }
 
 
-                UIAlertController *alert =
-                [UIAlertController
-                 alertControllerWithTitle:
-                 @"SpringBoard CPU过高"
-                 message:
-                 @"5秒后自动注销"
-                 preferredStyle:
-                 UIAlertControllerStyleAlert];
 
-
-                [alert addAction:
-                 [UIAlertAction
-                  actionWithTitle:
-                  @"取消"
-                  style:
-                  UIAlertActionStyleCancel
-                  handler:
-                  ^(UIAlertAction *action)
-                  {
-
-                      logoutCounting = NO;
-
-                      cpuHighStartTime = nil;
-
-                  }]];
-
-
-                [root
-                 presentViewController:
-                 alert
-                 animated:YES
-                 completion:nil];
 
 
                 dispatch_after(
                     dispatch_time(
                         DISPATCH_TIME_NOW,
-                        5 * NSEC_PER_SEC),
+                        5*NSEC_PER_SEC),
                     dispatch_get_main_queue(),
                     ^{
 
@@ -847,28 +1082,39 @@ static void checkHighCPU(double cpu)
 
                     });
 
-            }
-        );
+
+            });
+
 
     }
+
 
 }
 
 
 
-#pragma mark -
-#pragma mark CPU刷新
-#pragma mark -
+
+
+
+
+
+
+#pragma mark - CPU刷新
 
 
 static void updateCPU()
 {
 
+
     double cpu =
     getCPUUsage();
 
 
+
+
     checkHighCPU(cpu);
+
+
 
 
     dispatch_async(
@@ -876,827 +1122,53 @@ static void updateCPU()
         ^{
 
             if(!label)
-            {
                 return;
-            }
 
 
-            label.text =
-            [NSString
-             stringWithFormat:
-             @"SB CPU\n%.1f%%",
-             cpu];
 
 
-            if(cpu >= 80.0)
-            {
+            /*
+             V1.5.8
 
-                label.textColor =
-                UIColor.redColor;
+             根据当前方向显示
 
-            }
-            else
-            {
+             */
 
-                label.textColor =
-                UIColor.whiteColor;
+            updateFloatingText();
 
-            }
 
-        }
-    );
+
+        });
+
 
 }
 
 
 
-#pragma mark -
-#pragma mark CPU选择页面
-#pragma mark -
-
-
-@interface SBCPUValuePickerController :
-UITableViewController
-
-@end
 
 
 
-@implementation SBCPUValuePickerController
 
 
-- (NSInteger)tableView:
-(UITableView *)tableView
-numberOfRowsInSection:
-(NSInteger)section
+
+#pragma mark - 设置加载
+
+
+static void loadSettings()
 {
-
-    return 7;
-
-}
-
-
-- (NSString *)tableView:
-(UITableView *)tableView
-titleForHeaderInSection:
-(NSInteger)section
-{
-
-    return @"CPU触发值";
-
-}
-
-
-- (UITableViewCell *)tableView:
-(UITableView *)tableView
-cellForRowAtIndexPath:
-(NSIndexPath *)indexPath
-{
-
-    UITableViewCell *cell =
-    [[UITableViewCell alloc]
-     initWithStyle:
-     UITableViewCellStyleDefault
-     reuseIdentifier:nil];
-
-
-    NSArray *titles =
-    @[
-      @"80%",
-      @"100%",
-      @"120%",
-      @"140%",
-      @"160%",
-      @"180%",
-      @"200%"
-    ];
-
-
-    NSArray *values =
-    @[
-      @80,
-      @100,
-      @120,
-      @140,
-      @160,
-      @180,
-      @200
-    ];
-
-
-    cell.textLabel.text =
-    titles[indexPath.row];
-
-
-    if([values[indexPath.row] doubleValue]
-       ==
-       logoutCPUThreshold)
-    {
-
-        cell.accessoryType =
-        UITableViewCellAccessoryCheckmark;
-
-    }
-
-
-    return cell;
-
-}
-
-
-- (void)tableView:
-(UITableView *)tableView
-didSelectRowAtIndexPath:
-(NSIndexPath *)indexPath
-{
-
-    NSArray *values =
-    @[
-      @80,
-      @100,
-      @120,
-      @140,
-      @160,
-      @180,
-      @200
-    ];
-
-
-    logoutCPUThreshold =
-    [values[indexPath.row] doubleValue];
-
-
-    [[NSUserDefaults standardUserDefaults]
-     setDouble:
-     logoutCPUThreshold
-     forKey:
-     @"SBCPU.CPUThreshold"];
-
-
-    [[NSUserDefaults standardUserDefaults]
-     synchronize];
-
-
-    [self.tableView reloadData];
-
-
-    [self.navigationController
-     popViewControllerAnimated:YES];
-
-}
-
-
-@end
-
-
-
-#pragma mark -
-#pragma mark 时间选择页面
-#pragma mark -
-
-
-@interface SBCPUTimePickerController :
-UITableViewController
-
-@end
-
-
-
-@implementation SBCPUTimePickerController
-
-
-- (NSInteger)tableView:
-(UITableView *)tableView
-numberOfRowsInSection:
-(NSInteger)section
-{
-
-    return 7;
-
-}
-
-
-- (NSString *)tableView:
-(UITableView *)tableView
-titleForHeaderInSection:
-(NSInteger)section
-{
-
-    return @"持续时间";
-
-}
-
-
-- (UITableViewCell *)tableView:
-(UITableView *)tableView
-cellForRowAtIndexPath:
-(NSIndexPath *)indexPath
-{
-
-    UITableViewCell *cell =
-    [[UITableViewCell alloc]
-     initWithStyle:
-     UITableViewCellStyleDefault
-     reuseIdentifier:nil];
-
-
-    NSArray *titles =
-    @[
-      @"10秒",
-      @"30秒",
-      @"60秒",
-      @"120秒",
-      @"180秒",
-      @"300秒",
-      @"600秒"
-    ];
-
-
-    NSArray *values =
-    @[
-      @10,
-      @30,
-      @60,
-      @120,
-      @180,
-      @300,
-      @600
-    ];
-
-
-    cell.textLabel.text =
-    titles[indexPath.row];
-
-
-    if([values[indexPath.row] integerValue]
-       ==
-       logoutDuration)
-    {
-
-        cell.accessoryType =
-        UITableViewCellAccessoryCheckmark;
-
-    }
-
-
-    return cell;
-
-}
-
-
-- (void)tableView:
-(UITableView *)tableView
-didSelectRowAtIndexPath:
-(NSIndexPath *)indexPath
-{
-
-    NSArray *values =
-    @[
-      @10,
-      @30,
-      @60,
-      @120,
-      @180,
-      @300,
-      @600
-    ];
-
-
-    logoutDuration =
-    [values[indexPath.row] integerValue];
-
-
-    [[NSUserDefaults standardUserDefaults]
-     setInteger:
-     logoutDuration
-     forKey:
-     @"SBCPU.LogoutTime"];
-
-
-    [[NSUserDefaults standardUserDefaults]
-     synchronize];
-
-
-    [self.tableView reloadData];
-
-
-    [self.navigationController
-     popViewControllerAnimated:YES];
-
-}
-
-
-@end
-
-
-
-#pragma mark -
-#pragma mark 设置主页
-#pragma mark -
-
-
-@interface SBCPUSettingsController :
-UITableViewController
-
-@end
-
-
-
-@implementation SBCPUSettingsController
-
-
-- (void)viewDidLoad
-{
-
-    [super viewDidLoad];
-
-
-    self.title =
-    @"SBCPUFloating 设置";
-
-
-    self.navigationItem.rightBarButtonItem =
-    [[UIBarButtonItem alloc]
-     initWithBarButtonSystemItem:
-     UIBarButtonSystemItemDone
-     target:self
-     action:@selector(closeSettings)];
-
-}
-
-
-#pragma mark 关闭
-
-
-- (void)closeSettings
-{
-
-    settingsShowing = NO;
-
-
-    [self dismissViewControllerAnimated:YES
-                             completion:
-     ^{
-
-         /*
-          重新刷新 Window 触摸状态
-          */
-
-         [cpuWindow setNeedsLayout];
-
-     }];
-
-}
-
-
-#pragma mark Table
-
-
-- (NSInteger)tableView:
-(UITableView *)tableView
-numberOfRowsInSection:
-(NSInteger)section
-{
-
-    return 5;
-
-}
-
-
-- (NSString *)tableView:
-(UITableView *)tableView
-titleForHeaderInSection:
-(NSInteger)section
-{
-
-    return
-    @"自动注销 / 悬浮窗";
-
-}
-
-
-#pragma mark Cell
-
-
-- (UITableViewCell *)tableView:
-(UITableView *)tableView
-cellForRowAtIndexPath:
-(NSIndexPath *)indexPath
-{
-
-    UITableViewCell *cell =
-    [[UITableViewCell alloc]
-     initWithStyle:
-     UITableViewCellStyleValue1
-     reuseIdentifier:nil];
-
-
-    if(indexPath.row == 0)
-    {
-
-        cell.textLabel.text =
-        @"自动注销";
-
-
-        UISwitch *sw =
-        [[UISwitch alloc] init];
-
-
-        sw.on =
-        autoLogoutEnable;
-
-
-        [sw addTarget:self
-               action:@selector(changeLogout:)
-     forControlEvents:
-      UIControlEventValueChanged];
-
-
-        cell.accessoryView =
-        sw;
-
-    }
-
-
-    if(indexPath.row == 1)
-    {
-
-        cell.textLabel.text =
-        @"CPU触发值";
-
-
-        cell.detailTextLabel.text =
-        [NSString
-         stringWithFormat:
-         @"%.0f%%",
-         logoutCPUThreshold];
-
-    }
-
-
-    if(indexPath.row == 2)
-    {
-
-        cell.textLabel.text =
-        @"持续时间";
-
-
-        cell.detailTextLabel.text =
-        [NSString
-         stringWithFormat:
-         @"%ld秒",
-         (long)logoutDuration];
-
-    }
-
-
-    if(indexPath.row == 3)
-    {
-
-        cell.textLabel.text =
-        @"透明度开关";
-
-
-        UISwitch *sw =
-        [[UISwitch alloc] init];
-
-
-        sw.on =
-        floatingAlphaEnable;
-
-
-        [sw addTarget:self
-               action:@selector(changeAlpha:)
-     forControlEvents:
-      UIControlEventValueChanged];
-
-
-        cell.accessoryView =
-        sw;
-
-    }
-
-
-    if(indexPath.row == 4)
-    {
-
-        cell.textLabel.text =
-        @"透明度";
-
-
-        cell.detailTextLabel.text =
-        [NSString
-         stringWithFormat:
-         @"%.0f%%",
-         floatingAlpha * 100.0];
-
-    }
-
-
-    return cell;
-
-}
-
-
-#pragma mark 自动注销
-
-
-- (void)changeLogout:
-(UISwitch *)sw
-{
-
-    autoLogoutEnable =
-    sw.isOn;
-
-
-    [[NSUserDefaults standardUserDefaults]
-     setBool:
-     autoLogoutEnable
-     forKey:
-     @"SBCPU.AutoLogout"];
-
-
-    [[NSUserDefaults standardUserDefaults]
-     synchronize];
-
-}
-
-
-#pragma mark 透明度
-
-
-- (void)changeAlpha:
-(UISwitch *)sw
-{
-
-    floatingAlphaEnable =
-    sw.isOn;
-
-
-    [[NSUserDefaults standardUserDefaults]
-     setBool:
-     floatingAlphaEnable
-     forKey:
-     @"SBCPU.FloatingAlphaEnable"];
-
-
-    [[NSUserDefaults standardUserDefaults]
-     synchronize];
-
-
-    applyFloatingAlpha();
-
-}
-
-
-#pragma mark 点击项目
-
-
-- (void)tableView:
-(UITableView *)tableView
-didSelectRowAtIndexPath:
-(NSIndexPath *)indexPath
-{
-
-    if(indexPath.row == 1)
-    {
-
-        SBCPUValuePickerController *vc =
-        [[SBCPUValuePickerController alloc]
-         initWithStyle:
-         UITableViewStyleInsetGrouped];
-
-
-        [self.navigationController
-         pushViewController:
-         vc
-         animated:YES];
-
-    }
-
-
-    if(indexPath.row == 2)
-    {
-
-        SBCPUTimePickerController *vc =
-        [[SBCPUTimePickerController alloc]
-         initWithStyle:
-         UITableViewStyleInsetGrouped];
-
-
-        [self.navigationController
-         pushViewController:
-         vc
-         animated:YES];
-
-    }
-
-
-    if(indexPath.row == 4)
-    {
-
-        UIAlertController *alert =
-        [UIAlertController
-         alertControllerWithTitle:
-         @"透明度"
-         message:
-         @"选择悬浮窗透明度"
-         preferredStyle:
-         UIAlertControllerStyleActionSheet];
-
-
-        NSArray *titles =
-        @[
-          @"20%",
-          @"40%",
-          @"60%",
-          @"70%",
-          @"80%",
-          @"100%"
-        ];
-
-
-        NSArray *values =
-        @[
-          @0.2,
-          @0.4,
-          @0.6,
-          @0.7,
-          @0.8,
-          @1.0
-        ];
-
-
-        for(NSInteger i = 0;
-            i < titles.count;
-            i++)
-        {
-
-            [alert addAction:
-             [UIAlertAction
-              actionWithTitle:
-              titles[i]
-              style:
-              UIAlertActionStyleDefault
-              handler:
-              ^(UIAlertAction *action)
-              {
-
-                  floatingAlpha =
-                  [values[i] floatValue];
-
-
-                  [[NSUserDefaults standardUserDefaults]
-                   setFloat:
-                   floatingAlpha
-                   forKey:
-                   @"SBCPU.FloatingAlpha"];
-
-
-                  [[NSUserDefaults standardUserDefaults]
-                   synchronize];
-
-
-                  applyFloatingAlpha();
-
-
-                  [self.tableView reloadData];
-
-              }]];
-
-        }
-
-
-        [alert addAction:
-         [UIAlertAction
-          actionWithTitle:
-          @"取消"
-          style:
-          UIAlertActionStyleCancel
-          handler:nil]];
-
-
-        [self presentViewController:
-         alert
-         animated:YES
-         completion:nil];
-
-    }
-
-
-    [tableView deselectRowAtIndexPath:
-     indexPath
-     animated:YES];
-
-}
-
-
-@end
-
-
-
-#pragma mark -
-#pragma mark 打开设置
-#pragma mark -
-
-
-static void openSettings()
-{
-
-    if(settingsShowing)
-    {
-        return;
-    }
-
-
-    if(!cpuWindow)
-    {
-        return;
-    }
-
-
-    UIViewController *root =
-    cpuWindow.rootViewController;
-
-
-    if(!root)
-    {
-        return;
-    }
-
-
-    /*
-     防止重复打开
-     */
-
-    if(root.presentedViewController)
-    {
-        return;
-    }
-
-
-    settingsShowing = YES;
-
-
-    SBCPUSettingsController *vc =
-    [[SBCPUSettingsController alloc]
-     initWithStyle:
-     UITableViewStyleInsetGrouped];
-
-
-    UINavigationController *nav =
-    [[UINavigationController alloc]
-     initWithRootViewController:vc];
-
-
-    /*
-     设置页面期间允许整个 Window 接收触摸
-     */
-
-    nav.modalPresentationStyle =
-    UIModalPresentationFullScreen;
-
-
-    [root
-     presentViewController:
-     nav
-     animated:YES
-     completion:nil];
-
-}
-
-
-
-#pragma mark -
-#pragma mark 初始化
-#pragma mark -
-
-
-%ctor
-{
-
-    NSString *process =
-    NSProcessInfo.processInfo.processName;
-
-
-    if(![process
-         isEqualToString:@"SpringBoard"])
-    {
-        return;
-    }
-
 
     NSUserDefaults *def =
     NSUserDefaults.standardUserDefaults;
 
 
-    /*
-     自动注销
-     */
+
 
     autoLogoutEnable =
     [def boolForKey:
      @"SBCPU.AutoLogout"];
+
+
+
 
 
     double cpu =
@@ -1704,8 +1176,9 @@ static void openSettings()
      @"SBCPU.CPUThreshold"];
 
 
-    if(cpu >= 80.0 &&
-       cpu <= 1000.0)
+
+
+    if(cpu >= 80)
     {
 
         logoutCPUThreshold =
@@ -1714,9 +1187,15 @@ static void openSettings()
     }
 
 
+
+
+
+
     NSInteger time =
     [def integerForKey:
      @"SBCPU.LogoutTime"];
+
+
 
 
     if(time >= 10)
@@ -1728,9 +1207,9 @@ static void openSettings()
     }
 
 
-    /*
-     透明度开关
-     */
+
+
+
 
     if([def objectForKey:
         @"SBCPU.FloatingAlphaEnable"])
@@ -1743,17 +1222,21 @@ static void openSettings()
     }
 
 
-    /*
-     透明度
-     */
+
+
+
+
 
     CGFloat alpha =
     [def floatForKey:
      @"SBCPU.FloatingAlpha"];
 
 
-    if(alpha >= 0.2 &&
-       alpha <= 1.0)
+
+
+
+    if(alpha>=0.2 &&
+       alpha<=1.0)
     {
 
         floatingAlpha =
@@ -1761,19 +1244,66 @@ static void openSettings()
 
     }
 
+}
 
-    /*
-     等 SpringBoard 完全启动
-     */
+
+
+
+
+
+
+
+
+#pragma mark - 初始化
+
+
+%ctor
+{
+
+
+    NSString *process =
+    NSProcessInfo.processInfo.processName;
+
+
+
+
+
+    if(![process
+         isEqualToString:
+         @"SpringBoard"])
+    {
+
+        return;
+
+    }
+
+
+
+
+
+
+    loadSettings();
+
+
+
+
+
+
 
     dispatch_after(
         dispatch_time(
             DISPATCH_TIME_NOW,
-            5 * NSEC_PER_SEC),
+            5*NSEC_PER_SEC),
         dispatch_get_main_queue(),
         ^{
 
+
+
+
             createCPUWindow();
+
+
+
 
 
             [NSTimer
@@ -1784,11 +1314,14 @@ static void openSettings()
              ^(NSTimer *timer)
              {
 
-                 updateCPU();
+
+                updateCPU();
+
 
              }];
 
-        }
-    );
+
+
+        });
 
 }
