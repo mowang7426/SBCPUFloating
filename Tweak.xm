@@ -1,9 +1,21 @@
 #import <UIKit/UIKit.h>
 #import <mach/mach.h>
+#import <signal.h>
 
 
 static UIWindow *cpuWindow;
 static UILabel *label;
+
+
+// =======================
+// v1.4 自动注销功能
+// =======================
+
+static NSTimeInterval cpuHighStartTime = 0;
+
+static BOOL isAutoLogout = NO;
+
+
 
 
 
@@ -95,11 +107,94 @@ static double getCPUUsage()
 
 
 
+// =======================
+// v1.4 CPU持续高负载检测
+// =======================
+
+
+static void checkHighCPU(double cpu)
+{
+
+
+    if(isAutoLogout)
+        return;
+
+
+
+    if(cpu >= 100)
+    {
+
+
+        if(cpuHighStartTime == 0)
+        {
+
+            cpuHighStartTime =
+            [[NSDate date] timeIntervalSince1970];
+
+        }
+
+
+
+        NSTimeInterval now =
+        [[NSDate date] timeIntervalSince1970];
+
+
+
+        NSTimeInterval duration =
+        now - cpuHighStartTime;
+
+
+
+        // CPU >=100 持续60秒
+
+        if(duration >= 60)
+        {
+
+
+            isAutoLogout = YES;
+
+
+
+            dispatch_async(
+            dispatch_get_main_queue(),
+            ^{
+
+
+                kill(getpid(), SIGTERM);
+
+
+            });
+
+
+        }
+
+
+    }
+    else
+    {
+
+        cpuHighStartTime = 0;
+
+    }
+
+
+}
+
+
+
+
+
+
 static void updateCPU()
 {
 
     double cpu =
     getCPUUsage();
+
+
+
+    // v1.4 新增检测
+    checkHighCPU(cpu);
 
 
 
@@ -134,15 +229,6 @@ static void updateCPU()
     });
 
 }
-
-
-
-
-
-
-
-
-
 #pragma mark - Drag View
 
 
