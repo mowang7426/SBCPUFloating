@@ -1166,7 +1166,8 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 7;
+    // Fix7.1 恢复智能布局/智能吸附设置项
+    return 12;
 
 }
 
