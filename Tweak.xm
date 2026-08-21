@@ -1278,27 +1278,6 @@ didSelectRowAtIndexPath:
     [self.navigationController
      popViewControllerAnimated:YES];
 
-
-
-    if(indexPath.row == 10)
-    {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"吸附模式" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
-        NSArray *names = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
-
-        for(NSInteger i=0;i<names.count;i++)
-        {
-            [alert addAction:[UIAlertAction actionWithTitle:names[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-                dockMode = i;
-                [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPUFloating.dockMode"];
-                [[NSUserDefaults standardUserDefaults] synchronize];
-            }]];
-        }
-
-        [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-
-        [self presentViewController:alert animated:YES completion:nil];
-    }
-
 }
 
 
@@ -1514,7 +1493,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 7;
+    return 12;
 
 }
 
@@ -1700,7 +1679,7 @@ cellForRowAtIndexPath:
         cell.textLabel.text = @"浮窗大小";
 
         UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,150,30)];
-        slider.minimumValue = 0.3;
+        slider.minimumValue = 0.8;
         slider.maximumValue = 1.5;
         slider.value = floatingScale;
         [slider addTarget:self action:@selector(changeScaleSlider:) forControlEvents:UIControlEventValueChanged];
@@ -1728,7 +1707,7 @@ cellForRowAtIndexPath:
         cell.textLabel.text = @"横屏浮窗大小";
 
         UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,150,30)];
-        slider.minimumValue = 0.3;
+        slider.minimumValue = 0.8;
         slider.maximumValue = 1.5;
         slider.value = landscapeScale;
         [slider addTarget:self action:@selector(changeLandscapeScaleSlider:) forControlEvents:UIControlEventValueChanged];
@@ -1780,7 +1759,22 @@ cellForRowAtIndexPath:
 
 }
 
-    
+    if(indexPath.row == 10)
+    {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"吸附模式" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+        NSArray *names = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
+        for(NSInteger i=0;i<names.count;i++)
+        {
+            [alert addAction:[UIAlertAction actionWithTitle:names[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+                dockMode = i;
+                [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPU.DockMode"];
+                [[NSUserDefaults standardUserDefaults] synchronize];
+                [self.tableView reloadData];
+            }]];
+        }
+        [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+    }
 
 
 #pragma mark 智能布局控制
@@ -1985,23 +1979,6 @@ didSelectRowAtIndexPath:
 
     }
 
-
-    if(indexPath.row == 10)
-    {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"吸附模式" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
-        NSArray *names = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部", @"关闭吸附"];
-        for(NSInteger i=0;i<names.count;i++)
-        {
-            [alert addAction:[UIAlertAction actionWithTitle:names[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-                dockMode = i;
-                [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPUFloating.dockMode"];
-                [[NSUserDefaults standardUserDefaults] synchronize];
-                [self.tableView reloadData];
-            }]];
-        }
-        [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
-    }
 
     [tableView deselectRowAtIndexPath:
      indexPath
@@ -2374,19 +2351,6 @@ static void registerV160Observers()
         alpha;
 
     }
-
-
-    // V1.6.1: 恢复用户保存的悬浮窗参数
-    CGFloat savedScale = [def floatForKey:@"SBCPU.FloatingScale"];
-    if(savedScale >= 0.3 && savedScale <= 1.5)
-        floatingScale = savedScale;
-
-    CGFloat savedFont = [def floatForKey:@"SBCPU.FloatingFontSize"];
-    if(savedFont >= 10 && savedFont <= 24)
-        floatingFontSize = savedFont;
-
-    if([def objectForKey:@"SBCPUFloating.dockMode"])
-        dockMode = [def integerForKey:@"SBCPUFloating.dockMode"];
 
 
     /*
