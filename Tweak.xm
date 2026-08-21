@@ -1590,20 +1590,14 @@ cellForRowAtIndexPath:
     {
         cell.textLabel.text = @"电量字体大小";
 
-        UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,150,30)];
-        slider.minimumValue = 8;
-        slider.maximumValue = 20;
-        slider.value = landscapeFontSize;
-        [slider addTarget:self action:@selector(changeLandscapeFontSlider:) forControlEvents:UIControlEventValueChanged];
-        cell.accessoryView = slider;
+        UISlider *landscapeFontSlider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,150,30)];
+        landscapeFontSlider.minimumValue = 8;
+        landscapeFontSlider.maximumValue = 20;
+        landscapeFontSlider.value = landscapeFontSize;
+        [landscapeFontSlider addTarget:self action:@selector(changeLandscapeFontSlider:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = landscapeFontSlider;
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f", landscapeFontSize];
 
-        UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,150,30)];
-        slider.minimumValue = 10;
-        slider.maximumValue = 20;
-        slider.value = batteryFontSize;
-        [slider addTarget:self action:@selector(changeBatteryFontSlider:) forControlEvents:UIControlEventValueChanged];
-        cell.accessoryView = slider;
-        cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f", batteryFontSize];
     }
 
     return cell;
