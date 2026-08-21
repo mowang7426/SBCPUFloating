@@ -909,17 +909,6 @@ static void createCPUWindow()
 
     [[NSNotificationCenter defaultCenter]
      addObserverForName:
-     UIScreenDidModeChangeNotification
-     object:nil
-     queue:[NSOperationQueue mainQueue]
-     usingBlock:^(NSNotification *note)
-    {
-        updateOrientation();
-    }];
-
-
-    [[NSNotificationCenter defaultCenter]
-     addObserverForName:
      UIDeviceOrientationDidChangeNotification
      object:nil
      queue:
@@ -2018,11 +2007,6 @@ static void openSettings()
          block:
          ^(NSTimer *timer)
          {
-
-
-             // V1.5.9.3 修复：方向锁开启时游戏强制横屏不会触发旋转通知
-             // 每秒根据实际屏幕尺寸重新判断方向
-             updateOrientation();
 
 
              updateCPU();
