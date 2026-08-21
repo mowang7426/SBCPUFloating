@@ -593,64 +593,59 @@ static void updateOrientation()
     if(!cpuWindow || !label)
         return;
 
-    BOOL landscape = SBCPUDetectFrontLandscape();
-
     dispatch_async(dispatch_get_main_queue(), ^{
+
         if(!cpuWindow || !label)
             return;
 
-        UIInterfaceOrientation current = UIInterfaceOrientationUnknown;
+        BOOL landscape = SBCPUDetectFrontLandscape();
 
-        UIApplication *app = UIApplication.sharedApplication;
+        /*
+         方向锁定进入游戏时：
+         UIKit 的 interfaceOrientation 可能仍然是 portrait。
+         不再旋转 UIWindow，避免窗口坐标系错乱导致：
+         - 浮窗消失
+         - 拖动回左上角
+         - 进入游戏不刷新
 
-        for(UIScene *scene in app.connectedScenes)
+         只处理浮窗内容布局。
+        */
+
+        if(landscape)
         {
-            if([scene isKindOfClass:UIWindowScene.class])
-            {
-                UIWindowScene *ws = (UIWindowScene *)scene;
+            label.transform = CGAffineTransformMakeRotation(M_PI_2);
 
-                if(ws.activationState == UISceneActivationStateForegroundActive)
-                {
-                    current = ws.interfaceOrientation;
-                    break;
-                }
-            }
-        }
+            CGRect screen = UIScreen.mainScreen.bounds;
+            CGFloat w = MAX(screen.size.width, screen.size.height);
+            CGFloat h = MIN(screen.size.width, screen.size.height);
 
-        SBCPULastInterfaceOrientation = current;
-
-        BOOL realLandscape = landscape || UIInterfaceOrientationIsLandscape(current);
-
-        if(realLandscape)
-        {
-            /*
-             修复方向锁定游戏横屏：
-             之前只旋转 label，导致窗口坐标仍是竖屏。
-             现在旋转整个浮窗窗口。
-            */
-            if(current == UIInterfaceOrientationLandscapeLeft)
-                cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
-            else
-                cpuWindow.transform = CGAffineTransformMakeRotation(-M_PI_2);
-
-            label.transform = CGAffineTransformIdentity;
-            label.frame = CGRectMake(0,0,130,70);
+            label.bounds = CGRectMake(0,0,130,70);
+            label.center = CGPointMake(w * 0.20, h * 0.20);
 
             if(cpuDragView)
-                cpuDragView.frame = label.frame;
+            {
+                cpuDragView.bounds = label.bounds;
+                cpuDragView.center = label.center;
+                cpuDragView.transform = label.transform;
+            }
+
         }
         else
         {
-            cpuWindow.transform = CGAffineTransformIdentity;
-
             label.transform = CGAffineTransformIdentity;
-            label.frame = CGRectMake(0,0,110,50);
+
+            label.bounds = CGRectMake(0,0,110,50);
 
             if(cpuDragView)
-                cpuDragView.frame = label.frame;
+            {
+                cpuDragView.bounds = label.bounds;
+                cpuDragView.center = label.center;
+                cpuDragView.transform = CGAffineTransformIdentity;
+            }
         }
 
-        isLandscape = realLandscape;
+        isLandscape = landscape;
+
     });
 }
 
