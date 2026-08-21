@@ -538,183 +538,102 @@ static void applyFloatingAlpha()
 
 static void updateOrientation()
 {
-
-    if(!cpuWindow ||
-       !label)
+    if(!cpuWindow || !label)
     {
         return;
     }
 
-
-
     BOOL landscape = NO;
 
-    if (@available(iOS 13.0, *)) {
-        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-            if ([scene isKindOfClass:[UIWindowScene class]]) {
-                UIInterfaceOrientation o = ((UIWindowScene *)scene).interfaceOrientation;
-                if (UIInterfaceOrientationIsLandscape(o)) {
-                    landscape = YES;
-                }
-            }
+    /*
+     游戏强制横屏 / 方向锁开启：
+     不依赖 UIDeviceOrientation。
+     优先使用当前 UIWindowScene，
+     再使用 Window 实际尺寸兜底。
+     */
+
+    UIWindowScene *ws = cpuWindow.windowScene;
+
+    if(ws)
+    {
+        UIInterfaceOrientation o = ws.interfaceOrientation;
+
+        if(UIInterfaceOrientationIsLandscape(o))
+        {
+            landscape = YES;
         }
     }
 
+
+    CGSize size = cpuWindow.bounds.size;
+
+    if(size.width > size.height)
+    {
+        landscape = YES;
+    }
 
 
     isLandscape = landscape;
 
 
-
     dispatch_async(
     dispatch_get_main_queue(),
     ^{
+        if(!label)
+            return;
+
+
+        CGRect frame = label.frame;
 
 
         if(isLandscape)
         {
-
-
-            CGRect frame =
-            label.frame;
-
-
             frame.size.height = 70;
-
-
-            label.frame =
-            frame;
-
-
-            label.text =
-            @"SB CPU\n--%";
-
-
+            label.frame = frame;
         }
         else
         {
-
-
-            CGRect frame =
-            label.frame;
-
-
             frame.size.height = 50;
-
-
-            label.frame =
-            frame;
-
-
+            label.frame = frame;
         }
-
-
-
-        /*
-         拖动层同步
-        */
 
 
         if(cpuDragView)
         {
-
-            cpuDragView.frame =
-            label.frame;
-
+            cpuDragView.frame = label.frame;
         }
 
 
-        /*
-          防止横屏跑出屏幕
-        */
+        CGSize screen = cpuWindow.bounds.size;
+
+        CGPoint center = label.center;
 
 
-        CGSize size =
-        cpuWindow.bounds.size;
-
-
-        CGPoint center =
-        label.center;
-
-
-        CGFloat halfW =
-        label.bounds.size.width/2;
-
-
-        CGFloat halfH =
-        label.bounds.size.height/2;
-
+        CGFloat halfW = label.bounds.size.width / 2.0;
+        CGFloat halfH = label.bounds.size.height / 2.0;
 
 
         if(center.x < halfW)
             center.x = halfW;
 
+        if(center.x > screen.width - halfW)
+            center.x = screen.width - halfW;
+
+        if(center.y < halfH + 20)
+            center.y = halfH + 20;
+
+        if(center.y > screen.height - halfH)
+            center.y = screen.height - halfH;
 
 
-        if(center.x >
-           size.width-halfW)
-        {
-            center.x =
-            size.width-halfW;
-        }
+        label.center = center;
 
 
-
-        if(center.y < halfH+30)
-            center.y = halfH+30;
-
-
-
-        if(center.y >
-           size.height-halfH)
-        {
-            center.y =
-            size.height-halfH;
-        }
-
-
-
-        label.center =
-        center;
-
-
-        cpuDragView.center =
-        center;
-
-
+        if(cpuDragView)
+            cpuDragView.center = center;
 
     });
-
 }
-
-
-
-
-#pragma mark -
-#pragma mark 双击
-#pragma mark -
-
-
-@interface SBCPUAction : NSObject
-
-@end
-
-
-
-@implementation SBCPUAction
-
-
-
-+ (void)doubleTapAction
-{
-
-    openSettings();
-
-}
-
-
-@end
-
 
 
 
@@ -2032,6 +1951,9 @@ static void openSettings()
          block:
          ^(NSTimer *timer)
          {
+
+
+             updateOrientation();
 
 
              updateCPU();
