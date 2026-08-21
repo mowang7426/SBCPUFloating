@@ -18,6 +18,7 @@ static CGFloat floatingScale = 1.0;
 static CGFloat floatingFontSize = 14.0;
 static CGFloat landscapeScale = 0.75;
 static CGFloat batteryFontSize = 12.0;
+static CGFloat landscapeFontSize = 12.0;
 static SBCPUDragView *cpuDragView;
 
 
@@ -961,7 +962,7 @@ static void updateCPU()
             updateFloatingSize();
 
             label.font =
-            [UIFont systemFontOfSize:floatingFontSize];
+            [UIFont systemFontOfSize:(isLandscapeMode() ? landscapeFontSize : floatingFontSize)];
 
 
             if(isLandscapeMode())
@@ -1412,6 +1413,16 @@ titleForHeaderInSection:
     updateFloatingSize();
 }
 
+- (void)changeLandscapeFontSlider:(UISlider *)slider
+{
+    landscapeFontSize = slider.value;
+    [[NSUserDefaults standardUserDefaults] setFloat:landscapeFontSize forKey:@"SBCPU.LandscapeFontSize"];
+    if(label && isLandscapeMode())
+    {
+        label.font = [UIFont systemFontOfSize:landscapeFontSize];
+    }
+}
+
 - (void)changeBatteryFontSlider:(UISlider *)slider
 {
     batteryFontSize = slider.value;
@@ -1578,6 +1589,13 @@ cellForRowAtIndexPath:
     if(indexPath.row == 8)
     {
         cell.textLabel.text = @"电量字体大小";
+
+        UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,150,30)];
+        slider.minimumValue = 8;
+        slider.maximumValue = 20;
+        slider.value = landscapeFontSize;
+        [slider addTarget:self action:@selector(changeLandscapeFontSlider:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = slider;
 
         UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,150,30)];
         slider.minimumValue = 10;
