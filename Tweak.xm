@@ -12,6 +12,7 @@
 static UIWindow *cpuWindow = nil;
 
 static UILabel *label = nil;
+static BOOL batteryEnabled = YES;
 
 
 /*
@@ -888,8 +889,7 @@ static void createCPUWindow()
 #pragma mark -
 
 
-static void updateCPU()
-{
+static NSInteger getBatteryLevel()\n{\n    UIDevice *device = [UIDevice currentDevice];\n    device.batteryMonitoringEnabled = YES;\n    return device.batteryLevel < 0 ? 0 : (NSInteger)(device.batteryLevel * 100);\n}\n\n\nstatic NSInteger getBatteryLevel()\n{\n    UIDevice *device = [UIDevice currentDevice];\n    device.batteryMonitoringEnabled = YES;\n    return device.batteryLevel < 0 ? 0 : (NSInteger)(device.batteryLevel * 100);\n}\n\n\nstatic void updateCPU()\n{
 
     double cpu =
     getCPUUsage();
@@ -913,8 +913,8 @@ static void updateCPU()
             label.text =
             [NSString
              stringWithFormat:
-             @"SB CPU\n%.1f%%",
-             cpu];
+             @"SB CPU\n%.1f%%\nBAT %ld%%",
+             cpu, (long)getBatteryLevel()];
 
         }
         else
@@ -924,8 +924,8 @@ static void updateCPU()
             label.text =
             [NSString
              stringWithFormat:
-             @"SB CPU\n%.1f%%",
-             cpu];
+             @"SB CPU\n%.1f%%\nBAT %ld%%",
+             cpu, (long)getBatteryLevel()];
 
         }
 
