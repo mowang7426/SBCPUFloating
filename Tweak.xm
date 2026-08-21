@@ -576,6 +576,17 @@ static BOOL SBCPUDetectFrontLandscape()
 }
 
 
+
+@interface SBCPUTapHandler : NSObject
+@end
+
+@implementation SBCPUTapHandler
+- (void)doubleTapAction
+{
+    openSettings();
+}
+@end
+
 static void updateOrientation()
 {
     if(!cpuWindow || !label)
@@ -790,7 +801,7 @@ static void createCPUWindow()
     UITapGestureRecognizer *tap =
     [[UITapGestureRecognizer alloc]
      initWithTarget:
-     [SBCPUAction class]
+     [SBCPUTapHandler class]
      action:
      @selector(doubleTapAction)];
 
