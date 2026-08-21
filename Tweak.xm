@@ -2,6 +2,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <mach/mach.h>
 #import <signal.h>
+#import <IOKit/IOKitLib.h>
 
 
 #pragma mark -
@@ -1019,6 +1020,68 @@ static NSInteger getBatteryPercent()
 }
 
 
+
+
+#pragma mark -
+#pragma mark V1.6.1 横屏电池温度
+#pragma mark -
+
+static double getBatteryTemperature()
+{
+    io_iterator_t iterator = 0;
+    io_service_t service = IO_OBJECT_NULL;
+
+    CFMutableDictionaryRef matching =
+    IOServiceMatching("AppleSmartBattery");
+
+    if(!matching)
+        return -1;
+
+    if(IOServiceGetMatchingServices(kIOMainPortDefault,
+                                    matching,
+                                    &iterator) != KERN_SUCCESS)
+        return -1;
+
+    while((service = IOIteratorNext(iterator)))
+    {
+        CFTypeRef temp =
+        IORegistryEntryCreateCFProperty(
+            service,
+            CFSTR("Temperature"),
+            kCFAllocatorDefault,
+            0);
+
+        if(temp)
+        {
+            double value = -1;
+
+            if(CFGetTypeID(temp) == CFNumberGetTypeID())
+            {
+                CFNumberGetValue((CFNumberRef)temp,
+                                 kCFNumberDoubleType,
+                                 &value);
+            }
+
+            CFRelease(temp);
+            IOObjectRelease(service);
+            IOObjectRelease(iterator);
+
+            // AppleSmartBattery 温度通常为 0.1K
+            if(value > 200)
+                value = value / 10.0 - 273.15;
+
+            return value;
+        }
+
+        IOObjectRelease(service);
+    }
+
+    IOObjectRelease(iterator);
+
+    return -1;
+}
+
+
 #pragma mark -
 #pragma mark 横竖屏尺寸调整
 #pragma mark -
@@ -1100,11 +1163,25 @@ static void updateCPU()
 
                 if(battery >= 0)
                 {
-                    label.text =
-                    [NSString stringWithFormat:
-                     @"SB CPU %.1f%%\n电量 %ld%%",
-                     cpu,
-                     (long)battery];
+                    double temp = getBatteryTemperature();
+
+                    if(temp > 0 && temp < 100)
+                    {
+                        label.text =
+                        [NSString stringWithFormat:
+                         @"SB CPU %.1f%%\n电量 %ld%% %.1f℃",
+                         cpu,
+                         (long)battery,
+                         temp];
+                    }
+                    else
+                    {
+                        label.text =
+                        [NSString stringWithFormat:
+                         @"SB CPU %.1f%%\n电量 %ld%%",
+                         cpu,
+                         (long)battery];
+                    }
                 }
                 else
                 {
