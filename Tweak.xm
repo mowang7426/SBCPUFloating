@@ -58,6 +58,7 @@ static BOOL keyboardAvoidEnable __attribute__((unused)) = YES;
 static BOOL hideControlCenterEnable __attribute__((unused)) = YES;
 
 static CGRect lastFloatingFrame;
+static CGRect lastUserFrame;
 static BOOL keyboardShowing = NO;
 
 
@@ -1859,6 +1860,8 @@ static void openSettings()
 
     settingsShowing = YES;
 
+    keyboardShowing = NO;
+
 
     SBCPUSettingsController *vc =
     [[SBCPUSettingsController alloc]
@@ -1902,7 +1905,7 @@ static void openSettings()
 
 static void applySmartLayout()
 {
-    if(!cpuWindow || !label || !smartLayoutEnable)
+    if(!cpuWindow || !label || !smartLayoutEnable || settingsShowing)
         return;
 
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -1914,28 +1917,34 @@ static void applySmartLayout()
         CGRect area = scene.coordinateSpace.bounds;
         UIEdgeInsets safe = scene.windows.firstObject.safeAreaInsets;
 
-        CGFloat w = label.frame.size.width;
-        CGFloat h = label.frame.size.height;
+        CGSize size = label.bounds.size;
+        CGRect target = lastUserFrame;
 
-        CGFloat x = CGRectGetWidth(area) - w - 12 - safe.right;
-        CGFloat y = CGRectGetHeight(area) / 2.0;
-
-        if(UIInterfaceOrientationIsLandscape(scene.interfaceOrientation))
+        if(CGRectIsEmpty(target))
         {
-            x = 12 + safe.left;
-            y = CGRectGetHeight(area) - h - 80;
-        }
-        else
-        {
-            y = MAX(safe.top + 20, y);
+            target = CGRectMake(
+                CGRectGetWidth(area)-size.width-safe.right-12,
+                CGRectGetHeight(area)/2.0,
+                size.width,
+                size.height
+            );
         }
 
-        CGRect frame = CGRectMake(x,y,w,h);
+        if(target.origin.x < safe.left)
+            target.origin.x = safe.left + 5;
 
-        label.frame = frame;
-        cpuDragView.frame = frame;
+        if(CGRectGetMaxX(target) > CGRectGetWidth(area)-safe.right)
+            target.origin.x = CGRectGetWidth(area)-safe.right-size.width-5;
 
-        lastFloatingFrame = frame;
+        if(target.origin.y < safe.top)
+            target.origin.y = safe.top + 5;
+
+        if(CGRectGetMaxY(target) > CGRectGetHeight(area)-safe.bottom)
+            target.origin.y = CGRectGetHeight(area)-safe.bottom-size.height-5;
+
+        label.frame = target;
+        cpuDragView.frame = target;
+        lastFloatingFrame = target;
     });
 }
 
@@ -1969,12 +1978,19 @@ static void registerV160Observers()
              queue:NSOperationQueue.mainQueue
              usingBlock:^(NSNotification *n){
 
+                 if(settingsShowing)
+                    return;
+
                  keyboardShowing = YES;
 
                  if(cpuWindow && label)
                  {
-                     CGRect f = label.frame;
-                     f.origin.y -= 180;
+                     if(CGRectIsEmpty(lastUserFrame))
+                         lastUserFrame = label.frame;
+
+                     CGRect f = lastUserFrame;
+                     f.origin.y = MAX(20, f.origin.y - 180);
+
                      label.frame = f;
                      cpuDragView.frame = f;
                  }
@@ -1989,7 +2005,12 @@ static void registerV160Observers()
              usingBlock:^(NSNotification *n){
 
                  keyboardShowing = NO;
-                 applySmartLayout();
+
+                 if(!settingsShowing && !CGRectIsEmpty(lastUserFrame))
+                 {
+                     label.frame = lastUserFrame;
+                     cpuDragView.frame = lastUserFrame;
+                 }
 
              }];
         }
