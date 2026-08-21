@@ -909,6 +909,17 @@ static void createCPUWindow()
 
     [[NSNotificationCenter defaultCenter]
      addObserverForName:
+     UIScreenDidModeChangeNotification
+     object:nil
+     queue:[NSOperationQueue mainQueue]
+     usingBlock:^(NSNotification *note)
+    {
+        updateOrientation();
+    }];
+
+
+    [[NSNotificationCenter defaultCenter]
+     addObserverForName:
      UIDeviceOrientationDidChangeNotification
      object:nil
      queue:
@@ -960,19 +971,17 @@ static void updateCPU()
         if(isLandscape)
         {
 
-            [[UIDevice currentDevice] setBatteryMonitoringEnabled:YES];
-            NSInteger battery = (NSInteger)([[UIDevice currentDevice] batteryLevel] * 100.0);
 
             label.text =
             [NSString
              stringWithFormat:
-             @"SB CPU\n%.1f%%\n🔋 %ld%%",
-             cpu,
-             (long)battery];
+             @"SB CPU\n%.1f%%",
+             cpu];
 
         }
         else
         {
+
 
             label.text =
             [NSString
@@ -2009,6 +2018,11 @@ static void openSettings()
          block:
          ^(NSTimer *timer)
          {
+
+
+             // V1.5.9.3 修复：方向锁开启时游戏强制横屏不会触发旋转通知
+             // 每秒根据实际屏幕尺寸重新判断方向
+             updateOrientation();
 
 
              updateCPU();
