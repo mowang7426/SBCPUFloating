@@ -64,13 +64,6 @@ static CGFloat floatingAlpha = 0.70f;
 static BOOL isLandscape = NO;
 
 
-static void openSettings(void);
-
-static void updateOrientation(void);
-
-static void applyFloatingAlpha(void);
-
-
 
 #pragma mark -
 #pragma mark Controller声明
@@ -81,6 +74,10 @@ static void applyFloatingAlpha(void);
 UITableViewController
 
 @end
+
+static void openSettings(void);
+static void updateOrientation(void);
+static void applyFloatingAlpha(void);
 
 @interface SBCPUTapHandler : NSObject
 @end
@@ -96,6 +93,9 @@ UITableViewController
 
 
 
+
+@interface SBCPUAlphaPickerController : UITableViewController
+@end
 
 @interface SBCPUValuePickerController :
 UITableViewController
@@ -114,7 +114,6 @@ UITableViewController
 #pragma mark -
 #pragma mark 函数声明
 #pragma mark -
-
 
 
 
@@ -1406,6 +1405,53 @@ didSelectRowAtIndexPath:
 #pragma mark -
 
 
+
+@implementation SBCPUAlphaPickerController
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
+{
+    return 5;
+}
+
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
+{
+    return @"透明度";
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+
+    NSArray *values=@[@20,@40,@60,@80,@100];
+
+    cell.textLabel.text=[NSString stringWithFormat:@"%@%%",values[indexPath.row]];
+
+    if(floatingAlpha*100 == [values[indexPath.row] doubleValue])
+    {
+        cell.accessoryType=UITableViewCellAccessoryCheckmark;
+    }
+
+    return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    NSArray *values=@[@20,@40,@60,@80,@100];
+
+    floatingAlpha=[values[indexPath.row] doubleValue]/100.0;
+
+    [[NSUserDefaults standardUserDefaults] setDouble:floatingAlpha forKey:@"SBCPU.FloatingAlpha"];
+
+    [[NSUserDefaults standardUserDefaults] synchronize];
+
+    applyFloatingAlpha();
+
+    [self.navigationController popViewControllerAnimated:YES];
+}
+
+@end
+
+
 @implementation SBCPUSettingsController
 
 
@@ -1712,6 +1758,18 @@ didSelectRowAtIndexPath:
 
     }
 
+
+
+    if(indexPath.row==4)
+    {
+        SBCPUAlphaPickerController *vc =
+        [[SBCPUAlphaPickerController alloc]
+         initWithStyle:UITableViewStyleInsetGrouped];
+
+        [self.navigationController
+         pushViewController:vc
+         animated:YES];
+    }
 
 
     [tableView deselectRowAtIndexPath:
