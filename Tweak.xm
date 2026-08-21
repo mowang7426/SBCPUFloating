@@ -41,6 +41,16 @@ static NSDate *cpuHighStartTime = nil;
 
 static BOOL logoutCounting = NO;
 
+/*
+ SpringBoard异常检测 V1.6.0 Alpha
+ */
+static double anomalyCPUThreshold = 90.0;
+static NSInteger anomalyDuration = 10;
+static NSDate *anomalyStartTime = nil;
+static BOOL anomalyTriggered = NO;
+static NSMutableArray *anomalyLogs = nil;
+
+
 
 /*
  透明度
@@ -56,6 +66,7 @@ static CGFloat floatingAlpha = 0.70f;
 static void openSettings(void);
 
 static void checkHighCPU(double cpu);
+static void checkAnomalyCPU(double cpu);
 
 
 /*
@@ -867,6 +878,70 @@ static void checkHighCPU(double cpu)
 
 
 
+
+#pragma mark -
+#pragma mark V1.6.0 SpringBoard异常检测
+#pragma mark -
+
+static void checkAnomalyCPU(double cpu)
+{
+    if(anomalyCPUThreshold <= 0)
+    {
+        return;
+    }
+
+    if(cpu >= anomalyCPUThreshold)
+    {
+        if(!anomalyStartTime)
+        {
+            anomalyStartTime = [NSDate date];
+        }
+
+        NSTimeInterval duration =
+        [[NSDate date] timeIntervalSinceDate:anomalyStartTime];
+
+        if(duration >= anomalyDuration && !anomalyTriggered)
+        {
+            anomalyTriggered = YES;
+
+            if(!anomalyLogs)
+            {
+                anomalyLogs = [NSMutableArray array];
+            }
+
+            NSDictionary *log =
+            @{
+              @"time":
+                  [NSDate date],
+              @"cpu":
+                  @(cpu),
+              @"duration":
+                  @(duration)
+              };
+
+            [anomalyLogs addObject:log];
+
+            if(anomalyLogs.count > 20)
+            {
+                [anomalyLogs removeObjectAtIndex:0];
+            }
+
+            [[NSUserDefaults standardUserDefaults]
+             setObject:anomalyLogs
+             forKey:@"SBCPU.AnomalyLogs"];
+
+            [[NSUserDefaults standardUserDefaults]
+             synchronize];
+        }
+    }
+    else
+    {
+        anomalyStartTime = nil;
+        anomalyTriggered = NO;
+    }
+}
+
+
 static BOOL isLandscapeMode()
 {
     CGSize size = UIScreen.mainScreen.bounds.size;
@@ -948,6 +1023,7 @@ static void updateCPU()
 
 
     checkHighCPU(cpu);
+    checkAnomalyCPU(cpu);
 
 
     dispatch_async(
@@ -1037,7 +1113,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 9;
+    return 11;
 
 }
 
@@ -1177,7 +1253,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 7;
+    return 9;
 
 }
 
@@ -1600,6 +1676,18 @@ cellForRowAtIndexPath:
 
     }
 
+    if(indexPath.row == 9)
+    {
+        cell.textLabel.text = @"异常检测阈值";
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", anomalyCPUThreshold];
+    }
+
+    if(indexPath.row == 10)
+    {
+        cell.textLabel.text = @"异常持续时间";
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld秒", (long)anomalyDuration];
+    }
+
     return cell;
 
 }
@@ -1895,6 +1983,34 @@ static void openSettings()
 
     NSUserDefaults *def =
     NSUserDefaults.standardUserDefaults;
+
+    anomalyCPUThreshold =
+    [def doubleForKey:@"SBCPU.AnomalyThreshold"];
+
+    if(anomalyCPUThreshold <= 0)
+    {
+        anomalyCPUThreshold = 90.0;
+    }
+
+    anomalyDuration =
+    [def integerForKey:@"SBCPU.AnomalyDuration"];
+
+    if(anomalyDuration <= 0)
+    {
+        anomalyDuration = 10;
+    }
+
+    NSArray *savedLogs =
+    [def objectForKey:@"SBCPU.AnomalyLogs"];
+
+    if(savedLogs)
+    {
+        anomalyLogs = [savedLogs mutableCopy];
+    }
+    else
+    {
+        anomalyLogs = [NSMutableArray array];
+    }
 
 
     /*
