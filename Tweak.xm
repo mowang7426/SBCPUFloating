@@ -53,9 +53,9 @@ static CGFloat floatingAlpha = 0.70f;
  V1.6.0 智能布局
  */
 static BOOL smartLayoutEnable = YES;
-static BOOL autoMoveEnable = YES;
-static BOOL keyboardAvoidEnable = YES;
-static BOOL hideControlCenterEnable = YES;
+static BOOL autoMoveEnable __attribute__((unused)) = YES;
+static BOOL keyboardAvoidEnable __attribute__((unused)) = YES;
+static BOOL hideControlCenterEnable __attribute__((unused)) = YES;
 
 static CGRect lastFloatingFrame;
 static BOOL keyboardShowing = NO;
@@ -2126,6 +2126,10 @@ static void registerV160Observers()
         ^{
 
             createCPUWindow();
+
+            // V1.6.0 Smart Layout
+            registerV160Observers();
+            applySmartLayout();
 
 
             [NSTimer
