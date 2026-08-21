@@ -2053,6 +2053,19 @@ static void registerV160Observers()
 
                  if(cpuWindow && label)
                  {
+                     // V1.6.1 fixed3 智能键盘避让
+                     // 悬浮窗在屏幕上半部分时不避让键盘
+                     UIWindowScene *scene = getWindowScene();
+                     CGRect screenBounds = scene ? scene.coordinateSpace.bounds : UIScreen.mainScreen.bounds;
+
+                     CGFloat centerY = CGRectGetMidY(label.frame);
+                     CGFloat limitY = CGRectGetMidY(screenBounds);
+
+                     if(centerY < limitY)
+                     {
+                         return;
+                     }
+
                      // 只临时移动位置，不重新布局，不修改尺寸/透明度/圆角
                      if(!keyboardMoved)
                      {
