@@ -1037,7 +1037,7 @@ static double getBatteryTemperature()
     if(!matching)
         return -1;
 
-    if(IOServiceGetMatchingServices(kIOMainPortDefault,
+    if(IOServiceGetMatchingServices(kIOMasterPortDefault,
                                     matching,
                                     &iterator) != KERN_SUCCESS)
         return -1;
