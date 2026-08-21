@@ -1166,8 +1166,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    // Fix7.1 恢复智能布局/智能吸附设置项
-    return 12;
+    return 7;
 
 }
 
@@ -1289,7 +1288,7 @@ didSelectRowAtIndexPath:
         for(NSInteger i=0;i<names.count;i++)
         {
             [alert addAction:[UIAlertAction actionWithTitle:names[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-                dockMode = (i == 5 ? 0 : i);
+                dockMode = i;
                 [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPUFloating.dockMode"];
                 [[NSUserDefaults standardUserDefaults] synchronize];
             }]];
@@ -1381,11 +1380,6 @@ cellForRowAtIndexPath:
     ];
 
 
-    if(indexPath.row >= titles.count || indexPath.row >= values.count)
-    {
-        return cell;
-    }
-
     cell.textLabel.text =
     titles[indexPath.row];
 
@@ -1423,10 +1417,6 @@ didSelectRowAtIndexPath:
       @600
     ];
 
-    if(indexPath.row >= values.count)
-    {
-        return;
-    }
 
     logoutDuration =
     [values[indexPath.row] integerValue];
@@ -1546,7 +1536,7 @@ titleForHeaderInSection:
 
 - (void)changeScaleSlider:(UISlider *)slider
 {
-    floatingScale = MAX(0.3, MIN(1.5, slider.value));
+    floatingScale = slider.value;
     [[NSUserDefaults standardUserDefaults] setFloat:floatingScale forKey:@"SBCPU.FloatingScale"];
     [[NSUserDefaults standardUserDefaults] synchronize];
     updateFloatingSize();
@@ -1738,7 +1728,7 @@ cellForRowAtIndexPath:
         cell.textLabel.text = @"横屏浮窗大小";
 
         UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,150,30)];
-        slider.minimumValue = 0.8;
+        slider.minimumValue = 0.3;
         slider.maximumValue = 1.5;
         slider.value = landscapeScale;
         [slider addTarget:self action:@selector(changeLandscapeScaleSlider:) forControlEvents:UIControlEventValueChanged];
@@ -2003,7 +1993,7 @@ didSelectRowAtIndexPath:
         for(NSInteger i=0;i<names.count;i++)
         {
             [alert addAction:[UIAlertAction actionWithTitle:names[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-                dockMode = (i == 5 ? 0 : i);
+                dockMode = i;
                 [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPUFloating.dockMode"];
                 [[NSUserDefaults standardUserDefaults] synchronize];
                 [self.tableView reloadData];
