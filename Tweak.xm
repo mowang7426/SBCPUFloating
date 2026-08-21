@@ -1288,7 +1288,7 @@ didSelectRowAtIndexPath:
         for(NSInteger i=0;i<names.count;i++)
         {
             [alert addAction:[UIAlertAction actionWithTitle:names[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-                dockMode = i;
+                dockMode = (i == 5 ? 0 : i);
                 [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPUFloating.dockMode"];
                 [[NSUserDefaults standardUserDefaults] synchronize];
             }]];
@@ -1545,7 +1545,7 @@ titleForHeaderInSection:
 
 - (void)changeScaleSlider:(UISlider *)slider
 {
-    floatingScale = slider.value;
+    floatingScale = MAX(0.3, MIN(1.5, slider.value));
     [[NSUserDefaults standardUserDefaults] setFloat:floatingScale forKey:@"SBCPU.FloatingScale"];
     [[NSUserDefaults standardUserDefaults] synchronize];
     updateFloatingSize();
@@ -1709,7 +1709,7 @@ cellForRowAtIndexPath:
         cell.textLabel.text = @"浮窗大小";
 
         UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,150,30)];
-        slider.minimumValue = 0.8;
+        slider.minimumValue = 0.3;
         slider.maximumValue = 1.5;
         slider.value = floatingScale;
         [slider addTarget:self action:@selector(changeScaleSlider:) forControlEvents:UIControlEventValueChanged];
@@ -2002,7 +2002,7 @@ didSelectRowAtIndexPath:
         for(NSInteger i=0;i<names.count;i++)
         {
             [alert addAction:[UIAlertAction actionWithTitle:names[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-                dockMode = i;
+                dockMode = (i == 5 ? 0 : i);
                 [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPUFloating.dockMode"];
                 [[NSUserDefaults standardUserDefaults] synchronize];
                 [self.tableView reloadData];
@@ -2387,7 +2387,7 @@ static void registerV160Observers()
 
     // V1.6.1: 恢复用户保存的悬浮窗参数
     CGFloat savedScale = [def floatForKey:@"SBCPU.FloatingScale"];
-    if(savedScale >= 0.8 && savedScale <= 1.5)
+    if(savedScale >= 0.3 && savedScale <= 1.5)
         floatingScale = savedScale;
 
     CGFloat savedFont = [def floatForKey:@"SBCPU.FloatingFontSize"];
