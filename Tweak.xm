@@ -29,6 +29,7 @@ static UIView *cpuDragView = nil;
 */
 
 static BOOL settingsShowing = NO;
+static UIInterfaceOrientation SBCPULastInterfaceOrientation = UIInterfaceOrientationUnknown;
 
 
 
@@ -605,12 +606,51 @@ static void updateOrientation()
 
         CGRect frame = label.frame;
 
-        if(isLandscape)
+        UIInterfaceOrientation current = UIInterfaceOrientationUnknown;
+
+        UIApplication *app = UIApplication.sharedApplication;
+
+        for(UIScene *scene in app.connectedScenes)
+        {
+            if([scene isKindOfClass:UIWindowScene.class])
+            {
+                UIWindowScene *ws = (UIWindowScene *)scene;
+
+                if(ws.activationState == UISceneActivationStateForegroundActive)
+                {
+                    current = ws.interfaceOrientation;
+                    break;
+                }
+            }
+        }
+
+        SBCPULastInterfaceOrientation = current;
+
+        if(UIInterfaceOrientationIsLandscape(current) || isLandscape)
+        {
+            frame.size.width = 130;
             frame.size.height = 70;
+        }
         else
+        {
+            frame.size.width = 110;
             frame.size.height = 50;
+        }
 
         label.frame = frame;
+
+        // 根据实际 Scene 方向旋转浮窗，不依赖方向锁
+        if(UIInterfaceOrientationIsLandscape(current))
+        {
+            if(current == UIInterfaceOrientationLandscapeLeft)
+                label.transform = CGAffineTransformMakeRotation(M_PI_2);
+            else
+                label.transform = CGAffineTransformMakeRotation(-M_PI_2);
+        }
+        else
+        {
+            label.transform = CGAffineTransformIdentity;
+        }
 
         if(cpuDragView)
             cpuDragView.frame = label.frame;
