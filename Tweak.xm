@@ -11,6 +11,8 @@
 
 static UIWindow *cpuWindow;
 
+@class SBCPUDragView;
+
 static UILabel *label;
 static SBCPUDragView *cpuDragView;
 
