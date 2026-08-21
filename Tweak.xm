@@ -12,6 +12,7 @@
 static UIWindow *cpuWindow;
 
 static UILabel *label;
+static SBCPUDragView *cpuDragView;
 
 
 /*
@@ -620,7 +621,7 @@ static void createCPUWindow()
 
 
     label.numberOfLines =
-    2;
+    3;
 
 
     label.layer.cornerRadius =
@@ -650,10 +651,12 @@ static void createCPUWindow()
      拖动区域
      */
 
-    SBCPUDragView *drag =
+    cpuDragView =
     [[SBCPUDragView alloc]
      initWithFrame:
      label.frame];
+
+    SBCPUDragView *drag = cpuDragView;
 
 
     drag.backgroundColor =
@@ -881,6 +884,49 @@ static NSInteger getBatteryPercent()
 
 
 #pragma mark -
+#pragma mark 横竖屏尺寸调整
+#pragma mark -
+
+static void updateFloatingSize()
+{
+    if(!label)
+    {
+        return;
+    }
+
+    BOOL landscape = isLandscapeMode();
+
+    CGSize targetSize =
+    landscape ?
+    CGSizeMake(180, 90) :
+    CGSizeMake(120, 60);
+
+    if(!CGSizeEqualToSize(label.bounds.size, targetSize))
+    {
+        CGRect frame = label.frame;
+
+        CGPoint center = label.center;
+
+        frame.size = targetSize;
+
+        label.frame = frame;
+
+        label.center = center;
+
+        if(cpuDragView)
+        {
+            cpuDragView.frame = label.frame;
+        }
+
+        label.layer.cornerRadius =
+        landscape ? 18 : 12;
+
+        [label setNeedsLayout];
+    }
+}
+
+
+#pragma mark -
 #pragma mark CPU刷新
 #pragma mark -
 
@@ -903,6 +949,8 @@ static void updateCPU()
             {
                 return;
             }
+
+            updateFloatingSize();
 
 
             if(isLandscapeMode())
