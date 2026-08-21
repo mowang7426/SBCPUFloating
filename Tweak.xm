@@ -61,6 +61,9 @@ static CGRect lastFloatingFrame;
 static CGRect lastUserFrame;
 static BOOL keyboardShowing = NO;
 
+static CGRect keyboardBeforeFrame = CGRectZero;
+static BOOL keyboardMoved = NO;
+
 
 
 /*
