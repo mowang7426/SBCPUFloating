@@ -591,20 +591,13 @@ static BOOL SBCPUDetectFrontLandscape()
 static void updateOrientation()
 {
     if(!cpuWindow || !label)
-    {
         return;
-    }
 
     BOOL landscape = SBCPUDetectFrontLandscape();
 
-    isLandscape = landscape;
-
     dispatch_async(dispatch_get_main_queue(), ^{
-
-        if(!label)
+        if(!cpuWindow || !label)
             return;
-
-        CGRect frame = label.frame;
 
         UIInterfaceOrientation current = UIInterfaceOrientationUnknown;
 
@@ -626,38 +619,40 @@ static void updateOrientation()
 
         SBCPULastInterfaceOrientation = current;
 
-        if(UIInterfaceOrientationIsLandscape(current) || isLandscape)
-        {
-            frame.size.width = 130;
-            frame.size.height = 70;
-        }
-        else
-        {
-            frame.size.width = 110;
-            frame.size.height = 50;
-        }
+        BOOL realLandscape = landscape || UIInterfaceOrientationIsLandscape(current);
 
-        label.frame = frame;
-
-        // 根据实际 Scene 方向旋转浮窗，不依赖方向锁
-        if(UIInterfaceOrientationIsLandscape(current))
+        if(realLandscape)
         {
+            /*
+             修复方向锁定游戏横屏：
+             之前只旋转 label，导致窗口坐标仍是竖屏。
+             现在旋转整个浮窗窗口。
+            */
             if(current == UIInterfaceOrientationLandscapeLeft)
-                label.transform = CGAffineTransformMakeRotation(M_PI_2);
+                cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
             else
-                label.transform = CGAffineTransformMakeRotation(-M_PI_2);
+                cpuWindow.transform = CGAffineTransformMakeRotation(-M_PI_2);
+
+            label.transform = CGAffineTransformIdentity;
+            label.frame = CGRectMake(0,0,130,70);
+
+            if(cpuDragView)
+                cpuDragView.frame = label.frame;
         }
         else
         {
+            cpuWindow.transform = CGAffineTransformIdentity;
+
             label.transform = CGAffineTransformIdentity;
+            label.frame = CGRectMake(0,0,110,50);
+
+            if(cpuDragView)
+                cpuDragView.frame = label.frame;
         }
 
-        if(cpuDragView)
-            cpuDragView.frame = label.frame;
-
+        isLandscape = realLandscape;
     });
 }
-
 
 
 #pragma mark -
