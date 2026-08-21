@@ -960,17 +960,19 @@ static void updateCPU()
         if(isLandscape)
         {
 
+            [[UIDevice currentDevice] setBatteryMonitoringEnabled:YES];
+            NSInteger battery = (NSInteger)([[UIDevice currentDevice] batteryLevel] * 100.0);
 
             label.text =
             [NSString
              stringWithFormat:
-             @"SB CPU\n%.1f%%",
-             cpu];
+             @"SB CPU\n%.1f%%\n🔋 %ld%%",
+             cpu,
+             (long)battery];
 
         }
         else
         {
-
 
             label.text =
             [NSString
