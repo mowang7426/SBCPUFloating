@@ -1985,14 +1985,28 @@ static void registerV160Observers()
 
                  if(cpuWindow && label)
                  {
-                     if(CGRectIsEmpty(lastUserFrame))
-                         lastUserFrame = label.frame;
+                     // 只临时移动位置，不重新布局，不修改尺寸/透明度/圆角
+                     if(!keyboardMoved)
+                     {
+                         keyboardBeforeFrame = label.frame;
+                     }
 
-                     CGRect f = lastUserFrame;
-                     f.origin.y = MAX(20, f.origin.y - 180);
+                     CGRect f = keyboardBeforeFrame;
+                     CGFloat keyboardHeight = 180.0;
+
+                     NSDictionary *info = n.userInfo;
+                     NSValue *endFrameValue = info[UIKeyboardFrameEndUserInfoKey];
+                     if(endFrameValue)
+                     {
+                         CGRect keyboardFrame = [endFrameValue CGRectValue];
+                         keyboardHeight = MIN(220.0, keyboardFrame.size.height);
+                     }
+
+                     f.origin.y = MAX(20, f.origin.y - keyboardHeight);
 
                      label.frame = f;
                      cpuDragView.frame = f;
+                     keyboardMoved = YES;
                  }
 
              }];
@@ -2006,10 +2020,13 @@ static void registerV160Observers()
 
                  keyboardShowing = NO;
 
-                 if(!settingsShowing && !CGRectIsEmpty(lastUserFrame))
+                 if(!settingsShowing && keyboardMoved)
                  {
-                     label.frame = lastUserFrame;
-                     cpuDragView.frame = lastUserFrame;
+                     // 恢复键盘前的位置，保持用户设置的大小、透明度、圆角
+                     label.frame = keyboardBeforeFrame;
+                     cpuDragView.frame = keyboardBeforeFrame;
+                     lastFloatingFrame = keyboardBeforeFrame;
+                     keyboardMoved = NO;
                  }
 
              }];
