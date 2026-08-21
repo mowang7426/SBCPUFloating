@@ -1278,6 +1278,27 @@ didSelectRowAtIndexPath:
     [self.navigationController
      popViewControllerAnimated:YES];
 
+
+
+    if(indexPath.row == 10)
+    {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"吸附模式" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+        NSArray *names = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
+
+        for(NSInteger i=0;i<names.count;i++)
+        {
+            [alert addAction:[UIAlertAction actionWithTitle:names[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+                dockMode = i;
+                [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPUFloating.dockMode"];
+                [[NSUserDefaults standardUserDefaults] synchronize];
+            }]];
+        }
+
+        [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+
+        [self presentViewController:alert animated:YES completion:nil];
+    }
+
 }
 
 
@@ -1759,22 +1780,7 @@ cellForRowAtIndexPath:
 
 }
 
-    if(indexPath.row == 10)
-    {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"吸附模式" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
-        NSArray *names = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
-        for(NSInteger i=0;i<names.count;i++)
-        {
-            [alert addAction:[UIAlertAction actionWithTitle:names[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-                dockMode = i;
-                [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPU.DockMode"];
-                [[NSUserDefaults standardUserDefaults] synchronize];
-                [self.tableView reloadData];
-            }]];
-        }
-        [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
-    }
+    
 
 
 #pragma mark 智能布局控制
