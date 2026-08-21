@@ -1327,7 +1327,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 12;
+    return 7;
 
 }
 
@@ -1380,6 +1380,11 @@ cellForRowAtIndexPath:
     ];
 
 
+    if(indexPath.row >= titles.count || indexPath.row >= values.count)
+    {
+        return cell;
+    }
+
     cell.textLabel.text =
     titles[indexPath.row];
 
@@ -1417,6 +1422,10 @@ didSelectRowAtIndexPath:
       @600
     ];
 
+    if(indexPath.row >= values.count)
+    {
+        return;
+    }
 
     logoutDuration =
     [values[indexPath.row] integerValue];
@@ -1514,7 +1523,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 12;
+    return 7;
 
 }
 
