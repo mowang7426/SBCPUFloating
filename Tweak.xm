@@ -64,6 +64,12 @@ static BOOL keyboardShowing = NO;
 static CGRect keyboardBeforeFrame = CGRectZero;
 static BOOL keyboardMoved = NO;
 
+/*
+ V1.6.2 EdgeDock Plus
+ 0自由 1左 2右 3上 4下
+ */
+static NSInteger dockSide = 0;
+
 
 
 /*
@@ -551,26 +557,39 @@ withEvent:
 
     CGFloat margin = 100.0;
 
-    CGFloat targetX = label.center.x;
+    CGFloat left = CGRectGetMinX(frame);
+    CGFloat right = size.width - CGRectGetMaxX(frame);
+    CGFloat top = CGRectGetMinY(frame);
+    CGFloat bottom = size.height - CGRectGetMaxY(frame);
 
-    // V1.6.1 Edge Smart Dock
-    if(label.center.x < size.width / 2.0)
+    CGFloat minDistance = MIN(MIN(left,right),MIN(top,bottom));
+
+    CGPoint center = label.center;
+
+    if(minDistance == left)
     {
-        if(label.frame.origin.x < margin)
-        {
-            targetX = label.bounds.size.width / 2.0 + 10;
-        }
+        center.x = label.bounds.size.width / 2.0 + 10;
+        dockSide = 1;
+    }
+    else if(minDistance == right)
+    {
+        center.x = size.width - label.bounds.size.width / 2.0 - 10;
+        dockSide = 2;
+    }
+    else if(minDistance == top)
+    {
+        center.y = label.bounds.size.height / 2.0 + 40;
+        dockSide = 3;
+    }
+    else if(minDistance == bottom)
+    {
+        center.y = size.height - label.bounds.size.height / 2.0 - 10;
+        dockSide = 4;
     }
     else
     {
-        if(size.width - CGRectGetMaxX(frame) < margin)
-        {
-            targetX = size.width - label.bounds.size.width / 2.0 - 10;
-        }
+        dockSide = 0;
     }
-
-    CGPoint center = label.center;
-    center.x = targetX;
 
     [UIView animateWithDuration:0.25
                           delay:0
