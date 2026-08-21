@@ -16,7 +16,7 @@ static UIWindow *cpuWindow;
 static UILabel *label;
 static CGFloat floatingScale = 1.0;
 static CGFloat floatingFontSize = 14.0;
-static CGFloat landscapeScale = 1.1;
+static CGFloat landscapeScale = 0.75;
 static CGFloat batteryFontSize = 12.0;
 static SBCPUDragView *cpuDragView;
 
@@ -906,7 +906,7 @@ static void updateFloatingSize()
 
     CGSize targetSize =
     landscape ?
-    CGSizeMake(150 * scale, 65 * scale) :
+    CGSizeMake(135 * scale, 58 * scale) :
     CGSizeMake(100 * scale, 48 * scale);
 
     if(!CGSizeEqualToSize(label.bounds.size, targetSize))
@@ -1404,7 +1404,9 @@ titleForHeaderInSection:
 
 - (void)changeLandscapeScaleSlider:(UISlider *)slider
 {
-    landscapeScale = slider.value;
+    // 横屏独立悬浮窗大小
+    // 范围 60% - 120%，避免横屏显示电量时框体过大
+    landscapeScale = MAX(0.6, MIN(1.2, slider.value));
     [[NSUserDefaults standardUserDefaults] setFloat:landscapeScale forKey:@"SBCPU.LandscapeScale"];
     [[NSUserDefaults standardUserDefaults] synchronize];
     updateFloatingSize();
