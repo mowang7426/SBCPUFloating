@@ -555,8 +555,6 @@ withEvent:
 
     CGRect frame = label.frame;
 
-    CGFloat margin = 100.0;
-
     CGFloat left = CGRectGetMinX(frame);
     CGFloat right = size.width - CGRectGetMaxX(frame);
     CGFloat top = CGRectGetMinY(frame);
