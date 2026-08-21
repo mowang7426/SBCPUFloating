@@ -550,43 +550,28 @@ static BOOL SBCPUDetectFrontLandscape()
 
         UIWindowScene *ws = (UIWindowScene *)scene;
 
-        if(ws.activationState == UISceneActivationStateUnattached)
-            continue;
-
-        if(UIInterfaceOrientationIsLandscape(ws.interfaceOrientation))
+        if(ws.activationState == UISceneActivationStateForegroundActive)
         {
-            landscape = YES;
+            UIInterfaceOrientation o = ws.interfaceOrientation;
+            if(UIInterfaceOrientationIsLandscape(o))
+                landscape = YES;
         }
 
         for(UIWindow *w in ws.windows)
         {
-            if(!w.hidden && w.alpha > 0)
-            {
-                CGSize s = w.bounds.size;
-                if(s.width > s.height)
-                    landscape = YES;
+            if(w.hidden || w.alpha <= 0)
+                continue;
 
-                CGAffineTransform t = w.transform;
-                if(fabs(t.b) > 0.5 || fabs(t.c) > 0.5)
-                    landscape = YES;
-            }
+            CGSize size = w.bounds.size;
+
+            if(size.width > size.height)
+                landscape = YES;
         }
     }
 
     return landscape;
 }
 
-
-
-@interface SBCPUTapHandler : NSObject
-@end
-
-@implementation SBCPUTapHandler
-- (void)doubleTapAction
-{
-    openSettings();
-}
-@end
 
 static void updateOrientation()
 {
@@ -601,46 +586,42 @@ static void updateOrientation()
         BOOL landscape = SBCPUDetectFrontLandscape();
 
         /*
-         方向锁定进入游戏时：
-         UIKit 的 interfaceOrientation 可能仍然是 portrait。
-         不再旋转 UIWindow，避免窗口坐标系错乱导致：
+         游戏强制横屏适配：
+         不旋转 UIWindow，不修改拖动层坐标。
+         只切换显示布局，避免：
          - 浮窗消失
          - 拖动回左上角
-         - 进入游戏不刷新
-
-         只处理浮窗内容布局。
+         - 坐标系错乱
         */
 
         if(landscape)
         {
-            label.transform = CGAffineTransformMakeRotation(M_PI_2);
+            label.transform = CGAffineTransformIdentity;
 
-            CGRect screen = UIScreen.mainScreen.bounds;
-            CGFloat w = MAX(screen.size.width, screen.size.height);
-            CGFloat h = MIN(screen.size.width, screen.size.height);
-
-            label.bounds = CGRectMake(0,0,130,70);
-            label.center = CGPointMake(w * 0.20, h * 0.20);
+            CGRect frame = label.frame;
+            frame.size.width = 130;
+            frame.size.height = 70;
+            label.frame = frame;
 
             if(cpuDragView)
             {
-                cpuDragView.bounds = label.bounds;
-                cpuDragView.center = label.center;
-                cpuDragView.transform = label.transform;
+                cpuDragView.transform = CGAffineTransformIdentity;
+                cpuDragView.frame = frame;
             }
-
         }
         else
         {
             label.transform = CGAffineTransformIdentity;
 
-            label.bounds = CGRectMake(0,0,110,50);
+            CGRect frame = label.frame;
+            frame.size.width = 110;
+            frame.size.height = 50;
+            label.frame = frame;
 
             if(cpuDragView)
             {
-                cpuDragView.bounds = label.bounds;
-                cpuDragView.center = label.center;
                 cpuDragView.transform = CGAffineTransformIdentity;
+                cpuDragView.frame = frame;
             }
         }
 
