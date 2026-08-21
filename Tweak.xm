@@ -549,7 +549,7 @@ withEvent:
 
     CGRect frame = label.frame;
 
-    CGFloat margin = 30.0;
+    CGFloat margin = 100.0;
 
     CGFloat targetX = label.center.x;
 
@@ -2018,7 +2018,21 @@ static void registerV160Observers()
          queue:NSOperationQueue.mainQueue
          usingBlock:^(NSNotification *n){
 
-             applySmartLayout();
+             // V1.6.1 fixed2: rotate only clamp/reposition, never reset style
+             if(cpuWindow && label)
+             {
+                 CGRect f = label.frame;
+                 CGSize s = cpuWindow.bounds.size;
+                 if(CGRectGetMaxX(f) > s.width)
+                     f.origin.x = s.width - f.size.width - 10;
+                 if(CGRectGetMaxY(f) > s.height)
+                     f.origin.y = s.height - f.size.height - 10;
+                 if(f.origin.x < 0) f.origin.x = 10;
+                 if(f.origin.y < 0) f.origin.y = 10;
+                 label.frame = f;
+                 cpuDragView.frame = f;
+                 lastFloatingFrame = f;
+             }
 
          }];
 
