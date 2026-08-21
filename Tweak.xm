@@ -101,8 +101,6 @@ static void openSettings(void);
 
 static void updateOrientation(void);
 
-static void updateFloatingWindowFrame(void);
-
 static void applyFloatingAlpha(void);
 
 
@@ -527,90 +525,6 @@ static void applyFloatingAlpha()
 
 
 
-
-#pragma mark -
-#pragma mark Window尺寸同步修复 V1.5.9.2
-#pragma mark -
-
-static void updateFloatingWindowFrame()
-{
-    if(!cpuWindow)
-    {
-        return;
-    }
-
-
-    UIWindowScene *scene =
-    getWindowScene();
-
-
-    if(!scene)
-    {
-        return;
-    }
-
-
-    dispatch_async(
-    dispatch_get_main_queue(),
-    ^{
-
-        CGRect bounds =
-        scene.coordinateSpace.bounds;
-
-
-        cpuWindow.frame =
-        bounds;
-
-
-        cpuWindow.rootViewController.view.frame =
-        bounds;
-
-
-        if(label)
-        {
-
-            CGPoint center =
-            label.center;
-
-
-            CGFloat halfW =
-            label.bounds.size.width/2.0;
-
-
-            CGFloat halfH =
-            label.bounds.size.height/2.0;
-
-
-            if(center.x < halfW)
-                center.x = halfW;
-
-
-            if(center.x > bounds.size.width-halfW)
-                center.x = bounds.size.width-halfW;
-
-
-            if(center.y < halfH+30)
-                center.y = halfH+30;
-
-
-            if(center.y > bounds.size.height-halfH)
-                center.y = bounds.size.height-halfH;
-
-
-            label.center = center;
-
-
-            if(cpuDragView)
-            {
-                cpuDragView.center = center;
-            }
-
-        }
-
-    });
-}
-
-
 #pragma mark -
 #pragma mark 横屏处理
 #pragma mark -
@@ -634,9 +548,6 @@ static void updateOrientation()
 
 
     isLandscape = landscape;
-
-
-    updateFloatingWindowFrame();
 
 
 
