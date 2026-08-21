@@ -1456,7 +1456,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 7;
+    return 12;
 
 }
 
@@ -1468,7 +1468,7 @@ titleForHeaderInSection:
 {
 
     return
-    @"自动注销 / 悬浮窗";
+    @"自动注销 / 悬浮窗 / 智能布局";
 
 }
 
