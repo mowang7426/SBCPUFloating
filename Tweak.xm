@@ -556,6 +556,19 @@ withEvent:
         return;
     }
 
+    // V1.6.2.1 Smart Layout
+    // 关闭智能吸附时，释放后保持当前位置
+    if(!smartDockEnable)
+    {
+        dockSide = 0;
+        if(rememberPositionEnable)
+        {
+            [[NSUserDefaults standardUserDefaults] setObject:NSStringFromCGRect(label.frame) forKey:@"SBCPU.LastFrame"];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+        }
+        return;
+    }
+
     CGSize size = self.superview.bounds.size;
 
     CGRect frame = label.frame;
@@ -569,7 +582,31 @@ withEvent:
 
     CGPoint center = label.center;
 
-    if(minDistance == left)
+    // 固定吸附模式
+    if(dockMode > 0)
+    {
+        if(dockMode == 1)
+        {
+            center.x = label.bounds.size.width / 2.0 + 10;
+            dockSide = 1;
+        }
+        else if(dockMode == 2)
+        {
+            center.x = size.width - label.bounds.size.width / 2.0 - 10;
+            dockSide = 2;
+        }
+        else if(dockMode == 3)
+        {
+            center.y = label.bounds.size.height / 2.0 + 10;
+            dockSide = 3;
+        }
+        else if(dockMode == 4)
+        {
+            center.y = size.height - label.bounds.size.height / 2.0 - 10;
+            dockSide = 4;
+        }
+    }
+    else if(minDistance == left)
     {
         center.x = label.bounds.size.width / 2.0 + 10;
         dockSide = 1;
@@ -1705,7 +1742,7 @@ cellForRowAtIndexPath:
     {
         cell.textLabel.text = @"吸附模式";
         NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
-        cell.detailTextLabel.text = modes[dockMode];
+        cell.detailTextLabel.text = (dockMode >=0 && dockMode < modes.count) ? modes[dockMode] : @"自动";
     }
 
     if(indexPath.row == 11)
@@ -1721,6 +1758,23 @@ cellForRowAtIndexPath:
     return cell;
 
 }
+
+    if(indexPath.row == 10)
+    {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"吸附模式" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+        NSArray *names = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
+        for(NSInteger i=0;i<names.count;i++)
+        {
+            [alert addAction:[UIAlertAction actionWithTitle:names[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+                dockMode = i;
+                [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPU.DockMode"];
+                [[NSUserDefaults standardUserDefaults] synchronize];
+                [self.tableView reloadData];
+            }]];
+        }
+        [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+    }
 
 
 #pragma mark 智能布局控制
