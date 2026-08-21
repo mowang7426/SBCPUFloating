@@ -576,7 +576,7 @@ withEvent:
     }
     else if(minDistance == top)
     {
-        center.y = label.bounds.size.height / 2.0 + 40;
+        center.y = label.bounds.size.height / 2.0 + 10;
         dockSide = 3;
     }
     else if(minDistance == bottom)
@@ -2007,8 +2007,9 @@ static void applySmartLayout()
         if(CGRectGetMaxX(target) > CGRectGetWidth(area)-safe.right)
             target.origin.x = CGRectGetWidth(area)-safe.right-size.width-5;
 
-        if(target.origin.y < safe.top)
-            target.origin.y = safe.top + 5;
+        // V1.6.2 fixed2: 顶部吸附不再受横屏 safeArea 顶部偏移影响
+        if(target.origin.y < 5)
+            target.origin.y = 5;
 
         if(CGRectGetMaxY(target) > CGRectGetHeight(area)-safe.bottom)
             target.origin.y = CGRectGetHeight(area)-safe.bottom-size.height-5;
