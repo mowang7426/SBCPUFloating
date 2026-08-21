@@ -1998,7 +1998,7 @@ static void registerV160Observers()
         if(hideControlCenterEnable)
         {
             [nc addObserverForName:
-             UIApplicationDidResignActiveNotification
+             UIApplicationWillResignActiveNotification
              object:nil
              queue:NSOperationQueue.mainQueue
              usingBlock:^(NSNotification *n){
