@@ -547,9 +547,18 @@ static void updateOrientation()
 
 
 
-    BOOL landscape =
-    UIScreen.mainScreen.bounds.size.width >
-    UIScreen.mainScreen.bounds.size.height;
+    BOOL landscape = NO;
+
+    if (@available(iOS 13.0, *)) {
+        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+            if ([scene isKindOfClass:[UIWindowScene class]]) {
+                UIInterfaceOrientation o = ((UIWindowScene *)scene).interfaceOrientation;
+                if (UIInterfaceOrientationIsLandscape(o)) {
+                    landscape = YES;
+                }
+            }
+        }
+    }
 
 
 
@@ -914,6 +923,16 @@ static void createCPUWindow()
 
 
     [[NSNotificationCenter defaultCenter]
+     addObserverForName:UIApplicationDidBecomeActiveNotification
+     object:nil
+     queue:[NSOperationQueue mainQueue]
+     usingBlock:^(NSNotification *note)
+    {
+        updateOrientation();
+    }];
+
+
+    [[NSNotificationCenter defaultCenter]
      addObserverForName:
      UIDeviceOrientationDidChangeNotification
      object:nil
@@ -956,13 +975,6 @@ static void updateCPU()
     dispatch_async(
     dispatch_get_main_queue(),
     ^{
-
-
-        // V1.5.9.3.2 OrientationLock Fix
-        // 方向锁定开启时，游戏可能不会发送 UIDeviceOrientation 通知，
-        // 所以每次刷新 CPU 时根据实际屏幕尺寸重新判断。
-        updateOrientation();
-
 
 
         if(!label)
