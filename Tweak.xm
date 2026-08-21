@@ -29,8 +29,6 @@ static UIView *cpuDragView = nil;
 */
 
 static BOOL settingsShowing = NO;
-static UIInterfaceOrientation SBCPULastInterfaceOrientation = UIInterfaceOrientationUnknown;
-
 
 
 /*
@@ -76,6 +74,19 @@ static BOOL isLandscape = NO;
 UITableViewController
 
 @end
+
+@interface SBCPUTapHandler : NSObject
+@end
+
+@implementation SBCPUTapHandler
+
++ (void)doubleTapAction
+{
+    openSettings();
+}
+
+@end
+
 
 
 
