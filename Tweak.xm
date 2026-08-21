@@ -889,7 +889,16 @@ static void createCPUWindow()
 #pragma mark -
 
 
-static NSInteger getBatteryLevel()\n{\n    UIDevice *device = [UIDevice currentDevice];\n    device.batteryMonitoringEnabled = YES;\n    return device.batteryLevel < 0 ? 0 : (NSInteger)(device.batteryLevel * 100);\n}\n\n\nstatic NSInteger getBatteryLevel()\n{\n    UIDevice *device = [UIDevice currentDevice];\n    device.batteryMonitoringEnabled = YES;\n    return device.batteryLevel < 0 ? 0 : (NSInteger)(device.batteryLevel * 100);\n}\n\n\nstatic void updateCPU()\n{
+static NSInteger getBatteryLevel()
+{
+    UIDevice *device = [UIDevice currentDevice];
+    device.batteryMonitoringEnabled = YES;
+    return device.batteryLevel < 0 ? 0 : (NSInteger)(device.batteryLevel * 100);
+}
+
+
+static void updateCPU()
+\n{
 
     double cpu =
     getCPUUsage();
@@ -913,7 +922,7 @@ static NSInteger getBatteryLevel()\n{\n    UIDevice *device = [UIDevice currentD
             label.text =
             [NSString
              stringWithFormat:
-             @"SB CPU\n%.1f%%\nBAT %ld%%",
+             @"SB CPU\\n%.1f%%\\nBAT %ld%%",
              cpu, (long)getBatteryLevel()];
 
         }
@@ -924,8 +933,11 @@ static NSInteger getBatteryLevel()\n{\n    UIDevice *device = [UIDevice currentD
             label.text =
             [NSString
              stringWithFormat:
-             @"SB CPU\n%.1f%%\nBAT %ld%%",
-             cpu, (long)getBatteryLevel()];
+             @"SB CPU\\n%.1f%%",
+             cpu];
+
+        }
+ cpu, (long)getBatteryLevel()];
 
         }
 
