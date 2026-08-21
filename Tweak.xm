@@ -1460,19 +1460,6 @@ UITableViewController
 }
 
 
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
-{
-    if(indexPath.row == 10)
-    {
-        NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
-        dockMode = (dockMode + 1) % modes.count;
-        [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPU.DockMode"];
-        [[NSUserDefaults standardUserDefaults] synchronize];
-        [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
-    }
-}
-
-
 #pragma mark 关闭
 
 
@@ -1848,6 +1835,16 @@ cellForRowAtIndexPath:
 didSelectRowAtIndexPath:
 (NSIndexPath *)indexPath
 {
+
+    if(indexPath.row == 10)
+    {
+        NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
+        dockMode = (dockMode + 1) % modes.count;
+        [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPU.DockMode"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+        return;
+    }
 
     if(indexPath.row == 1)
     {
