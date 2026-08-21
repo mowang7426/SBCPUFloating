@@ -532,6 +532,57 @@ withEvent:
 }
 
 
+
+- (void)touchesEnded:
+(NSSet *)touches
+withEvent:
+(UIEvent *)event
+{
+    [super touchesEnded:touches withEvent:event];
+
+    if(!label)
+    {
+        return;
+    }
+
+    CGSize size = self.superview.bounds.size;
+
+    CGRect frame = label.frame;
+
+    CGFloat margin = 30.0;
+
+    CGFloat targetX = label.center.x;
+
+    // V1.6.1 Edge Smart Dock
+    if(label.center.x < size.width / 2.0)
+    {
+        if(label.frame.origin.x < margin)
+        {
+            targetX = label.bounds.size.width / 2.0 + 10;
+        }
+    }
+    else
+    {
+        if(size.width - CGRectGetMaxX(frame) < margin)
+        {
+            targetX = size.width - label.bounds.size.width / 2.0 - 10;
+        }
+    }
+
+    CGPoint center = label.center;
+    center.x = targetX;
+
+    [UIView animateWithDuration:0.25
+                          delay:0
+                        options:UIViewAnimationOptionCurveEaseOut
+                     animations:
+     ^{
+         label.center = center;
+         self.center = center;
+     }
+                     completion:nil];
+}
+
 @end
 
 
