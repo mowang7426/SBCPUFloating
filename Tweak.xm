@@ -528,6 +528,12 @@ static void applyFloatingAlpha()
 #pragma mark -
 #pragma mark 横屏处理
 #pragma mark -
+/*
+ V1.5.9.3.2:
+ 不依赖设备方向。
+ 通过 UIScreen 实际尺寸判断游戏强制横屏。
+ 兼容方向锁定开启进入横屏游戏。
+*/
 
 
 static void updateOrientation()
@@ -950,6 +956,13 @@ static void updateCPU()
     dispatch_async(
     dispatch_get_main_queue(),
     ^{
+
+
+        // V1.5.9.3.2 OrientationLock Fix
+        // 方向锁定开启时，游戏可能不会发送 UIDeviceOrientation 通知，
+        // 所以每次刷新 CPU 时根据实际屏幕尺寸重新判断。
+        updateOrientation();
+
 
 
         if(!label)
