@@ -64,6 +64,13 @@ static CGFloat floatingAlpha = 0.70f;
 static BOOL isLandscape = NO;
 
 
+static void openSettings(void);
+
+static void updateOrientation(void);
+
+static void applyFloatingAlpha(void);
+
+
 
 #pragma mark -
 #pragma mark Controller声明
@@ -108,12 +115,6 @@ UITableViewController
 #pragma mark 函数声明
 #pragma mark -
 
-
-static void openSettings(void);
-
-static void updateOrientation(void);
-
-static void applyFloatingAlpha(void);
 
 
 
