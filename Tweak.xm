@@ -596,6 +596,7 @@ static void updateOrientation()
             return;
 
         BOOL landscape = SBCPUDetectFrontLandscape();
+        isLandscape = landscape;
 
         /*
          游戏强制横屏适配：
@@ -935,9 +936,6 @@ static void updateCPU()
              stringWithFormat:
              @"SB CPU\\n%.1f%%",
              cpu];
-
-        }
- cpu, (long)getBatteryLevel()];
 
         }
 
