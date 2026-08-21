@@ -1066,9 +1066,20 @@ static double getBatteryTemperature()
             IOObjectRelease(service);
             IOObjectRelease(iterator);
 
-            // AppleSmartBattery 温度通常为 0.1K
-            if(value > 200)
+            /*
+             AppleSmartBattery Temperature:
+             iOS usually returns centi-degrees Celsius.
+             Example: 3650 = 36.50℃
+             Some devices expose deci-Kelvin, keep compatibility.
+            */
+            if(value > 1000 && value < 10000)
+            {
+                value = value / 100.0;
+            }
+            else if(value > 200)
+            {
                 value = value / 10.0 - 273.15;
+            }
 
             return value;
         }
