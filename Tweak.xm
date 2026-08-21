@@ -14,6 +14,8 @@ static UIWindow *cpuWindow;
 @class SBCPUDragView;
 
 static UILabel *label;
+static CGFloat floatingScale = 1.0;
+static CGFloat floatingFontSize = 14.0;
 static SBCPUDragView *cpuDragView;
 
 
@@ -898,10 +900,12 @@ static void updateFloatingSize()
 
     BOOL landscape = isLandscapeMode();
 
+    CGFloat scale = floatingScale;
+
     CGSize targetSize =
     landscape ?
-    CGSizeMake(180, 90) :
-    CGSizeMake(120, 60);
+    CGSizeMake(150 * scale, 65 * scale) :
+    CGSizeMake(100 * scale, 48 * scale);
 
     if(!CGSizeEqualToSize(label.bounds.size, targetSize))
     {
@@ -954,6 +958,9 @@ static void updateCPU()
 
             updateFloatingSize();
 
+            label.font =
+            [UIFont systemFontOfSize:floatingFontSize];
+
 
             if(isLandscapeMode())
             {
@@ -963,7 +970,7 @@ static void updateCPU()
                 {
                     label.text =
                     [NSString stringWithFormat:
-                     @"SB CPU\n%.1f%%\n电量 %ld%%",
+                     @"SB CPU %.1f%%\n电量 %ld%%",
                      cpu,
                      (long)battery];
                 }
@@ -1354,7 +1361,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 5;
+    return 7;
 
 }
 
@@ -1481,11 +1488,20 @@ cellForRowAtIndexPath:
 
 
         cell.detailTextLabel.text =
-        [NSString
-         stringWithFormat:
-         @"%.0f%%",
-         floatingAlpha * 100.0];
+        [NSString stringWithFormat:@"%.0f%%", floatingAlpha * 100.0];
 
+    }
+
+    if(indexPath.row == 5)
+    {
+        cell.textLabel.text = @"浮窗大小";
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", floatingScale * 100];
+    }
+
+    if(indexPath.row == 6)
+    {
+        cell.textLabel.text = @"字体大小";
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f", floatingFontSize];
     }
 
 
