@@ -536,6 +536,46 @@ static void applyFloatingAlpha()
 */
 
 
+static BOOL SBCPUDetectFrontLandscape()
+{
+    BOOL landscape = NO;
+
+    UIApplication *app = UIApplication.sharedApplication;
+
+    for(UIScene *scene in app.connectedScenes)
+    {
+        if(![scene isKindOfClass:UIWindowScene.class])
+            continue;
+
+        UIWindowScene *ws = (UIWindowScene *)scene;
+
+        if(ws.activationState == UISceneActivationStateUnattached)
+            continue;
+
+        if(UIInterfaceOrientationIsLandscape(ws.interfaceOrientation))
+        {
+            landscape = YES;
+        }
+
+        for(UIWindow *w in ws.windows)
+        {
+            if(!w.hidden && w.alpha > 0)
+            {
+                CGSize s = w.bounds.size;
+                if(s.width > s.height)
+                    landscape = YES;
+
+                CGAffineTransform t = w.transform;
+                if(fabs(t.b) > 0.5 || fabs(t.c) > 0.5)
+                    landscape = YES;
+            }
+        }
+    }
+
+    return landscape;
+}
+
+
 static void updateOrientation()
 {
     if(!cpuWindow || !label)
@@ -543,115 +583,30 @@ static void updateOrientation()
         return;
     }
 
-    BOOL landscape = NO;
-
-    /*
-     游戏强制横屏 / 方向锁开启：
-     不依赖 UIDeviceOrientation。
-     优先使用当前 UIWindowScene，
-     再使用 Window 实际尺寸兜底。
-     */
-
-    UIWindowScene *ws = cpuWindow.windowScene;
-
-    if(ws)
-    {
-        UIInterfaceOrientation o = ws.interfaceOrientation;
-
-        if(UIInterfaceOrientationIsLandscape(o))
-        {
-            landscape = YES;
-        }
-    }
-
-
-    CGSize size = cpuWindow.bounds.size;
-
-    if(size.width > size.height)
-    {
-        landscape = YES;
-    }
-
+    BOOL landscape = SBCPUDetectFrontLandscape();
 
     isLandscape = landscape;
 
+    dispatch_async(dispatch_get_main_queue(), ^{
 
-    dispatch_async(
-    dispatch_get_main_queue(),
-    ^{
         if(!label)
             return;
 
-
         CGRect frame = label.frame;
 
-
         if(isLandscape)
-        {
             frame.size.height = 70;
-            label.frame = frame;
-        }
         else
-        {
             frame.size.height = 50;
-            label.frame = frame;
-        }
 
+        label.frame = frame;
 
         if(cpuDragView)
-        {
             cpuDragView.frame = label.frame;
-        }
-
-
-        CGSize screen = cpuWindow.bounds.size;
-
-        CGPoint center = label.center;
-
-
-        CGFloat halfW = label.bounds.size.width / 2.0;
-        CGFloat halfH = label.bounds.size.height / 2.0;
-
-
-        if(center.x < halfW)
-            center.x = halfW;
-
-        if(center.x > screen.width - halfW)
-            center.x = screen.width - halfW;
-
-        if(center.y < halfH + 20)
-            center.y = halfH + 20;
-
-        if(center.y > screen.height - halfH)
-            center.y = screen.height - halfH;
-
-
-        label.center = center;
-
-
-        if(cpuDragView)
-            cpuDragView.center = center;
 
     });
 }
 
-
-
-#pragma mark -
-#pragma mark 双击动作
-#pragma mark -
-
-@interface SBCPUAction : NSObject
-@end
-
-@implementation SBCPUAction
-
-+ (void)doubleTapAction
-{
-    openSettings();
-}
-
-@end
 
 
 #pragma mark -
