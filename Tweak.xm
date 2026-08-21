@@ -1460,6 +1460,19 @@ UITableViewController
 }
 
 
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    if(indexPath.row == 10)
+    {
+        NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
+        dockMode = (dockMode + 1) % modes.count;
+        [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPU.DockMode"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+    }
+}
+
+
 #pragma mark 关闭
 
 
@@ -1515,7 +1528,7 @@ titleForHeaderInSection:
 
 - (void)changeScaleSlider:(UISlider *)slider
 {
-    floatingScale = slider.value;
+    floatingScale = MAX(0.4, slider.value);
     [[NSUserDefaults standardUserDefaults] setFloat:floatingScale forKey:@"SBCPU.FloatingScale"];
     [[NSUserDefaults standardUserDefaults] synchronize];
     updateFloatingSize();
@@ -1536,7 +1549,7 @@ titleForHeaderInSection:
 {
     // 横屏独立悬浮窗大小
     // 范围 60% - 120%，避免横屏显示电量时框体过大
-    landscapeScale = MAX(0.6, MIN(1.2, slider.value));
+    landscapeScale = MAX(0.4, MIN(1.2, slider.value));
     [[NSUserDefaults standardUserDefaults] setFloat:landscapeScale forKey:@"SBCPU.LandscapeScale"];
     [[NSUserDefaults standardUserDefaults] synchronize];
     updateFloatingSize();
@@ -1679,7 +1692,7 @@ cellForRowAtIndexPath:
         cell.textLabel.text = @"浮窗大小";
 
         UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,150,30)];
-        slider.minimumValue = 0.8;
+        slider.minimumValue = 0.4;
         slider.maximumValue = 1.5;
         slider.value = floatingScale;
         [slider addTarget:self action:@selector(changeScaleSlider:) forControlEvents:UIControlEventValueChanged];
@@ -2261,6 +2274,18 @@ static void registerV160Observers()
 
     NSUserDefaults *def =
     NSUserDefaults.standardUserDefaults;
+
+    floatingScale = [def floatForKey:@"SBCPU.FloatingScale"];
+    if(floatingScale < 0.4) floatingScale = 1.0;
+    floatingFontSize = [def floatForKey:@"SBCPU.FloatingFontSize"];
+    if(floatingFontSize < 1) floatingFontSize = 14.0;
+    landscapeScale = [def floatForKey:@"SBCPU.LandscapeScale"];
+    if(landscapeScale < 0.4) landscapeScale = 0.75;
+    landscapeFontSize = [def floatForKey:@"SBCPU.LandscapeFontSize"];
+    if(landscapeFontSize < 1) landscapeFontSize = 12.0;
+    batteryFontSize = [def floatForKey:@"SBCPU.BatteryFontSize"];
+    if(batteryFontSize < 1) batteryFontSize = 12.0;
+    dockMode = [def integerForKey:@"SBCPU.DockMode"];
 
 
     /*
