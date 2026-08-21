@@ -16,6 +16,8 @@ static UIWindow *cpuWindow;
 static UILabel *label;
 static CGFloat floatingScale = 1.0;
 static CGFloat floatingFontSize = 14.0;
+static CGFloat landscapeScale = 1.1;
+static CGFloat batteryFontSize = 12.0;
 static SBCPUDragView *cpuDragView;
 
 
@@ -900,7 +902,7 @@ static void updateFloatingSize()
 
     BOOL landscape = isLandscapeMode();
 
-    CGFloat scale = floatingScale;
+    CGFloat scale = landscape ? landscapeScale : floatingScale;
 
     CGSize targetSize =
     landscape ?
@@ -1034,7 +1036,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 7;
+    return 9;
 
 }
 
@@ -1400,6 +1402,22 @@ titleForHeaderInSection:
     [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:6 inSection:0]] withRowAnimation:UITableViewRowAnimationNone];
 }
 
+- (void)changeLandscapeScaleSlider:(UISlider *)slider
+{
+    landscapeScale = slider.value;
+    [[NSUserDefaults standardUserDefaults] setFloat:landscapeScale forKey:@"SBCPU.LandscapeScale"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    updateFloatingSize();
+}
+
+- (void)changeBatteryFontSlider:(UISlider *)slider
+{
+    batteryFontSize = slider.value;
+    [[NSUserDefaults standardUserDefaults] setFloat:batteryFontSize forKey:@"SBCPU.BatteryFontSize"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    updateFloatingSize();
+}
+
 #pragma mark Cell
 
 
@@ -1540,6 +1558,33 @@ cellForRowAtIndexPath:
         cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f", floatingFontSize];
     }
 
+
+
+    if(indexPath.row == 7)
+    {
+        cell.textLabel.text = @"横屏浮窗大小";
+
+        UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,150,30)];
+        slider.minimumValue = 0.8;
+        slider.maximumValue = 1.5;
+        slider.value = landscapeScale;
+        [slider addTarget:self action:@selector(changeLandscapeScaleSlider:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = slider;
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", landscapeScale * 100];
+    }
+
+    if(indexPath.row == 8)
+    {
+        cell.textLabel.text = @"电量字体大小";
+
+        UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,150,30)];
+        slider.minimumValue = 10;
+        slider.maximumValue = 20;
+        slider.value = batteryFontSize;
+        [slider addTarget:self action:@selector(changeBatteryFontSlider:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = slider;
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f", batteryFontSize];
+    }
 
     return cell;
 
