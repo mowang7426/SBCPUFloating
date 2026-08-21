@@ -1053,7 +1053,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 9;
+    return 7;
 
 }
 
