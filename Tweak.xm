@@ -70,6 +70,11 @@ static BOOL keyboardMoved = NO;
  */
 static NSInteger dockSide = 0;
 
+// V1.6.2.1 Smart Layout Control
+static BOOL smartDockEnable = YES;
+static NSInteger dockMode = 0; // 0自动 1左 2右 3上 4下
+static BOOL rememberPositionEnable = YES;
+
 
 
 /*
@@ -1264,7 +1269,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 7;
+    return 12;
 
 }
 
@@ -1687,8 +1692,51 @@ cellForRowAtIndexPath:
 
     }
 
+    if(indexPath.row == 9)
+    {
+        cell.textLabel.text = @"智能吸附";
+        UISwitch *sw = [[UISwitch alloc] init];
+        sw.on = smartDockEnable;
+        [sw addTarget:self action:@selector(changeSmartDock:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = sw;
+    }
+
+    if(indexPath.row == 10)
+    {
+        cell.textLabel.text = @"吸附模式";
+        NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
+        cell.detailTextLabel.text = modes[dockMode];
+    }
+
+    if(indexPath.row == 11)
+    {
+        cell.textLabel.text = @"记忆悬浮窗位置";
+        UISwitch *sw = [[UISwitch alloc] init];
+        sw.on = rememberPositionEnable;
+        [sw addTarget:self action:@selector(changeRemember:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = sw;
+    }
+
+
     return cell;
 
+}
+
+
+#pragma mark 智能布局控制
+
+- (void)changeSmartDock:(UISwitch *)sw
+{
+    smartDockEnable = sw.isOn;
+    [[NSUserDefaults standardUserDefaults] setBool:smartDockEnable forKey:@"SBCPU.SmartDock"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+- (void)changeRemember:(UISwitch *)sw
+{
+    rememberPositionEnable = sw.isOn;
+    [[NSUserDefaults standardUserDefaults] setBool:rememberPositionEnable forKey:@"SBCPU.RememberPosition"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
 
