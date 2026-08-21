@@ -1378,6 +1378,28 @@ titleForHeaderInSection:
 }
 
 
+
+#pragma mark 滑动调整
+
+- (void)changeScaleSlider:(UISlider *)slider
+{
+    floatingScale = slider.value;
+    [[NSUserDefaults standardUserDefaults] setFloat:floatingScale forKey:@"SBCPU.FloatingScale"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    updateFloatingSize();
+    [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:5 inSection:0]] withRowAnimation:UITableViewRowAnimationNone];
+}
+
+- (void)changeFontSlider:(UISlider *)slider
+{
+    floatingFontSize = slider.value;
+    [[NSUserDefaults standardUserDefaults] setFloat:floatingFontSize forKey:@"SBCPU.FloatingFontSize"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    if(label)
+        label.font = [UIFont systemFontOfSize:floatingFontSize];
+    [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:6 inSection:0]] withRowAnimation:UITableViewRowAnimationNone];
+}
+
 #pragma mark Cell
 
 
@@ -1495,12 +1517,26 @@ cellForRowAtIndexPath:
     if(indexPath.row == 5)
     {
         cell.textLabel.text = @"浮窗大小";
+
+        UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,150,30)];
+        slider.minimumValue = 0.8;
+        slider.maximumValue = 1.5;
+        slider.value = floatingScale;
+        [slider addTarget:self action:@selector(changeScaleSlider:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = slider;
         cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", floatingScale * 100];
     }
 
     if(indexPath.row == 6)
     {
         cell.textLabel.text = @"字体大小";
+
+        UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,150,30)];
+        slider.minimumValue = 10;
+        slider.maximumValue = 24;
+        slider.value = floatingFontSize;
+        [slider addTarget:self action:@selector(changeFontSlider:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = slider;
         cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f", floatingFontSize];
     }
 
