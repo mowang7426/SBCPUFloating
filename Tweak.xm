@@ -638,6 +638,23 @@ static void updateOrientation()
 
 
 #pragma mark -
+#pragma mark 双击动作
+#pragma mark -
+
+@interface SBCPUAction : NSObject
+@end
+
+@implementation SBCPUAction
+
++ (void)doubleTapAction
+{
+    openSettings();
+}
+
+@end
+
+
+#pragma mark -
 #pragma mark 创建悬浮窗
 #pragma mark -
 
