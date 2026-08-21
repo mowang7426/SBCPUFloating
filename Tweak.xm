@@ -41,16 +41,6 @@ static NSDate *cpuHighStartTime = nil;
 
 static BOOL logoutCounting = NO;
 
-/*
- SpringBoard异常检测 V1.6.0 Alpha
- */
-static double anomalyCPUThreshold = 90.0;
-static NSInteger anomalyDuration = 10;
-static NSDate *anomalyStartTime = nil;
-static BOOL anomalyTriggered = NO;
-static NSMutableArray *anomalyLogs = nil;
-
-
 
 /*
  透明度
@@ -59,6 +49,18 @@ static BOOL floatingAlphaEnable = YES;
 
 static CGFloat floatingAlpha = 0.70f;
 
+/*
+ V1.6.0 智能布局
+ */
+static BOOL smartLayoutEnable = YES;
+static BOOL autoMoveEnable = YES;
+static BOOL keyboardAvoidEnable = YES;
+static BOOL hideControlCenterEnable = YES;
+
+static CGRect lastFloatingFrame;
+static BOOL keyboardShowing = NO;
+
+
 
 /*
  前置声明
@@ -66,7 +68,9 @@ static CGFloat floatingAlpha = 0.70f;
 static void openSettings(void);
 
 static void checkHighCPU(double cpu);
-static void checkAnomalyCPU(double cpu);
+static void applySmartLayout(void);
+static void registerV160Observers(void);
+
 
 
 /*
@@ -878,70 +882,6 @@ static void checkHighCPU(double cpu)
 
 
 
-
-#pragma mark -
-#pragma mark V1.6.0 SpringBoard异常检测
-#pragma mark -
-
-static void checkAnomalyCPU(double cpu)
-{
-    if(anomalyCPUThreshold <= 0)
-    {
-        return;
-    }
-
-    if(cpu >= anomalyCPUThreshold)
-    {
-        if(!anomalyStartTime)
-        {
-            anomalyStartTime = [NSDate date];
-        }
-
-        NSTimeInterval duration =
-        [[NSDate date] timeIntervalSinceDate:anomalyStartTime];
-
-        if(duration >= anomalyDuration && !anomalyTriggered)
-        {
-            anomalyTriggered = YES;
-
-            if(!anomalyLogs)
-            {
-                anomalyLogs = [NSMutableArray array];
-            }
-
-            NSDictionary *log =
-            @{
-              @"time":
-                  [NSDate date],
-              @"cpu":
-                  @(cpu),
-              @"duration":
-                  @(duration)
-              };
-
-            [anomalyLogs addObject:log];
-
-            if(anomalyLogs.count > 20)
-            {
-                [anomalyLogs removeObjectAtIndex:0];
-            }
-
-            [[NSUserDefaults standardUserDefaults]
-             setObject:anomalyLogs
-             forKey:@"SBCPU.AnomalyLogs"];
-
-            [[NSUserDefaults standardUserDefaults]
-             synchronize];
-        }
-    }
-    else
-    {
-        anomalyStartTime = nil;
-        anomalyTriggered = NO;
-    }
-}
-
-
 static BOOL isLandscapeMode()
 {
     CGSize size = UIScreen.mainScreen.bounds.size;
@@ -1023,7 +963,6 @@ static void updateCPU()
 
 
     checkHighCPU(cpu);
-    checkAnomalyCPU(cpu);
 
 
     dispatch_async(
@@ -1113,7 +1052,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 11;
+    return 9;
 
 }
 
@@ -1253,7 +1192,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 9;
+    return 7;
 
 }
 
@@ -1676,18 +1615,6 @@ cellForRowAtIndexPath:
 
     }
 
-    if(indexPath.row == 9)
-    {
-        cell.textLabel.text = @"异常检测阈值";
-        cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", anomalyCPUThreshold];
-    }
-
-    if(indexPath.row == 10)
-    {
-        cell.textLabel.text = @"异常持续时间";
-        cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld秒", (long)anomalyDuration];
-    }
-
     return cell;
 
 }
@@ -1967,6 +1894,136 @@ static void openSettings()
 #pragma mark -
 
 
+
+
+#pragma mark -
+#pragma mark V1.6.0 Smart Layout
+#pragma mark -
+
+static void applySmartLayout()
+{
+    if(!cpuWindow || !label || !smartLayoutEnable)
+        return;
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+
+        UIWindowScene *scene = cpuWindow.windowScene;
+        if(!scene)
+            return;
+
+        CGRect area = scene.coordinateSpace.bounds;
+        UIEdgeInsets safe = scene.windows.firstObject.safeAreaInsets;
+
+        CGFloat w = label.frame.size.width;
+        CGFloat h = label.frame.size.height;
+
+        CGFloat x = CGRectGetWidth(area) - w - 12 - safe.right;
+        CGFloat y = CGRectGetHeight(area) / 2.0;
+
+        if(UIInterfaceOrientationIsLandscape(scene.interfaceOrientation))
+        {
+            x = 12 + safe.left;
+            y = CGRectGetHeight(area) - h - 80;
+        }
+        else
+        {
+            y = MAX(safe.top + 20, y);
+        }
+
+        CGRect frame = CGRectMake(x,y,w,h);
+
+        label.frame = frame;
+        cpuDragView.frame = frame;
+
+        lastFloatingFrame = frame;
+    });
+}
+
+
+static void registerV160Observers()
+{
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken,^{
+
+        NSNotificationCenter *nc =
+        NSNotificationCenter.defaultCenter;
+
+
+        [nc addObserverForName:
+         UIDeviceOrientationDidChangeNotification
+         object:nil
+         queue:NSOperationQueue.mainQueue
+         usingBlock:^(NSNotification *n){
+
+             applySmartLayout();
+
+         }];
+
+
+        if(keyboardAvoidEnable)
+        {
+
+            [nc addObserverForName:
+             UIKeyboardWillShowNotification
+             object:nil
+             queue:NSOperationQueue.mainQueue
+             usingBlock:^(NSNotification *n){
+
+                 keyboardShowing = YES;
+
+                 if(cpuWindow && label)
+                 {
+                     CGRect f = label.frame;
+                     f.origin.y -= 180;
+                     label.frame = f;
+                     cpuDragView.frame = f;
+                 }
+
+             }];
+
+
+            [nc addObserverForName:
+             UIKeyboardWillHideNotification
+             object:nil
+             queue:NSOperationQueue.mainQueue
+             usingBlock:^(NSNotification *n){
+
+                 keyboardShowing = NO;
+                 applySmartLayout();
+
+             }];
+        }
+
+
+        if(hideControlCenterEnable)
+        {
+            [nc addObserverForName:
+             UIApplicationDidResignActiveNotification
+             object:nil
+             queue:NSOperationQueue.mainQueue
+             usingBlock:^(NSNotification *n){
+
+                 if(cpuWindow)
+                     cpuWindow.hidden = YES;
+
+             }];
+
+
+            [nc addObserverForName:
+             UIApplicationDidBecomeActiveNotification
+             object:nil
+             queue:NSOperationQueue.mainQueue
+             usingBlock:^(NSNotification *n){
+
+                 if(cpuWindow)
+                     cpuWindow.hidden = NO;
+
+             }];
+        }
+
+    });
+}
+
 %ctor
 {
 
@@ -1983,34 +2040,6 @@ static void openSettings()
 
     NSUserDefaults *def =
     NSUserDefaults.standardUserDefaults;
-
-    anomalyCPUThreshold =
-    [def doubleForKey:@"SBCPU.AnomalyThreshold"];
-
-    if(anomalyCPUThreshold <= 0)
-    {
-        anomalyCPUThreshold = 90.0;
-    }
-
-    anomalyDuration =
-    [def integerForKey:@"SBCPU.AnomalyDuration"];
-
-    if(anomalyDuration <= 0)
-    {
-        anomalyDuration = 10;
-    }
-
-    NSArray *savedLogs =
-    [def objectForKey:@"SBCPU.AnomalyLogs"];
-
-    if(savedLogs)
-    {
-        anomalyLogs = [savedLogs mutableCopy];
-    }
-    else
-    {
-        anomalyLogs = [NSMutableArray array];
-    }
 
 
     /*
