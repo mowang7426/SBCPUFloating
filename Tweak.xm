@@ -1858,7 +1858,7 @@ static void openSettings()
 
 
     NSString *process =
-    NSProcessInfo.processName;
+    NSProcessInfo.processInfo.processName;
 
 
 
