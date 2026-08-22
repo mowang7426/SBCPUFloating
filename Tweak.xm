@@ -15,7 +15,7 @@ static UIWindow *cpuWindow;
 
 @class SBCPUDragView;
 
-static UILabel *label;
+static UILabel *label;\nstatic CGPoint sbTapStartPoint;\nstatic NSTimeInterval sbTapStartTime;
 static CGFloat floatingScale = 1.0;
 static CGFloat floatingFontSize = 14.0;
 static CGFloat landscapeScale = 0.75;
@@ -695,30 +695,6 @@ withEvent:
 }
 
 
-+ (void)landscapeTapAction
-{
-    if(!label)
-    {
-        return;
-    }
-
-    if(!isLandscapeMode())
-    {
-        label.transform = CGAffineTransformIdentity;
-        return;
-    }
-
-    if(CGAffineTransformIsIdentity(label.transform))
-    {
-        label.transform = CGAffineTransformMakeRotation(M_PI_2);
-    }
-    else
-    {
-        label.transform = CGAffineTransformIdentity;
-    }
-}
-
-
 @end
 
 
@@ -896,19 +872,6 @@ static void createCPUWindow()
 
     [drag addGestureRecognizer:
      doubleTap];
-
-
-    UITapGestureRecognizer *singleTap =
-    [[UITapGestureRecognizer alloc]
-     initWithTarget:
-     [SBCPUAction class]
-     action:@selector(landscapeTapAction)];
-
-    singleTap.numberOfTapsRequired = 1;
-    singleTap.numberOfTouchesRequired = 1;
-    [singleTap requireGestureRecognizerToFail:doubleTap];
-
-    [drag addGestureRecognizer:singleTap];
 
 
     applyFloatingAlpha();
