@@ -22,6 +22,7 @@ static CGFloat batteryFontSize = 12.0;
 static CGFloat landscapeFontSize = 12.0;
 static SBCPUDragView *cpuDragView;
 static BOOL landscapeRotated = NO;
+static BOOL manualLandscapeMode = NO;
 
 // V1.6.2 fix9 portrait state snapshot
 static BOOL portraitStateSaved = NO;
@@ -702,6 +703,7 @@ withEvent:
 
     // 横屏状态：保持当前位置，只旋转显示层
     landscapeRotated = !landscapeRotated;
+    manualLandscapeMode = YES;
 
     [UIView animateWithDuration:0.25 animations:^{
         CGAffineTransform t = landscapeRotated ? CGAffineTransformMakeRotation(M_PI_2) : portraitSavedTransform;
@@ -2443,9 +2445,13 @@ static void updateCPUFloatingOrientation(void)
     {
         // Landscape -> Portrait transition:
         // clear the temporary rotation applied by the click action.
-        if(wasLandscape && !isLandscape)
+        // fix14:
+        // 不依赖系统方向通知，使用实际屏幕尺寸恢复检测。
+        // 方向锁定开启时系统可能不会发送 Landscape->Portrait 回调。
+        if(manualLandscapeMode && !isLandscape)
         {
             landscapeRotated = NO;
+            manualLandscapeMode = NO;
 
             [UIView animateWithDuration:0.20 animations:^{
                 label.transform = CGAffineTransformIdentity;
