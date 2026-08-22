@@ -2346,6 +2346,35 @@ static void registerV160Observers()
     });
 }
 
+
+static void startV162OrientationMonitor(void)
+{
+    static dispatch_once_t onceToken;
+
+    dispatch_once(&onceToken, ^{
+        dispatch_source_t timer =
+        dispatch_source_create(
+            DISPATCH_SOURCE_TYPE_TIMER,
+            0,
+            0,
+            dispatch_get_main_queue()
+        );
+
+        dispatch_source_set_timer(
+            timer,
+            dispatch_time(DISPATCH_TIME_NOW, 0),
+            500ull * NSEC_PER_MSEC,
+            50ull * NSEC_PER_MSEC
+        );
+
+        dispatch_source_set_event_handler(timer, ^{
+            updateCPUFloatingOrientation();
+        });
+
+        dispatch_resume(timer);
+    });
+}
+
 %ctor
 {
 
