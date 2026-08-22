@@ -282,6 +282,28 @@ static void applyFloatingAlpha()
 #pragma mark -
 
 
+
+#pragma mark -
+#pragma mark V1.6.2 Test4 Rotation Controller
+#pragma mark -
+
+@interface SBCPURotationController : UIViewController
+@end
+
+@implementation SBCPURotationController
+
+- (BOOL)shouldAutorotate
+{
+    return YES;
+}
+
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations
+{
+    return UIInterfaceOrientationMaskAll;
+}
+
+@end
+
 @interface SBCPUWindow : UIWindow
 
 @end
@@ -709,6 +731,14 @@ static void createCPUWindow()
 
     cpuWindow.windowScene =
     scene;
+
+
+    // V1.6.2 Test4: attach rotation controller
+    SBCPURotationController *rotationVC =
+    [[SBCPURotationController alloc] init];
+
+    cpuWindow.rootViewController =
+    rotationVC;
 
 
     /*
@@ -2482,6 +2512,9 @@ static void updateCPUFloatingOrientation(void)
 
     dispatch_async(dispatch_get_main_queue(), ^{
 
+        CGRect oldFrame = cpuWindow.frame;
+        CGPoint oldCenter = cpuWindow.center;
+
         switch(orientation)
         {
             case UIInterfaceOrientationLandscapeLeft:
@@ -2507,6 +2540,10 @@ static void updateCPUFloatingOrientation(void)
 
                 break;
         }
+
+        // keep floating window position stable after rotation
+        cpuWindow.center = oldCenter;
+        cpuWindow.frame = oldFrame;
 
     });
 }
