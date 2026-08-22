@@ -12,11 +12,11 @@
 
 
 static UIWindow *cpuWindow;
+static BOOL landscapeFloatingMode = NO;
 
 @class SBCPUDragView;
 
 static UILabel *label;
-static UIView *cpuContentView;
 static CGFloat floatingScale = 1.0;
 static CGFloat floatingFontSize = 14.0;
 static CGFloat landscapeScale = 0.75;
@@ -695,6 +695,35 @@ withEvent:
 
 }
 
++ (void)singleTapLandscapeRotate
+{
+    if(!cpuWindow)
+        return;
+
+    UIInterfaceOrientation orientation = getV162SceneOrientation();
+
+    if(orientation != UIInterfaceOrientationLandscapeLeft &&
+       orientation != UIInterfaceOrientationLandscapeRight)
+    {
+        return;
+    }
+
+    landscapeFloatingMode = !landscapeFloatingMode;
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if(!landscapeFloatingMode)
+        {
+            cpuWindow.transform = CGAffineTransformIdentity;
+            return;
+        }
+
+        if(orientation == UIInterfaceOrientationLandscapeLeft)
+            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
+        else
+            cpuWindow.transform = CGAffineTransformMakeRotation(-M_PI_2);
+    });
+}
+
 
 @end
 
@@ -772,11 +801,6 @@ static void createCPUWindow()
 
 
 
-    cpuContentView =
-    [[UIView alloc] initWithFrame:CGRectMake(0,0,160,80)];
-    cpuContentView.backgroundColor = UIColor.clearColor;
-    cpuContentView.userInteractionEnabled = YES;
-
     label =
     [[UILabel alloc]
      initWithFrame:
@@ -849,11 +873,11 @@ static void createCPUWindow()
 
 
     [cpuWindow.rootViewController.view
-     addSubview:cpuContentView];
+     addSubview:label];
 
-    [cpuContentView addSubview:label];
 
-    [cpuContentView addSubview:drag];
+    [cpuWindow.rootViewController.view
+     addSubview:drag];
 
 
 
@@ -878,6 +902,24 @@ static void createCPUWindow()
 
     [drag addGestureRecognizer:
      doubleTap];
+
+
+    /*
+     V1.6.2 Test6:
+     横屏状态单击切换浮窗旋转
+     保留原拖动和双击设置
+     */
+    UITapGestureRecognizer *singleTap =
+    [[UITapGestureRecognizer alloc]
+     initWithTarget:
+     [SBCPUAction class]
+     action:@selector(singleTapLandscapeRotate)];
+
+    singleTap.numberOfTapsRequired = 1;
+    singleTap.numberOfTouchesRequired = 1;
+    [singleTap requireGestureRecognizerToFail:doubleTap];
+
+    [drag addGestureRecognizer:singleTap];
 
 
     applyFloatingAlpha();
@@ -2518,45 +2560,25 @@ static void updateCPUFloatingOrientation(void)
 
     dispatch_async(dispatch_get_main_queue(), ^{
 
-        /*
-         V1.6.2 Test5_fix1:
-         不旋转 cpuContentView。
-         cpuDragView 是触摸层，旋转父容器会导致：
-         - 拖动坐标异常
-         - 双击失效
-         - 点击区域偏移
-
-         只旋转显示层 label。
-         */
-
-        if(!label)
-            return;
-
-        switch(orientation)
+        if(orientation != UIInterfaceOrientationLandscapeLeft &&
+           orientation != UIInterfaceOrientationLandscapeRight)
         {
-            case UIInterfaceOrientationLandscapeLeft:
-
-                label.transform =
-                CGAffineTransformMakeRotation(M_PI_2);
-
-                break;
-
-
-            case UIInterfaceOrientationLandscapeRight:
-
-                label.transform =
-                CGAffineTransformMakeRotation(-M_PI_2);
-
-                break;
-
-
-            default:
-
-                label.transform =
-                CGAffineTransformIdentity;
-
-                break;
+            landscapeFloatingMode = NO;
+            cpuWindow.transform = CGAffineTransformIdentity;
+            return;
         }
+
+        // 横屏只记录状态，不自动旋转，等待用户单击
+        if(!landscapeFloatingMode)
+        {
+            cpuWindow.transform = CGAffineTransformIdentity;
+            return;
+        }
+
+        if(orientation == UIInterfaceOrientationLandscapeLeft)
+            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
+        else
+            cpuWindow.transform = CGAffineTransformMakeRotation(-M_PI_2);
 
     });
 }
