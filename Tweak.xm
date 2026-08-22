@@ -170,7 +170,6 @@ static void startMotionRotateMonitor(void)
 }
 
 static void startV162OrientationMonitor(void);
-static void applyCPUFloatingOrientation(UIInterfaceOrientation orientation);
 
 
 
