@@ -93,6 +93,7 @@ static void updateFloatingSize(void);
 // V1.6.3 MotionRotate
 static CMMotionManager *sbcMotionManager;
 static NSInteger sbcMotionState = 0; // 0 unknown 1 portrait 2 landscape
+static BOOL sbcMotionEnabledByTap = NO;
 
 static void applyMotionOrientation(BOOL landscape)
 {
@@ -169,6 +170,7 @@ static void startMotionRotateMonitor(void)
      }];
 }
 
+
 static void stopMotionRotateMonitor(void)
 {
     if(sbcMotionManager)
@@ -179,6 +181,22 @@ static void stopMotionRotateMonitor(void)
 
     sbcMotionState = 0;
 }
+
+static void toggleMotionRotateMonitor(void)
+{
+    sbcMotionEnabledByTap = !sbcMotionEnabledByTap;
+
+    if(sbcMotionEnabledByTap)
+    {
+        startMotionRotateMonitor();
+    }
+    else
+    {
+        stopMotionRotateMonitor();
+    }
+}
+
+
 
 static void startV162OrientationMonitor(void);
 
@@ -764,6 +782,14 @@ withEvent:
 }
 
 
++ (void)singleTapAction
+{
+
+    toggleMotionRotateMonitor();
+
+}
+
+
 @end
 
 
@@ -913,6 +939,21 @@ static void createCPUWindow()
 
 
     /*
+     单击开启/关闭陀螺仪
+     */
+
+    UITapGestureRecognizer *singleTap =
+    [[UITapGestureRecognizer alloc]
+     initWithTarget:
+     [SBCPUAction class]
+     action:@selector(singleTapAction)];
+
+    singleTap.numberOfTapsRequired = 1;
+
+    [drag addGestureRecognizer:singleTap];
+
+
+    /*
      双击
      */
 
@@ -930,6 +971,8 @@ static void createCPUWindow()
     doubleTap.numberOfTouchesRequired =
     1;
 
+
+    [singleTap requireGestureRecognizerToFail:doubleTap];
 
     [drag addGestureRecognizer:
      doubleTap];
@@ -2470,51 +2513,20 @@ static void startV162OrientationMonitor(void)
 
 static void updateCPUFloatingOrientation(void)
 {
-    BOOL landscape = NO;
+    UIInterfaceOrientation orientation = UIInterfaceOrientationPortrait;
 
     CGSize size = UIScreen.mainScreen.bounds.size;
-
     if(size.width > size.height)
-        landscape = YES;
-
-    UIWindow *keyWindow = nil;
-
-    if(@available(iOS 13.0, *))
     {
-        for(UIWindowScene *scene in UIApplication.sharedApplication.connectedScenes)
-        {
-            if(scene.activationState == UISceneActivationStateForegroundActive)
-            {
-                keyWindow = scene.windows.firstObject;
-                break;
-            }
-        }
+        orientation = UIInterfaceOrientationLandscapeLeft;
     }
 
-    if(keyWindow)
+    if(cpuWindow)
     {
-        CGSize ws = keyWindow.bounds.size;
-        if(ws.width > ws.height)
-            landscape = YES;
-    }
-
-    if(landscape)
-    {
-        if(!sbcMotionManager)
-        {
-            startMotionRotateMonitor();
-        }
-    }
-    else
-    {
-        stopMotionRotateMonitor();
-
-        if(cpuWindow)
-        {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                cpuWindow.transform = CGAffineTransformIdentity;
-            });
-        }
+        if(orientation == UIInterfaceOrientationLandscapeLeft)
+            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
+        else
+            cpuWindow.transform = CGAffineTransformIdentity;
     }
 }
 
@@ -2636,7 +2648,6 @@ static void updateCPUFloatingOrientation(void)
             // V1.6.0 Smart Layout
             registerV160Observers();
             startV162OrientationMonitor();
-            stopMotionRotateMonitor();
             applySmartLayout();
 
 
