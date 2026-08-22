@@ -2471,43 +2471,55 @@ static void updateCPUFloatingOrientation(void)
 
 static void restoreCPUFloatingPortrait(void)
 {
-    if(!label)
+    if(!label || !cpuDragView)
         return;
 
-    if(landscapeRotated)
-    {
+    if(!landscapeRotated)
+        return;
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+
         landscapeRotated = NO;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [UIView animateWithDuration:0.25 animations:^{
-                // 强制清除横屏旋转残留
-                label.transform = CGAffineTransformIdentity;
-                cpuDragView.transform = CGAffineTransformIdentity;
+        portraitStateSaved = NO;
 
-                if(portraitStateSaved)
-                {
-                    label.center = portraitSavedCenter;
-                    label.bounds = portraitSavedBounds;
-                }
+        [UIView animateWithDuration:0.25 animations:^{
 
-                // 重新计算文字布局，避免 iOS 17 下 UILabel 保留横向绘制状态
-                label.frame = (CGRect){
-                    .origin = CGPointMake(
-                        label.center.x - label.bounds.size.width / 2.0,
-                        label.center.y - label.bounds.size.height / 2.0
-                    ),
-                    .size = label.bounds.size
-                };
-                label.textAlignment = NSTextAlignmentCenter;
-                label.numberOfLines = 1;
-                [label sizeToFit];
-                [label setNeedsDisplay];
-                [label setNeedsLayout];
-                [label layoutIfNeeded];
-            }];
-            portraitStateSaved = NO;
-        });
-    }
+            // 模拟重新初始化后的竖屏状态
+            label.transform = CGAffineTransformIdentity;
+            cpuDragView.transform = CGAffineTransformIdentity;
+
+            label.bounds = CGRectMake(0, 0, 100, 50);
+            label.center = CGPointMake(
+                UIScreen.mainScreen.bounds.size.width - 70,
+                UIScreen.mainScreen.bounds.size.height / 2.0
+            );
+
+            label.numberOfLines = 3;
+            label.textAlignment = NSTextAlignmentCenter;
+
+            label.frame = CGRectMake(
+                label.frame.origin.x,
+                label.frame.origin.y,
+                100,
+                50
+            );
+
+            cpuDragView.frame = label.frame;
+
+        } completion:^(BOOL finished){
+
+            [label setNeedsDisplay];
+            [label setNeedsLayout];
+            [label layoutIfNeeded];
+
+            [cpuDragView setNeedsLayout];
+            [cpuDragView layoutIfNeeded];
+
+        }];
+
+    });
 }
+
 
 %ctor
 {
