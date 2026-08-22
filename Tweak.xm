@@ -2477,8 +2477,18 @@ static void restoreCPUFloatingPortrait(void)
     }
 
 
-    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidChangeStatusBarOrientationNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note){
-        UIInterfaceOrientation o = [UIApplication sharedApplication].statusBarOrientation;
+    [[NSNotificationCenter defaultCenter] addObserverForName:UIScreenDidConnectNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note){
+        UIWindowScene *scene = getWindowScene();
+        UIInterfaceOrientation o = scene.interfaceOrientation;
+        if(UIInterfaceOrientationIsPortrait(o))
+        {
+            restoreCPUFloatingPortrait();
+        }
+    }];
+
+    [[NSNotificationCenter defaultCenter] addObserverForName:UISceneDidActivateNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note){
+        UIWindowScene *scene = getWindowScene();
+        UIInterfaceOrientation o = scene.interfaceOrientation;
         if(UIInterfaceOrientationIsPortrait(o))
         {
             restoreCPUFloatingPortrait();
