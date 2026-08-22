@@ -106,12 +106,16 @@ static void applyMotionOrientation(BOOL landscape)
 
         if(!landscape)
         {
-            if(sbcSavedPortraitFrame)
-            {
-                currentFrame = sbcPortraitFrame;
-            }
-
+            // 清除横屏状态，先恢复旋转再恢复布局
             cpuWindow.transform = CGAffineTransformIdentity;
+
+            if(sbcSavedPortraitFrame)
+                currentFrame = sbcPortraitFrame;
+
+            [UIView performWithoutAnimation:^{
+                label.transform = CGAffineTransformIdentity;
+                [(UIView *)cpuDragView setTransform:CGAffineTransformIdentity];
+            }];
         }
         else
         {
@@ -121,6 +125,8 @@ static void applyMotionOrientation(BOOL landscape)
                 sbcSavedPortraitFrame = YES;
             }
 
+            // 横屏前先清除旧状态，避免重复旋转叠加
+            cpuWindow.transform = CGAffineTransformIdentity;
             cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
         }
 
@@ -128,12 +134,9 @@ static void applyMotionOrientation(BOOL landscape)
 
         CGSize area = UIScreen.mainScreen.bounds.size;
         if(landscape)
-        {
-            CGFloat w = area.height;
-            CGFloat h = area.width;
-            area = CGSizeMake(w,h);
-        }
+            area = CGSizeMake(area.height, area.width);
 
+        // 横竖屏重新限制边界
         if(CGRectGetMaxX(currentFrame) > area.width)
             currentFrame.origin.x = MAX(10, area.width - currentFrame.size.width - 10);
 
@@ -146,8 +149,11 @@ static void applyMotionOrientation(BOOL landscape)
         if(currentFrame.origin.y < 0)
             currentFrame.origin.y = 10;
 
-        label.frame = currentFrame;
-        [(UIView *)cpuDragView setFrame:currentFrame];
+        [UIView performWithoutAnimation:^{
+            label.frame = currentFrame;
+            [(UIView *)cpuDragView setFrame:currentFrame];
+        }];
+
         lastFloatingFrame = currentFrame;
     });
 }
