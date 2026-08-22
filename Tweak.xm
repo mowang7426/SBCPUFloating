@@ -2469,56 +2469,57 @@ static void updateCPUFloatingOrientation(void)
 
 
 
-static void restoreCPUFloatingPortrait(void)
+
+static void recreateCPUFloatingWindow(void)
 {
-    if(!label || !cpuDragView)
-        return;
-
-    if(!landscapeRotated)
-        return;
-
     dispatch_async(dispatch_get_main_queue(), ^{
+
+        if(label)
+        {
+            [label removeFromSuperview];
+        }
+
+        if(cpuDragView)
+        {
+            [cpuDragView removeFromSuperview];
+        }
+
+        if(cpuWindow)
+        {
+            cpuWindow.hidden = YES;
+            cpuWindow.rootViewController = nil;
+        }
+
+        cpuWindow = nil;
+        label = nil;
+        cpuDragView = nil;
 
         landscapeRotated = NO;
         portraitStateSaved = NO;
 
-        [UIView animateWithDuration:0.25 animations:^{
-
-            // 模拟重新初始化后的竖屏状态
-            label.transform = CGAffineTransformIdentity;
-            cpuDragView.transform = CGAffineTransformIdentity;
-
-            label.bounds = CGRectMake(0, 0, 100, 50);
-            label.center = CGPointMake(
-                UIScreen.mainScreen.bounds.size.width - 70,
-                UIScreen.mainScreen.bounds.size.height / 2.0
-            );
-
-            label.numberOfLines = 3;
-            label.textAlignment = NSTextAlignmentCenter;
-
-            label.frame = CGRectMake(
-                label.frame.origin.x,
-                label.frame.origin.y,
-                100,
-                50
-            );
-
-            cpuDragView.frame = label.frame;
-
-        } completion:^(BOOL finished){
-
-            [label setNeedsDisplay];
-            [label setNeedsLayout];
-            [label layoutIfNeeded];
-
-            [cpuDragView setNeedsLayout];
-            [cpuDragView layoutIfNeeded];
-
-        }];
+        dispatch_after(
+            dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)),
+            dispatch_get_main_queue(),
+            ^{
+                createCPUWindow();
+            }
+        );
 
     });
 }
+
+
+static void restoreCPUFloatingPortrait(void)
+{
+    if(!cpuWindow)
+        return;
+
+    // V1.6.2 fix12:
+    // 不再尝试恢复旧 transform。
+    // 直接重建浮窗，模拟 SpringBoard 注销后的插件重新初始化。
+    recreateCPUFloatingWindow();
+}
+
 
 
 %ctor
