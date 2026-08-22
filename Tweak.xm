@@ -95,57 +95,41 @@ static CMMotionManager *sbcMotionManager;
 static NSInteger sbcMotionState = 0; // 0 unknown 1 portrait 2 landscape
 static BOOL sbcMotionEnabledByTap = NO;
 
+static BOOL sbcLandscapeLayout = NO;
+
 static void applyMotionOrientation(BOOL landscape)
 {
     if(!cpuWindow || !label)
         return;
 
     dispatch_async(dispatch_get_main_queue(), ^{
+
+        sbcLandscapeLayout = landscape;
+
         /*
-         MotionRotate Fix2:
-         不再只依靠 transform。
-         方向变化时先同步内部布局状态，
-         避免出现视觉横屏但 frame 仍是竖屏的问题。
+         Test5:
+         不再旋转整个窗口作为主要方案。
+         方向变化时切换布局模式，重新计算浮窗尺寸和边界。
         */
 
-        BOOL changedLandscape = landscape;
+        cpuWindow.transform = CGAffineTransformIdentity;
 
-        if(changedLandscape)
+        if(landscape)
         {
-            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
+            updateFloatingSize();
+            label.transform = CGAffineTransformMakeRotation(M_PI_2);
         }
         else
         {
-            cpuWindow.transform = CGAffineTransformIdentity;
+            updateFloatingSize();
+            label.transform = CGAffineTransformIdentity;
         }
-
-        updateFloatingSize();
-
-        // 强制刷新一次浮窗布局，让横竖屏参数同步
-        if([label respondsToSelector:@selector(setNeedsLayout)])
-        {
-            [label setNeedsLayout];
-        }
-
-        if(cpuDragView && [(UIView *)cpuDragView respondsToSelector:@selector(setNeedsLayout)])
-        {
-            [(UIView *)cpuDragView setNeedsLayout];
-        }
-
-        /*
-         MotionRotate Fix1:
-         之前只旋转 window 的 transform，
-         但是 frame / 边界 / 吸附仍然使用竖屏坐标。
-         这里根据当前 Motion 状态重新计算布局区域。
-        */
 
         CGRect f = label.frame;
-
         CGSize area = UIScreen.mainScreen.bounds.size;
 
         if(landscape)
         {
-            // 横屏状态交换可用区域
             area = CGSizeMake(MAX(area.width, area.height),
                               MIN(area.width, area.height));
         }
@@ -161,11 +145,8 @@ static void applyMotionOrientation(BOOL landscape)
         if(CGRectGetMaxY(f) > area.height)
             f.origin.y = MAX(10, area.height - f.size.height - 10);
 
-        if(f.origin.x < 10)
-            f.origin.x = 10;
-
-        if(f.origin.y < 10)
-            f.origin.y = 10;
+        if(f.origin.x < 10) f.origin.x = 10;
+        if(f.origin.y < 10) f.origin.y = 10;
 
         label.frame = f;
         [(UIView *)cpuDragView setFrame:f];
