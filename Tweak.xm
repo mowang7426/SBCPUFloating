@@ -2377,36 +2377,62 @@ static void startV162OrientationMonitor(void)
 }
 
 
-static UIInterfaceOrientation getV162FrontmostAppOrientation()
+static UIInterfaceOrientation getV162SceneOrientation()
 {
     UIInterfaceOrientation result = UIInterfaceOrientationPortrait;
 
     @try
     {
-        Class workspaceClass = NSClassFromString(@"SBMainWorkspace");
+        UIApplication *app = UIApplication.sharedApplication;
+
+        for(UIScene *scene in app.connectedScenes)
+        {
+            if([scene isKindOfClass:UIWindowScene.class])
+            {
+                UIWindowScene *windowScene = (UIWindowScene *)scene;
+
+                UIInterfaceOrientation o =
+                windowScene.interfaceOrientation;
+
+                if(o != UIInterfaceOrientationUnknown)
+                {
+                    return o;
+                }
+            }
+        }
+
+
+        Class workspaceClass =
+        NSClassFromString(@"SBMainWorkspace");
 
         if(workspaceClass)
         {
-            id workspace = ((id (*)(id, SEL))objc_msgSend)(workspaceClass, NSSelectorFromString(@"sharedInstance"));
+            id workspace =
+            ((id (*)(id, SEL))objc_msgSend)(
+                workspaceClass,
+                NSSelectorFromString(@"sharedInstance")
+            );
 
             if(workspace)
             {
-                id app = ((id (*)(id, SEL))objc_msgSend)(workspace, NSSelectorFromString(@"frontMostApplication"));
+                id app =
+                ((id (*)(id, SEL))objc_msgSend)(
+                    workspace,
+                    NSSelectorFromString(@"frontMostApplication")
+                );
 
-                if(app)
+                if(app &&
+                   [app respondsToSelector:NSSelectorFromString(@"interfaceOrientation")])
                 {
-                    if([app respondsToSelector:NSSelectorFromString(@"interfaceOrientation")])
-                    {
-                        NSInteger value =
-                        ((NSInteger (*)(id, SEL))objc_msgSend)(
-                            app,
-                            NSSelectorFromString(@"interfaceOrientation")
-                        );
+                    NSInteger value =
+                    ((NSInteger (*)(id, SEL))objc_msgSend)(
+                        app,
+                        NSSelectorFromString(@"interfaceOrientation")
+                    );
 
-                        if(value >= 1 && value <= 4)
-                        {
-                            return (UIInterfaceOrientation)value;
-                        }
+                    if(value >= 1 && value <= 4)
+                    {
+                        return (UIInterfaceOrientation)value;
                     }
                 }
             }
@@ -2419,10 +2445,14 @@ static UIInterfaceOrientation getV162FrontmostAppOrientation()
     }
 
 
-    CGSize size = UIScreen.mainScreen.bounds.size;
+    CGSize size =
+    UIScreen.mainScreen.bounds.size;
+
 
     if(size.width > size.height)
+    {
         result = UIInterfaceOrientationLandscapeLeft;
+    }
 
 
     return result;
@@ -2431,12 +2461,23 @@ static UIInterfaceOrientation getV162FrontmostAppOrientation()
 
 static void updateCPUFloatingOrientation(void)
 {
-    UIInterfaceOrientation orientation =
-    getV162FrontmostAppOrientation();
-
-
     if(!cpuWindow)
         return;
+
+
+    UIInterfaceOrientation orientation =
+    getV162SceneOrientation();
+
+
+    static UIInterfaceOrientation lastOrientation =
+    UIInterfaceOrientationUnknown;
+
+
+    if(lastOrientation == orientation)
+        return;
+
+
+    lastOrientation = orientation;
 
 
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -2444,25 +2485,32 @@ static void updateCPUFloatingOrientation(void)
         switch(orientation)
         {
             case UIInterfaceOrientationLandscapeLeft:
+
                 cpuWindow.transform =
                 CGAffineTransformMakeRotation(M_PI_2);
+
                 break;
 
 
             case UIInterfaceOrientationLandscapeRight:
+
                 cpuWindow.transform =
                 CGAffineTransformMakeRotation(-M_PI_2);
+
                 break;
 
 
             default:
+
                 cpuWindow.transform =
                 CGAffineTransformIdentity;
+
                 break;
         }
 
     });
 }
+
 
 %ctor
 {
