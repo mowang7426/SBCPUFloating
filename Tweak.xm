@@ -112,14 +112,40 @@ static void applyMotionOrientation(BOOL landscape)
 
         updateFloatingSize();
 
+        /*
+         MotionRotate Fix1:
+         之前只旋转 window 的 transform，
+         但是 frame / 边界 / 吸附仍然使用竖屏坐标。
+         这里根据当前 Motion 状态重新计算布局区域。
+        */
+
         CGRect f = label.frame;
+
         CGSize area = UIScreen.mainScreen.bounds.size;
+
+        if(landscape)
+        {
+            // 横屏状态交换可用区域
+            area = CGSizeMake(MAX(area.width, area.height),
+                              MIN(area.width, area.height));
+        }
+        else
+        {
+            area = CGSizeMake(MIN(area.width, area.height),
+                              MAX(area.width, area.height));
+        }
 
         if(CGRectGetMaxX(f) > area.width)
             f.origin.x = MAX(10, area.width - f.size.width - 10);
 
         if(CGRectGetMaxY(f) > area.height)
             f.origin.y = MAX(10, area.height - f.size.height - 10);
+
+        if(f.origin.x < 10)
+            f.origin.x = 10;
+
+        if(f.origin.y < 10)
+            f.origin.y = 10;
 
         label.frame = f;
         [(UIView *)cpuDragView setFrame:f];
