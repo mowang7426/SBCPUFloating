@@ -2582,6 +2582,8 @@ static void updateCPUFloatingOrientation(void)
 }
 
 
+}
+
 %ctor
 {
 
