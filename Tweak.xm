@@ -2438,6 +2438,8 @@ static void updateCPUFloatingOrientation(void)
                 [UIView animateWithDuration:0.25 animations:^{
                     label.transform = CGAffineTransformIdentity;
                     cpuDragView.transform = CGAffineTransformIdentity;
+                    [label setNeedsLayout];
+                    [label layoutIfNeeded];
                 }];
             }
         }
@@ -2458,6 +2460,8 @@ static void restoreCPUFloatingPortrait(void)
             [UIView animateWithDuration:0.25 animations:^{
                 label.transform = CGAffineTransformIdentity;
                 cpuDragView.transform = CGAffineTransformIdentity;
+                [label setNeedsLayout];
+                [label layoutIfNeeded];
             }];
         });
     }
