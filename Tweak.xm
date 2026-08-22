@@ -12,6 +12,7 @@
 
 
 static UIWindow *cpuWindow;
+static BOOL landscapeFloatingMode = NO;
 
 @class SBCPUDragView;
 
@@ -22,8 +23,6 @@ static CGFloat landscapeScale = 0.75;
 static CGFloat batteryFontSize = 12.0;
 static CGFloat landscapeFontSize = 12.0;
 static SBCPUDragView *cpuDragView;
-static BOOL landscapeClickMode = NO;
-static BOOL landscapeFloatingActive = NO;
 
 
 /*
@@ -696,23 +695,32 @@ withEvent:
 
 }
 
-
-+ (void)singleTapLandscapeAction
++ (void)singleTapLandscapeRotate
 {
-    if(!landscapeClickMode || !cpuWindow)
+    if(!cpuWindow)
         return;
 
+    UIInterfaceOrientation orientation = getV162SceneOrientation();
+
+    if(orientation != UIInterfaceOrientationLandscapeLeft &&
+       orientation != UIInterfaceOrientationLandscapeRight)
+    {
+        return;
+    }
+
+    landscapeFloatingMode = !landscapeFloatingMode;
+
     dispatch_async(dispatch_get_main_queue(), ^{
-        if(landscapeFloatingActive)
+        if(!landscapeFloatingMode)
         {
             cpuWindow.transform = CGAffineTransformIdentity;
-            landscapeFloatingActive = NO;
+            return;
         }
-        else
-        {
+
+        if(orientation == UIInterfaceOrientationLandscapeLeft)
             cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
-            landscapeFloatingActive = YES;
-        }
+        else
+            cpuWindow.transform = CGAffineTransformMakeRotation(-M_PI_2);
     });
 }
 
@@ -896,14 +904,19 @@ static void createCPUWindow()
      doubleTap];
 
 
+    /*
+     V1.6.2 Test6:
+     横屏状态单击切换浮窗旋转
+     保留原拖动和双击设置
+     */
     UITapGestureRecognizer *singleTap =
     [[UITapGestureRecognizer alloc]
      initWithTarget:
      [SBCPUAction class]
-     action:@selector(singleTapLandscapeAction)];
+     action:@selector(singleTapLandscapeRotate)];
 
     singleTap.numberOfTapsRequired = 1;
-
+    singleTap.numberOfTouchesRequired = 1;
     [singleTap requireGestureRecognizerToFail:doubleTap];
 
     [drag addGestureRecognizer:singleTap];
@@ -2502,8 +2515,6 @@ static UIInterfaceOrientation getV162SceneOrientation()
                 }
             }
         }
-
-    }
     @catch(__unused NSException *e)
     {
 
@@ -2529,25 +2540,182 @@ static void updateCPUFloatingOrientation(void)
     if(!cpuWindow)
         return;
 
+
     UIInterfaceOrientation orientation =
     getV162SceneOrientation();
 
-    BOOL isLandscape =
-    (orientation == UIInterfaceOrientationLandscapeLeft ||
-     orientation == UIInterfaceOrientationLandscapeRight);
 
-    if(isLandscape)
-    {
-        landscapeClickMode = YES;
-    }
-    else
-    {
-        landscapeClickMode = NO;
-        landscapeFloatingActive = NO;
+    static UIInterfaceOrientation lastOrientation =
+    UIInterfaceOrientationUnknown;
 
-        dispatch_async(dispatch_get_main_queue(), ^{
+
+    if(lastOrientation == orientation)
+        return;
+
+
+    lastOrientation = orientation;
+
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+
+        if(orientation != UIInterfaceOrientationLandscapeLeft &&
+           orientation != UIInterfaceOrientationLandscapeRight)
+        {
+            landscapeFloatingMode = NO;
             cpuWindow.transform = CGAffineTransformIdentity;
-        });
-    }
+            return;
+        }
+
+        // 横屏只记录状态，不自动旋转，等待用户单击
+        if(!landscapeFloatingMode)
+        {
+            cpuWindow.transform = CGAffineTransformIdentity;
+            return;
+        }
+
+        if(orientation == UIInterfaceOrientationLandscapeLeft)
+            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
+        else
+            cpuWindow.transform = CGAffineTransformMakeRotation(-M_PI_2);
+
+    });
 }
+
+
+%ctor
+{
+
+    NSString *process =
+    NSProcessInfo.processInfo.processName;
+
+
+    if(![process
+         isEqualToString:@"SpringBoard"])
+    {
+        return;
+    }
+
+
+    NSUserDefaults *def =
+    NSUserDefaults.standardUserDefaults;
+
+    floatingScale = [def floatForKey:@"SBCPU.FloatingScale"];
+    if(floatingScale < 0.4) floatingScale = 1.0;
+    floatingFontSize = [def floatForKey:@"SBCPU.FloatingFontSize"];
+    if(floatingFontSize < 1) floatingFontSize = 14.0;
+    landscapeScale = [def floatForKey:@"SBCPU.LandscapeScale"];
+    if(landscapeScale < 0.4) landscapeScale = 0.75;
+    landscapeFontSize = [def floatForKey:@"SBCPU.LandscapeFontSize"];
+    if(landscapeFontSize < 1) landscapeFontSize = 12.0;
+    batteryFontSize = [def floatForKey:@"SBCPU.BatteryFontSize"];
+    if(batteryFontSize < 1) batteryFontSize = 12.0;
+    dockMode = [def integerForKey:@"SBCPU.DockMode"];
+
+
+    /*
+     自动注销
+     */
+
+    autoLogoutEnable =
+    [def boolForKey:
+     @"SBCPU.AutoLogout"];
+
+
+    double cpu =
+    [def doubleForKey:
+     @"SBCPU.CPUThreshold"];
+
+
+    if(cpu >= 80.0 &&
+       cpu <= 1000.0)
+    {
+
+        logoutCPUThreshold =
+        cpu;
+
+    }
+
+
+    NSInteger time =
+    [def integerForKey:
+     @"SBCPU.LogoutTime"];
+
+
+    if(time >= 10)
+    {
+
+        logoutDuration =
+        time;
+
+    }
+
+
+    /*
+     透明度开关
+     */
+
+    if([def objectForKey:
+        @"SBCPU.FloatingAlphaEnable"])
+    {
+
+        floatingAlphaEnable =
+        [def boolForKey:
+         @"SBCPU.FloatingAlphaEnable"];
+
+    }
+
+
+    /*
+     透明度
+     */
+
+    CGFloat alpha =
+    [def floatForKey:
+     @"SBCPU.FloatingAlpha"];
+
+
+    if(alpha >= 0.2 &&
+       alpha <= 1.0)
+    {
+
+        floatingAlpha =
+        alpha;
+
+    }
+
+
+    /*
+     等 SpringBoard 完全启动
+     */
+
+    dispatch_after(
+        dispatch_time(
+            DISPATCH_TIME_NOW,
+            5 * NSEC_PER_SEC),
+        dispatch_get_main_queue(),
+        ^{
+
+            createCPUWindow();
+
+            // V1.6.0 Smart Layout
+            registerV160Observers();
+    startV162OrientationMonitor();
+            applySmartLayout();
+
+
+            [NSTimer
+             scheduledTimerWithTimeInterval:
+             1.0
+             repeats:YES
+             block:
+             ^(NSTimer *timer)
+             {
+
+                 updateCPU();
+
+             }];
+
+        }
+    );
+
 }
