@@ -2387,11 +2387,11 @@ static UIInterfaceOrientation getV162FrontmostAppOrientation()
 
         if(workspaceClass)
         {
-            id workspace = [workspaceClass performSelector:NSSelectorFromString(@"sharedInstance")];
+            id workspace = ((id (*)(id, SEL))objc_msgSend)(workspaceClass, NSSelectorFromString(@"sharedInstance"));
 
             if(workspace)
             {
-                id app = [workspace performSelector:NSSelectorFromString(@"frontMostApplication")];
+                id app = ((id (*)(id, SEL))objc_msgSend)(workspace, NSSelectorFromString(@"frontMostApplication"));
 
                 if(app)
                 {
