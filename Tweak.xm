@@ -93,8 +93,6 @@ static void updateFloatingSize(void);
 // V1.6.3 MotionRotate
 static CMMotionManager *sbcMotionManager;
 static NSInteger sbcMotionState = 0; // 0 unknown 1 portrait 2 landscape
-static CGRect sbcPortraitFrame = CGRectZero;
-static BOOL sbcSavedPortraitFrame = NO;
 
 static void applyMotionOrientation(BOOL landscape)
 {
@@ -102,62 +100,31 @@ static void applyMotionOrientation(BOOL landscape)
         return;
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        CGRect currentFrame = label.frame;
-
-        if(!landscape)
+        if(landscape)
         {
-            // 清除横屏状态，先恢复旋转再恢复布局
-            cpuWindow.transform = CGAffineTransformIdentity;
-
-            if(sbcSavedPortraitFrame)
-                currentFrame = sbcPortraitFrame;
-
-            [UIView performWithoutAnimation:^{
-                label.transform = CGAffineTransformIdentity;
-                [(UIView *)cpuDragView setTransform:CGAffineTransformIdentity];
-            }];
+            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
         }
         else
         {
-            if(!sbcSavedPortraitFrame)
-            {
-                sbcPortraitFrame = currentFrame;
-                sbcSavedPortraitFrame = YES;
-            }
-
-            // 横屏前先清除旧状态，避免重复旋转叠加
             cpuWindow.transform = CGAffineTransformIdentity;
-            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
         }
 
         updateFloatingSize();
 
+        CGRect f = label.frame;
         CGSize area = UIScreen.mainScreen.bounds.size;
-        if(landscape)
-            area = CGSizeMake(area.height, area.width);
 
-        // 横竖屏重新限制边界
-        if(CGRectGetMaxX(currentFrame) > area.width)
-            currentFrame.origin.x = MAX(10, area.width - currentFrame.size.width - 10);
+        if(CGRectGetMaxX(f) > area.width)
+            f.origin.x = MAX(10, area.width - f.size.width - 10);
 
-        if(CGRectGetMaxY(currentFrame) > area.height)
-            currentFrame.origin.y = MAX(10, area.height - currentFrame.size.height - 10);
+        if(CGRectGetMaxY(f) > area.height)
+            f.origin.y = MAX(10, area.height - f.size.height - 10);
 
-        if(currentFrame.origin.x < 0)
-            currentFrame.origin.x = 10;
-
-        if(currentFrame.origin.y < 0)
-            currentFrame.origin.y = 10;
-
-        [UIView performWithoutAnimation:^{
-            label.frame = currentFrame;
-            [(UIView *)cpuDragView setFrame:currentFrame];
-        }];
-
-        lastFloatingFrame = currentFrame;
+        label.frame = f;
+        [(UIView *)cpuDragView setFrame:f];
+        lastFloatingFrame = f;
     });
 }
-
 
 static void startMotionRotateMonitor(void)
 {
@@ -200,6 +167,17 @@ static void startMotionRotateMonitor(void)
             applyMotionOrientation(state == 2);
         }
      }];
+}
+
+static void stopMotionRotateMonitor(void)
+{
+    if(sbcMotionManager)
+    {
+        [sbcMotionManager stopDeviceMotionUpdates];
+        sbcMotionManager = nil;
+    }
+
+    sbcMotionState = 0;
 }
 
 static void startV162OrientationMonitor(void);
@@ -2503,9 +2481,15 @@ static void updateCPUFloatingOrientation(void)
     if(cpuWindow)
     {
         if(orientation == UIInterfaceOrientationLandscapeLeft)
+        {
             cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
+            startMotionRotateMonitor();
+        }
         else
+        {
             cpuWindow.transform = CGAffineTransformIdentity;
+            stopMotionRotateMonitor();
+        }
     }
 }
 
@@ -2627,7 +2611,7 @@ static void updateCPUFloatingOrientation(void)
             // V1.6.0 Smart Layout
             registerV160Observers();
             startV162OrientationMonitor();
-            startMotionRotateMonitor();
+            stopMotionRotateMonitor();
             applySmartLayout();
 
 
