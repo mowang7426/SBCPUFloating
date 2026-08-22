@@ -2479,13 +2479,28 @@ static void restoreCPUFloatingPortrait(void)
         landscapeRotated = NO;
         dispatch_async(dispatch_get_main_queue(), ^{
             [UIView animateWithDuration:0.25 animations:^{
-                label.transform = portraitStateSaved ? portraitSavedTransform : CGAffineTransformIdentity;
+                // 强制清除横屏旋转残留
+                label.transform = CGAffineTransformIdentity;
+                cpuDragView.transform = CGAffineTransformIdentity;
+
                 if(portraitStateSaved)
                 {
                     label.center = portraitSavedCenter;
                     label.bounds = portraitSavedBounds;
                 }
-                cpuDragView.transform = CGAffineTransformIdentity;
+
+                // 重新计算文字布局，避免 iOS 17 下 UILabel 保留横向绘制状态
+                label.frame = (CGRect){
+                    .origin = CGPointMake(
+                        label.center.x - label.bounds.size.width / 2.0,
+                        label.center.y - label.bounds.size.height / 2.0
+                    ),
+                    .size = label.bounds.size
+                };
+                label.textAlignment = NSTextAlignmentCenter;
+                label.numberOfLines = 1;
+                [label sizeToFit];
+                [label setNeedsDisplay];
                 [label setNeedsLayout];
                 [label layoutIfNeeded];
             }];
