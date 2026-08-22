@@ -93,7 +93,7 @@ static void updateFloatingSize(void);
 // V1.6.3 MotionRotate
 static CMMotionManager *sbcMotionManager;
 static NSInteger sbcMotionState = 0; // 0 unknown 1 portrait 2 landscape
-static CGRect sbcPortraitFrame = {0,0,0,0};
+static CGRect sbcPortraitFrame = CGRectZero;
 static BOOL sbcSavedPortraitFrame = NO;
 
 static void applyMotionOrientation(BOOL landscape)
