@@ -2,7 +2,6 @@
 #import <QuartzCore/QuartzCore.h>
 #import <mach/mach.h>
 #import <signal.h>
-#import <objc/message.h>
 #import <IOKit/IOKitLib.h>
 
 
@@ -15,13 +14,15 @@ static UIWindow *cpuWindow;
 
 @class SBCPUDragView;
 
-static UILabel *label;\nstatic CGPoint sbTapStartPoint;\nstatic NSTimeInterval sbTapStartTime;
+static UILabel *label;
 static CGFloat floatingScale = 1.0;
 static CGFloat floatingFontSize = 14.0;
 static CGFloat landscapeScale = 0.75;
 static CGFloat batteryFontSize = 12.0;
 static CGFloat landscapeFontSize = 12.0;
 static SBCPUDragView *cpuDragView;
+static BOOL sbLandscapeMode = NO;
+static NSTimeInterval sbLandscapeTapTime = 0;
 
 
 /*
@@ -89,7 +90,7 @@ static void applySmartLayout(void);
 static void registerV160Observers(void);
 static void updateCPUFloatingOrientation(void);
 static void startV162OrientationMonitor(void);
-
+static void applyCPUFloatingOrientation(UIInterfaceOrientation orientation);
 
 
 
@@ -281,28 +282,6 @@ static void applyFloatingAlpha()
 #pragma mark 可穿透 Window
 #pragma mark -
 
-
-
-#pragma mark -
-#pragma mark V1.6.2 Test4 Rotation Controller
-#pragma mark -
-
-@interface SBCPURotationController : UIViewController
-@end
-
-@implementation SBCPURotationController
-
-- (BOOL)shouldAutorotate
-{
-    return YES;
-}
-
-- (UIInterfaceOrientationMask)supportedInterfaceOrientations
-{
-    return UIInterfaceOrientationMaskAll;
-}
-
-@end
 
 @interface SBCPUWindow : UIWindow
 
@@ -679,7 +658,7 @@ withEvent:
 
 
 @interface SBCPUAction : NSObject
-
++ (void)landscapeTapAction;
 @end
 
 
@@ -692,6 +671,23 @@ withEvent:
 
     openSettings();
 
+}
+
+
++ (void)landscapeTapAction
+{
+    if(!sbLandscapeMode || !cpuDragView || !label)
+        return;
+
+    CGRect f = label.frame;
+    CGSize s = cpuWindow.bounds.size;
+
+    // 横屏点击后重新布局到横屏可视区域
+    f.origin.x = MAX(8, s.width - f.size.width - 18);
+    f.origin.y = MAX(8, (s.height - f.size.height) / 2.0);
+
+    label.frame = f;
+    cpuDragView.frame = f;
 }
 
 
@@ -731,14 +727,6 @@ static void createCPUWindow()
 
     cpuWindow.windowScene =
     scene;
-
-
-    // V1.6.2 Test4: attach rotation controller
-    SBCPURotationController *rotationVC =
-    [[SBCPURotationController alloc] init];
-
-    cpuWindow.rootViewController =
-    rotationVC;
 
 
     /*
@@ -872,6 +860,17 @@ static void createCPUWindow()
 
     [drag addGestureRecognizer:
      doubleTap];
+
+    UITapGestureRecognizer *singleTap =
+    [[UITapGestureRecognizer alloc]
+     initWithTarget:
+     [SBCPUAction class]
+     action:@selector(landscapeTapAction)];
+
+    singleTap.numberOfTapsRequired = 1;
+    singleTap.numberOfTouchesRequired = 1;
+    [singleTap requireGestureRecognizerToFail:doubleTap];
+    [drag addGestureRecognizer:singleTap];
 
 
     applyFloatingAlpha();
@@ -2407,147 +2406,29 @@ static void startV162OrientationMonitor(void)
 }
 
 
-static UIInterfaceOrientation getV162SceneOrientation()
-{
-    UIInterfaceOrientation result = UIInterfaceOrientationPortrait;
-
-    @try
-    {
-        UIApplication *app = UIApplication.sharedApplication;
-
-        for(UIScene *scene in app.connectedScenes)
-        {
-            if([scene isKindOfClass:UIWindowScene.class])
-            {
-                UIWindowScene *windowScene = (UIWindowScene *)scene;
-
-                UIInterfaceOrientation o =
-                windowScene.interfaceOrientation;
-
-                if(o != UIInterfaceOrientationUnknown)
-                {
-                    return o;
-                }
-            }
-        }
-
-
-        Class workspaceClass =
-        NSClassFromString(@"SBMainWorkspace");
-
-        if(workspaceClass)
-        {
-            id workspace =
-            ((id (*)(id, SEL))objc_msgSend)(
-                workspaceClass,
-                NSSelectorFromString(@"sharedInstance")
-            );
-
-            if(workspace)
-            {
-                id app =
-                ((id (*)(id, SEL))objc_msgSend)(
-                    workspace,
-                    NSSelectorFromString(@"frontMostApplication")
-                );
-
-                if(app &&
-                   [app respondsToSelector:NSSelectorFromString(@"interfaceOrientation")])
-                {
-                    NSInteger value =
-                    ((NSInteger (*)(id, SEL))objc_msgSend)(
-                        app,
-                        NSSelectorFromString(@"interfaceOrientation")
-                    );
-
-                    if(value >= 1 && value <= 4)
-                    {
-                        return (UIInterfaceOrientation)value;
-                    }
-                }
-            }
-        }
-
-    }
-    @catch(__unused NSException *e)
-    {
-
-    }
-
-
-    CGSize size =
-    UIScreen.mainScreen.bounds.size;
-
-
-    if(size.width > size.height)
-    {
-        result = UIInterfaceOrientationLandscapeLeft;
-    }
-
-
-    return result;
-}
-
-
 static void updateCPUFloatingOrientation(void)
 {
-    if(!cpuWindow)
-        return;
+    UIInterfaceOrientation orientation = UIInterfaceOrientationPortrait;
 
+    CGSize size = UIScreen.mainScreen.bounds.size;
+    if(size.width > size.height)
+    {
+        orientation = UIInterfaceOrientationLandscapeLeft;
+        sbLandscapeMode = YES;
+    }
+    else
+    {
+        sbLandscapeMode = NO;
+    }
 
-    UIInterfaceOrientation orientation =
-    getV162SceneOrientation();
-
-
-    static UIInterfaceOrientation lastOrientation =
-    UIInterfaceOrientationUnknown;
-
-
-    if(lastOrientation == orientation)
-        return;
-
-
-    lastOrientation = orientation;
-
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-
-        CGRect oldFrame = cpuWindow.frame;
-        CGPoint oldCenter = cpuWindow.center;
-
-        switch(orientation)
-        {
-            case UIInterfaceOrientationLandscapeLeft:
-
-                cpuWindow.transform =
-                CGAffineTransformMakeRotation(M_PI_2);
-
-                break;
-
-
-            case UIInterfaceOrientationLandscapeRight:
-
-                cpuWindow.transform =
-                CGAffineTransformMakeRotation(-M_PI_2);
-
-                break;
-
-
-            default:
-
-                cpuWindow.transform =
-                CGAffineTransformIdentity;
-
-                break;
-        }
-
-        // keep floating window position stable after rotation
-        cpuWindow.center = oldCenter;
-        cpuWindow.frame = oldFrame;
-
-    });
+    if(cpuWindow)
+    {
+        if(orientation == UIInterfaceOrientationLandscapeLeft)
+            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
+        else
+            cpuWindow.transform = CGAffineTransformIdentity;
+    }
 }
-
 
 %ctor
 {
