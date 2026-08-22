@@ -22,8 +22,7 @@ static CGFloat landscapeScale = 0.75;
 static CGFloat batteryFontSize = 12.0;
 static CGFloat landscapeFontSize = 12.0;
 static SBCPUDragView *cpuDragView;
-static BOOL sbcpuLandscapeMode = NO;
-static BOOL sbcpuManualLandscape = NO;
+static BOOL landscapeTapRotationEnabled = NO;
 
 
 /*
@@ -679,36 +678,13 @@ withEvent:
 #pragma mark 双击
 #pragma mark -
 
+static void toggleLandscapeTapRotation(void);
 
 @interface SBCPUAction : NSObject
 
 @end
 
 
-
-
-@interface SBCPULandscapeAction : NSObject
-@end
-
-@implementation SBCPULandscapeAction
-
-+ (void)landscapeTap
-{
-    // Test7: 只允许横屏状态触发
-    if(!sbcpuLandscapeMode || !cpuWindow)
-        return;
-
-    sbcpuManualLandscape = !sbcpuManualLandscape;
-
-    [UIView animateWithDuration:0.25 animations:^{
-        if(sbcpuManualLandscape)
-            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
-        else
-            cpuWindow.transform = CGAffineTransformIdentity;
-    }];
-}
-
-@end
 
 @implementation SBCPUAction
 
@@ -720,8 +696,43 @@ withEvent:
 
 }
 
++ (void)singleTapLandscape
+{
+    toggleLandscapeTapRotation();
+}
+
 
 @end
+
+#pragma mark -
+#pragma mark 横屏单击旋转
+#pragma mark -
+
+static void toggleLandscapeTapRotation(void)
+{
+    if(!label)
+        return;
+
+    if(!isLandscapeMode())
+    {
+        return;
+    }
+
+    landscapeTapRotationEnabled = !landscapeTapRotationEnabled;
+
+    [UIView animateWithDuration:0.25 animations:^{
+
+        if(landscapeTapRotationEnabled)
+        {
+            label.transform = CGAffineTransformMakeRotation(M_PI_2);
+        }
+        else
+        {
+            label.transform = CGAffineTransformIdentity;
+        }
+
+    }];
+}
 
 
 
@@ -899,18 +910,15 @@ static void createCPUWindow()
     [drag addGestureRecognizer:
      doubleTap];
 
-    UITapGestureRecognizer *landscapeTap =
+    UITapGestureRecognizer *singleTap =
     [[UITapGestureRecognizer alloc]
      initWithTarget:
-     [SBCPULandscapeAction class]
-     action:@selector(landscapeTap)];
+     [SBCPUAction class]
+     action:@selector(singleTapLandscape)];
 
-    landscapeTap.numberOfTapsRequired = 1;
-    landscapeTap.numberOfTouchesRequired = 1;
-    // Test7: 横屏时单击优先，不再等待双击失败
-    // 避免单击事件被双击手势吞掉
-    [drag addGestureRecognizer:landscapeTap];
-
+    singleTap.numberOfTapsRequired = 1;
+    [singleTap requireGestureRecognizerToFail:doubleTap];
+    [drag addGestureRecognizer:singleTap];
 
     applyFloatingAlpha();
 
@@ -2532,24 +2540,57 @@ static void updateCPUFloatingOrientation(void)
     if(!cpuWindow)
         return;
 
+
     UIInterfaceOrientation orientation =
     getV162SceneOrientation();
 
-    BOOL landscape =
-    (orientation == UIInterfaceOrientationLandscapeLeft ||
-     orientation == UIInterfaceOrientationLandscapeRight);
 
-    if(landscape == sbcpuLandscapeMode)
+    static UIInterfaceOrientation lastOrientation =
+    UIInterfaceOrientationUnknown;
+
+
+    if(lastOrientation == orientation)
         return;
 
-    sbcpuLandscapeMode = landscape;
+
+    lastOrientation = orientation;
+
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        if(!sbcpuLandscapeMode)
+
+        CGRect oldFrame = cpuWindow.frame;
+        CGPoint oldCenter = cpuWindow.center;
+
+        switch(orientation)
         {
-            sbcpuManualLandscape = NO;
-            cpuWindow.transform = CGAffineTransformIdentity;
+            case UIInterfaceOrientationLandscapeLeft:
+
+                cpuWindow.transform =
+                CGAffineTransformMakeRotation(M_PI_2);
+
+                break;
+
+
+            case UIInterfaceOrientationLandscapeRight:
+
+                cpuWindow.transform =
+                CGAffineTransformMakeRotation(-M_PI_2);
+
+                break;
+
+
+            default:
+
+                cpuWindow.transform =
+                CGAffineTransformIdentity;
+
+                break;
         }
+
+        // keep floating window position stable after rotation
+        cpuWindow.center = oldCenter;
+        cpuWindow.frame = oldFrame;
+
     });
 }
 
