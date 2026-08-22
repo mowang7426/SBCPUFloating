@@ -129,7 +129,7 @@ static void applyMotionOrientation(BOOL landscape)
 
         if(cpuDragView && [cpuDragView respondsToSelector:@selector(setNeedsLayout)])
         {
-            [cpuDragView setNeedsLayout];
+            [(UIView *)cpuDragView setNeedsLayout];
         }
 
         /*
