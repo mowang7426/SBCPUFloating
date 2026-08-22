@@ -2444,6 +2444,25 @@ static void updateCPUFloatingOrientation(void)
     }
 }
 
+
+
+static void restoreCPUFloatingPortrait(void)
+{
+    if(!label)
+        return;
+
+    if(landscapeRotated)
+    {
+        landscapeRotated = NO;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [UIView animateWithDuration:0.25 animations:^{
+                label.transform = CGAffineTransformIdentity;
+                cpuDragView.transform = CGAffineTransformIdentity;
+            }];
+        });
+    }
+}
+
 %ctor
 {
 
@@ -2456,6 +2475,15 @@ static void updateCPUFloatingOrientation(void)
     {
         return;
     }
+
+
+    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidChangeStatusBarOrientationNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note){
+        UIInterfaceOrientation o = [UIApplication sharedApplication].statusBarOrientation;
+        if(UIInterfaceOrientationIsPortrait(o))
+        {
+            restoreCPUFloatingPortrait();
+        }
+    }];
 
 
     NSUserDefaults *def =
