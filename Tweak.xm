@@ -121,7 +121,7 @@ static void applyMotionOrientation(BOOL landscape)
             f.origin.y = MAX(10, area.height - f.size.height - 10);
 
         label.frame = f;
-        [cpuDragView setFrame:f];
+        [(UIView *)cpuDragView setFrame:f];
         lastFloatingFrame = f;
     });
 }
@@ -1212,7 +1212,7 @@ static void updateFloatingSize()
 
         if(cpuDragView)
         {
-            cpuDragView.frame = label.frame;
+            [(UIView *)cpuDragView setFrame:label.frame];
         }
 
         label.layer.cornerRadius =
@@ -2315,7 +2315,7 @@ static void registerV160Observers()
                  if(f.origin.x < 0) f.origin.x = 10;
                  if(f.origin.y < 0) f.origin.y = 10;
                  label.frame = f;
-                 [cpuDragView setFrame:f];
+                 [(UIView *)cpuDragView setFrame:f];
                  lastFloatingFrame = f;
              }
 
@@ -2371,7 +2371,7 @@ static void registerV160Observers()
                      f.origin.y = MAX(20, f.origin.y - keyboardHeight);
 
                      label.frame = f;
-                     [cpuDragView setFrame:f];
+                     [(UIView *)cpuDragView setFrame:f];
                      keyboardMoved = YES;
                  }
 
