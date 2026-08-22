@@ -2375,6 +2375,26 @@ static void startV162OrientationMonitor(void)
     });
 }
 
+
+static void updateCPUFloatingOrientation(void)
+{
+    UIInterfaceOrientation orientation = UIInterfaceOrientationPortrait;
+
+    CGSize size = UIScreen.mainScreen.bounds.size;
+    if(size.width > size.height)
+    {
+        orientation = UIInterfaceOrientationLandscapeLeft;
+    }
+
+    if(cpuWindow)
+    {
+        if(orientation == UIInterfaceOrientationLandscapeLeft)
+            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
+        else
+            cpuWindow.transform = CGAffineTransformIdentity;
+    }
+}
+
 %ctor
 {
 
