@@ -16,6 +16,7 @@ static UIWindow *cpuWindow;
 @class SBCPUDragView;
 
 static UILabel *label;
+static UIView *cpuContentView;
 static CGFloat floatingScale = 1.0;
 static CGFloat floatingFontSize = 14.0;
 static CGFloat landscapeScale = 0.75;
@@ -771,6 +772,11 @@ static void createCPUWindow()
 
 
 
+    cpuContentView =
+    [[UIView alloc] initWithFrame:CGRectMake(0,0,160,80)];
+    cpuContentView.backgroundColor = UIColor.clearColor;
+    cpuContentView.userInteractionEnabled = YES;
+
     label =
     [[UILabel alloc]
      initWithFrame:
@@ -843,11 +849,11 @@ static void createCPUWindow()
 
 
     [cpuWindow.rootViewController.view
-     addSubview:label];
+     addSubview:cpuContentView];
 
+    [cpuContentView addSubview:label];
 
-    [cpuWindow.rootViewController.view
-     addSubview:drag];
+    [cpuContentView addSubview:drag];
 
 
 
@@ -2512,14 +2518,16 @@ static void updateCPUFloatingOrientation(void)
 
     dispatch_async(dispatch_get_main_queue(), ^{
 
-        CGRect oldFrame = cpuWindow.frame;
-        CGPoint oldCenter = cpuWindow.center;
+        if(!cpuContentView)
+            return;
+
+        CGPoint oldCenter = cpuContentView.center;
 
         switch(orientation)
         {
             case UIInterfaceOrientationLandscapeLeft:
 
-                cpuWindow.transform =
+                cpuContentView.transform =
                 CGAffineTransformMakeRotation(M_PI_2);
 
                 break;
@@ -2527,7 +2535,7 @@ static void updateCPUFloatingOrientation(void)
 
             case UIInterfaceOrientationLandscapeRight:
 
-                cpuWindow.transform =
+                cpuContentView.transform =
                 CGAffineTransformMakeRotation(-M_PI_2);
 
                 break;
@@ -2535,15 +2543,14 @@ static void updateCPUFloatingOrientation(void)
 
             default:
 
-                cpuWindow.transform =
+                cpuContentView.transform =
                 CGAffineTransformIdentity;
 
                 break;
         }
 
         // keep floating window position stable after rotation
-        cpuWindow.center = oldCenter;
-        cpuWindow.frame = oldFrame;
+        cpuContentView.center = oldCenter;
 
     });
 }
