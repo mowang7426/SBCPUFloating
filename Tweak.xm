@@ -22,7 +22,6 @@ static CGFloat landscapeScale = 0.75;
 static CGFloat batteryFontSize = 12.0;
 static CGFloat landscapeFontSize = 12.0;
 static SBCPUDragView *cpuDragView;
-static BOOL landscapeTapRotationEnabled = NO;
 
 
 /*
@@ -678,7 +677,6 @@ withEvent:
 #pragma mark 双击
 #pragma mark -
 
-static void toggleLandscapeTapRotation(void);
 
 @interface SBCPUAction : NSObject
 
@@ -696,43 +694,32 @@ static void toggleLandscapeTapRotation(void);
 
 }
 
-+ (void)singleTapLandscape
-{
-    toggleLandscapeTapRotation();
-}
 
-
-@end
-
-#pragma mark -
-#pragma mark 横屏单击旋转
-#pragma mark -
-
-static void toggleLandscapeTapRotation(void)
++ (void)landscapeTapAction
 {
     if(!label)
-        return;
-
-    if(!isLandscapeMode())
     {
         return;
     }
 
-    landscapeTapRotationEnabled = !landscapeTapRotationEnabled;
+    if(!isLandscapeMode())
+    {
+        label.transform = CGAffineTransformIdentity;
+        return;
+    }
 
-    [UIView animateWithDuration:0.25 animations:^{
-
-        if(landscapeTapRotationEnabled)
-        {
-            label.transform = CGAffineTransformMakeRotation(M_PI_2);
-        }
-        else
-        {
-            label.transform = CGAffineTransformIdentity;
-        }
-
-    }];
+    if(CGAffineTransformIsIdentity(label.transform))
+    {
+        label.transform = CGAffineTransformMakeRotation(M_PI_2);
+    }
+    else
+    {
+        label.transform = CGAffineTransformIdentity;
+    }
 }
+
+
+@end
 
 
 
@@ -910,15 +897,19 @@ static void createCPUWindow()
     [drag addGestureRecognizer:
      doubleTap];
 
+
     UITapGestureRecognizer *singleTap =
     [[UITapGestureRecognizer alloc]
      initWithTarget:
      [SBCPUAction class]
-     action:@selector(singleTapLandscape)];
+     action:@selector(landscapeTapAction)];
 
     singleTap.numberOfTapsRequired = 1;
+    singleTap.numberOfTouchesRequired = 1;
     [singleTap requireGestureRecognizerToFail:doubleTap];
+
     [drag addGestureRecognizer:singleTap];
+
 
     applyFloatingAlpha();
 
