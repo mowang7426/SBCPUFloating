@@ -2470,25 +2470,50 @@ static void startV162OrientationMonitor(void)
 
 static void updateCPUFloatingOrientation(void)
 {
-    UIInterfaceOrientation orientation = UIInterfaceOrientationPortrait;
+    BOOL landscape = NO;
 
     CGSize size = UIScreen.mainScreen.bounds.size;
+
     if(size.width > size.height)
+        landscape = YES;
+
+    UIWindow *keyWindow = nil;
+
+    if(@available(iOS 13.0, *))
     {
-        orientation = UIInterfaceOrientationLandscapeLeft;
+        for(UIWindowScene *scene in UIApplication.sharedApplication.connectedScenes)
+        {
+            if(scene.activationState == UISceneActivationStateForegroundActive)
+            {
+                keyWindow = scene.windows.firstObject;
+                break;
+            }
+        }
     }
 
-    if(cpuWindow)
+    if(keyWindow)
     {
-        if(orientation == UIInterfaceOrientationLandscapeLeft)
+        CGSize ws = keyWindow.bounds.size;
+        if(ws.width > ws.height)
+            landscape = YES;
+    }
+
+    if(landscape)
+    {
+        if(!sbcMotionManager)
         {
-            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
             startMotionRotateMonitor();
         }
-        else
+    }
+    else
+    {
+        stopMotionRotateMonitor();
+
+        if(cpuWindow)
         {
-            cpuWindow.transform = CGAffineTransformIdentity;
-            stopMotionRotateMonitor();
+            dispatch_async(dispatch_get_main_queue(), ^{
+                cpuWindow.transform = CGAffineTransformIdentity;
+            });
         }
     }
 }
