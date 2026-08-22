@@ -2,6 +2,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <mach/mach.h>
 #import <signal.h>
+#import <objc/message.h>
 #import <IOKit/IOKitLib.h>
 
 
@@ -2376,23 +2377,91 @@ static void startV162OrientationMonitor(void)
 }
 
 
-static void updateCPUFloatingOrientation(void)
+static UIInterfaceOrientation getV162FrontmostAppOrientation()
 {
-    UIInterfaceOrientation orientation = UIInterfaceOrientationPortrait;
+    UIInterfaceOrientation result = UIInterfaceOrientationPortrait;
+
+    @try
+    {
+        Class workspaceClass = NSClassFromString(@"SBMainWorkspace");
+
+        if(workspaceClass)
+        {
+            id workspace = [workspaceClass performSelector:NSSelectorFromString(@"sharedInstance")];
+
+            if(workspace)
+            {
+                id app = [workspace performSelector:NSSelectorFromString(@"frontMostApplication")];
+
+                if(app)
+                {
+                    if([app respondsToSelector:NSSelectorFromString(@"interfaceOrientation")])
+                    {
+                        NSInteger value =
+                        ((NSInteger (*)(id, SEL))objc_msgSend)(
+                            app,
+                            NSSelectorFromString(@"interfaceOrientation")
+                        );
+
+                        if(value >= 1 && value <= 4)
+                        {
+                            return (UIInterfaceOrientation)value;
+                        }
+                    }
+                }
+            }
+        }
+
+    }
+    @catch(__unused NSException *e)
+    {
+
+    }
+
 
     CGSize size = UIScreen.mainScreen.bounds.size;
-    if(size.width > size.height)
-    {
-        orientation = UIInterfaceOrientationLandscapeLeft;
-    }
 
-    if(cpuWindow)
-    {
-        if(orientation == UIInterfaceOrientationLandscapeLeft)
-            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
-        else
-            cpuWindow.transform = CGAffineTransformIdentity;
-    }
+    if(size.width > size.height)
+        result = UIInterfaceOrientationLandscapeLeft;
+
+
+    return result;
+}
+
+
+static void updateCPUFloatingOrientation(void)
+{
+    UIInterfaceOrientation orientation =
+    getV162FrontmostAppOrientation();
+
+
+    if(!cpuWindow)
+        return;
+
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+
+        switch(orientation)
+        {
+            case UIInterfaceOrientationLandscapeLeft:
+                cpuWindow.transform =
+                CGAffineTransformMakeRotation(M_PI_2);
+                break;
+
+
+            case UIInterfaceOrientationLandscapeRight:
+                cpuWindow.transform =
+                CGAffineTransformMakeRotation(-M_PI_2);
+                break;
+
+
+            default:
+                cpuWindow.transform =
+                CGAffineTransformIdentity;
+                break;
+        }
+
+    });
 }
 
 %ctor
