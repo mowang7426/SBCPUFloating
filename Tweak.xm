@@ -2434,40 +2434,33 @@ static void startV162OrientationMonitor(void)
 
 static void updateCPUFloatingOrientation(void)
 {
-    UIInterfaceOrientation orientation = UIInterfaceOrientationPortrait;
+    static BOOL wasLandscape = NO;
 
     CGSize size = UIScreen.mainScreen.bounds.size;
-    if(size.width > size.height)
-    {
-        orientation = UIInterfaceOrientationLandscapeLeft;
-    }
+    BOOL isLandscape = (size.width > size.height);
 
-    if(cpuWindow)
+    if(cpuWindow && label)
     {
-        // 竖屏恢复时清除横屏旋转状态
-        if(orientation != UIInterfaceOrientationLandscapeLeft)
+        // Landscape -> Portrait transition:
+        // clear the temporary rotation applied by the click action.
+        if(wasLandscape && !isLandscape)
         {
-            if(landscapeRotated)
-            {
-                landscapeRotated = NO;
-                [UIView animateWithDuration:0.25 animations:^{
-                    label.transform = portraitStateSaved ? portraitSavedTransform : CGAffineTransformIdentity;
-                    if(portraitStateSaved)
-                    {
-                        label.center = portraitSavedCenter;
-                        label.bounds = portraitSavedBounds;
-                    }
-                    cpuDragView.transform = CGAffineTransformIdentity;
-                    [label setNeedsLayout];
-                    [label layoutIfNeeded];
-                }];
-                portraitStateSaved = NO;
-            }
+            landscapeRotated = NO;
+
+            [UIView animateWithDuration:0.20 animations:^{
+                label.transform = CGAffineTransformIdentity;
+                cpuDragView.transform = CGAffineTransformIdentity;
+            } completion:^(BOOL finished){
+                [label setNeedsLayout];
+                [label layoutIfNeeded];
+            }];
+
+            portraitStateSaved = NO;
         }
+
+        wasLandscape = isLandscape;
     }
 }
-
-
 
 
 static void recreateCPUFloatingWindow(void)
