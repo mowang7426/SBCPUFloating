@@ -21,6 +21,7 @@ static CGFloat landscapeScale = 0.75;
 static CGFloat batteryFontSize = 12.0;
 static CGFloat landscapeFontSize = 12.0;
 static SBCPUDragView *cpuDragView;
+static BOOL landscapeRotated = NO;
 
 
 /*
@@ -684,10 +685,14 @@ withEvent:
         return;
     }
 
-    // 横屏状态：保持当前位置，只旋转悬浮窗内容
+    // 横屏状态：保持当前位置，只旋转显示层
+    landscapeRotated = !landscapeRotated;
+
     [UIView animateWithDuration:0.25 animations:^{
-        label.transform = CGAffineTransformMakeRotation(M_PI_2);
-        cpuDragView.transform = CGAffineTransformMakeRotation(M_PI_2);
+        CGAffineTransform t = landscapeRotated ? CGAffineTransformMakeRotation(M_PI_2) : CGAffineTransformIdentity;
+        label.transform = t;
+        // 拖动层不旋转，避免破坏吸附和坐标计算
+        cpuDragView.transform = CGAffineTransformIdentity;
     }];
 }
 
@@ -2424,10 +2429,18 @@ static void updateCPUFloatingOrientation(void)
 
     if(cpuWindow)
     {
-        if(orientation == UIInterfaceOrientationLandscapeLeft)
-            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
-        else
-            cpuWindow.transform = CGAffineTransformIdentity;
+        // 竖屏恢复时清除横屏旋转状态
+        if(orientation != UIInterfaceOrientationLandscapeLeft)
+        {
+            if(landscapeRotated)
+            {
+                landscapeRotated = NO;
+                [UIView animateWithDuration:0.25 animations:^{
+                    label.transform = CGAffineTransformIdentity;
+                    cpuDragView.transform = CGAffineTransformIdentity;
+                }];
+            }
+        }
     }
 }
 
