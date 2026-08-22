@@ -2450,13 +2450,19 @@ static void updateCPUFloatingOrientation(void)
         // 方向锁定开启时系统可能不会发送 Landscape->Portrait 回调。
         if(manualLandscapeMode && !isLandscape)
         {
+            // fix15: 模拟横屏状态下第二次点击恢复竖屏浮窗的效果。
+            // 不等待系统方向回调，只把浮窗显示状态先恢复到竖屏。
             landscapeRotated = NO;
             manualLandscapeMode = NO;
 
             [UIView animateWithDuration:0.20 animations:^{
-                label.transform = CGAffineTransformIdentity;
+                label.transform = portraitSavedTransform;
                 cpuDragView.transform = CGAffineTransformIdentity;
             } completion:^(BOOL finished){
+                CGRect f = label.frame;
+                label.frame = f;
+                cpuDragView.frame = f;
+                [label setNeedsDisplay];
                 [label setNeedsLayout];
                 [label layoutIfNeeded];
             }];
