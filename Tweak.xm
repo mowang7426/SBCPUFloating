@@ -93,6 +93,8 @@ static void updateFloatingSize(void);
 // V1.6.3 MotionRotate
 static CMMotionManager *sbcMotionManager;
 static NSInteger sbcMotionState = 0; // 0 unknown 1 portrait 2 landscape
+static CGRect sbcPortraitFrame = {0,0,0,0};
+static BOOL sbcSavedPortraitFrame = NO;
 
 static void applyMotionOrientation(BOOL landscape)
 {
@@ -100,31 +102,56 @@ static void applyMotionOrientation(BOOL landscape)
         return;
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        if(landscape)
+        CGRect currentFrame = label.frame;
+
+        if(!landscape)
         {
-            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
+            if(sbcSavedPortraitFrame)
+            {
+                currentFrame = sbcPortraitFrame;
+            }
+
+            cpuWindow.transform = CGAffineTransformIdentity;
         }
         else
         {
-            cpuWindow.transform = CGAffineTransformIdentity;
+            if(!sbcSavedPortraitFrame)
+            {
+                sbcPortraitFrame = currentFrame;
+                sbcSavedPortraitFrame = YES;
+            }
+
+            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
         }
 
         updateFloatingSize();
 
-        CGRect f = label.frame;
         CGSize area = UIScreen.mainScreen.bounds.size;
+        if(landscape)
+        {
+            CGFloat w = area.height;
+            CGFloat h = area.width;
+            area = CGSizeMake(w,h);
+        }
 
-        if(CGRectGetMaxX(f) > area.width)
-            f.origin.x = MAX(10, area.width - f.size.width - 10);
+        if(CGRectGetMaxX(currentFrame) > area.width)
+            currentFrame.origin.x = MAX(10, area.width - currentFrame.size.width - 10);
 
-        if(CGRectGetMaxY(f) > area.height)
-            f.origin.y = MAX(10, area.height - f.size.height - 10);
+        if(CGRectGetMaxY(currentFrame) > area.height)
+            currentFrame.origin.y = MAX(10, area.height - currentFrame.size.height - 10);
 
-        label.frame = f;
-        [(UIView *)cpuDragView setFrame:f];
-        lastFloatingFrame = f;
+        if(currentFrame.origin.x < 0)
+            currentFrame.origin.x = 10;
+
+        if(currentFrame.origin.y < 0)
+            currentFrame.origin.y = 10;
+
+        label.frame = currentFrame;
+        [(UIView *)cpuDragView setFrame:currentFrame];
+        lastFloatingFrame = currentFrame;
     });
 }
+
 
 static void startMotionRotateMonitor(void)
 {
