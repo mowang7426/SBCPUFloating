@@ -23,6 +23,12 @@ static CGFloat landscapeFontSize = 12.0;
 static SBCPUDragView *cpuDragView;
 static BOOL landscapeRotated = NO;
 
+// V1.6.2 fix9 portrait state snapshot
+static BOOL portraitStateSaved = NO;
+static CGPoint portraitSavedCenter = CGPointZero;
+static CGRect portraitSavedBounds = CGRectZero;
+static CGAffineTransform portraitSavedTransform = CGAffineTransformIdentity;
+
 
 /*
  设置页面是否正在显示
@@ -685,11 +691,20 @@ withEvent:
         return;
     }
 
+    // 第一次横屏旋转前保存竖屏状态
+    if(!portraitStateSaved)
+    {
+        portraitStateSaved = YES;
+        portraitSavedCenter = label.center;
+        portraitSavedBounds = label.bounds;
+        portraitSavedTransform = label.transform;
+    }
+
     // 横屏状态：保持当前位置，只旋转显示层
     landscapeRotated = !landscapeRotated;
 
     [UIView animateWithDuration:0.25 animations:^{
-        CGAffineTransform t = landscapeRotated ? CGAffineTransformMakeRotation(M_PI_2) : CGAffineTransformIdentity;
+        CGAffineTransform t = landscapeRotated ? CGAffineTransformMakeRotation(M_PI_2) : portraitSavedTransform;
         label.transform = t;
         // 拖动层不旋转，避免破坏吸附和坐标计算
         cpuDragView.transform = CGAffineTransformIdentity;
@@ -2436,11 +2451,17 @@ static void updateCPUFloatingOrientation(void)
             {
                 landscapeRotated = NO;
                 [UIView animateWithDuration:0.25 animations:^{
-                    label.transform = CGAffineTransformIdentity;
+                    label.transform = portraitStateSaved ? portraitSavedTransform : CGAffineTransformIdentity;
+                    if(portraitStateSaved)
+                    {
+                        label.center = portraitSavedCenter;
+                        label.bounds = portraitSavedBounds;
+                    }
                     cpuDragView.transform = CGAffineTransformIdentity;
                     [label setNeedsLayout];
                     [label layoutIfNeeded];
                 }];
+                portraitStateSaved = NO;
             }
         }
     }
@@ -2458,11 +2479,17 @@ static void restoreCPUFloatingPortrait(void)
         landscapeRotated = NO;
         dispatch_async(dispatch_get_main_queue(), ^{
             [UIView animateWithDuration:0.25 animations:^{
-                label.transform = CGAffineTransformIdentity;
+                label.transform = portraitStateSaved ? portraitSavedTransform : CGAffineTransformIdentity;
+                if(portraitStateSaved)
+                {
+                    label.center = portraitSavedCenter;
+                    label.bounds = portraitSavedBounds;
+                }
                 cpuDragView.transform = CGAffineTransformIdentity;
                 [label setNeedsLayout];
                 [label layoutIfNeeded];
             }];
+            portraitStateSaved = NO;
         });
     }
 }
