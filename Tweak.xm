@@ -21,8 +21,6 @@ static CGFloat landscapeScale = 0.75;
 static CGFloat batteryFontSize = 12.0;
 static CGFloat landscapeFontSize = 12.0;
 static SBCPUDragView *cpuDragView;
-static BOOL sbLandscapeMode = NO;
-static NSTimeInterval sbLandscapeTapTime = 0;
 
 
 /*
@@ -90,7 +88,6 @@ static void applySmartLayout(void);
 static void registerV160Observers(void);
 static void updateCPUFloatingOrientation(void);
 static void startV162OrientationMonitor(void);
-static void applyCPUFloatingOrientation(UIInterfaceOrientation orientation);
 
 
 
@@ -658,7 +655,7 @@ withEvent:
 
 
 @interface SBCPUAction : NSObject
-+ (void)landscapeTapAction;
+
 @end
 
 
@@ -674,20 +671,31 @@ withEvent:
 }
 
 
-+ (void)landscapeTapAction
++ (void)landscapeSingleTapAction
 {
-    if(!sbLandscapeMode || !cpuDragView || !label)
+    if(!label || !cpuWindow)
+        return;
+
+    CGSize screenSize = UIScreen.mainScreen.bounds.size;
+
+    // 只处理横屏
+    if(screenSize.width <= screenSize.height)
         return;
 
     CGRect f = label.frame;
-    CGSize s = cpuWindow.bounds.size;
 
-    // 横屏点击后重新布局到横屏可视区域
-    f.origin.x = MAX(8, s.width - f.size.width - 18);
-    f.origin.y = MAX(8, (s.height - f.size.height) / 2.0);
+    CGFloat width = f.size.width;
+    CGFloat height = f.size.height;
 
-    label.frame = f;
-    cpuDragView.frame = f;
+    // 横屏时移动到右侧中间可视区域
+    f.origin.x = screenSize.width - width - 20;
+    f.origin.y = (screenSize.height - height) / 2.0;
+
+    [UIView animateWithDuration:0.25 animations:^{
+        label.frame = f;
+        cpuDragView.frame = f;
+    }];
+
 }
 
 
@@ -861,16 +869,21 @@ static void createCPUWindow()
     [drag addGestureRecognizer:
      doubleTap];
 
+
     UITapGestureRecognizer *singleTap =
     [[UITapGestureRecognizer alloc]
      initWithTarget:
      [SBCPUAction class]
-     action:@selector(landscapeTapAction)];
+     action:@selector(landscapeSingleTapAction)];
+
 
     singleTap.numberOfTapsRequired = 1;
     singleTap.numberOfTouchesRequired = 1;
+
     [singleTap requireGestureRecognizerToFail:doubleTap];
-    [drag addGestureRecognizer:singleTap];
+
+    [drag addGestureRecognizer:
+     singleTap];
 
 
     applyFloatingAlpha();
@@ -2414,11 +2427,6 @@ static void updateCPUFloatingOrientation(void)
     if(size.width > size.height)
     {
         orientation = UIInterfaceOrientationLandscapeLeft;
-        sbLandscapeMode = YES;
-    }
-    else
-    {
-        sbLandscapeMode = NO;
     }
 
     if(cpuWindow)
