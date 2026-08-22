@@ -12,7 +12,6 @@
 
 
 static UIWindow *cpuWindow;
-static BOOL landscapeFloatingMode = NO;
 
 @class SBCPUDragView;
 
@@ -23,6 +22,8 @@ static CGFloat landscapeScale = 0.75;
 static CGFloat batteryFontSize = 12.0;
 static CGFloat landscapeFontSize = 12.0;
 static SBCPUDragView *cpuDragView;
+static BOOL sbcpuLandscapeMode = NO;
+static BOOL sbcpuManualLandscape = NO;
 
 
 /*
@@ -685,6 +686,29 @@ withEvent:
 
 
 
+
+@interface SBCPULandscapeAction : NSObject
+@end
+
+@implementation SBCPULandscapeAction
+
++ (void)landscapeTap
+{
+    if(!sbcpuLandscapeMode || !cpuWindow)
+        return;
+
+    sbcpuManualLandscape = !sbcpuManualLandscape;
+
+    [UIView animateWithDuration:0.25 animations:^{
+        if(sbcpuManualLandscape)
+            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
+        else
+            cpuWindow.transform = CGAffineTransformIdentity;
+    }];
+}
+
+@end
+
 @implementation SBCPUAction
 
 
@@ -693,35 +717,6 @@ withEvent:
 
     openSettings();
 
-}
-
-+ (void)singleTapLandscapeRotate
-{
-    if(!cpuWindow)
-        return;
-
-    UIInterfaceOrientation orientation = getV162SceneOrientation();
-
-    if(orientation != UIInterfaceOrientationLandscapeLeft &&
-       orientation != UIInterfaceOrientationLandscapeRight)
-    {
-        return;
-    }
-
-    landscapeFloatingMode = !landscapeFloatingMode;
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if(!landscapeFloatingMode)
-        {
-            cpuWindow.transform = CGAffineTransformIdentity;
-            return;
-        }
-
-        if(orientation == UIInterfaceOrientationLandscapeLeft)
-            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
-        else
-            cpuWindow.transform = CGAffineTransformMakeRotation(-M_PI_2);
-    });
 }
 
 
@@ -903,23 +898,16 @@ static void createCPUWindow()
     [drag addGestureRecognizer:
      doubleTap];
 
-
-    /*
-     V1.6.2 Test6:
-     横屏状态单击切换浮窗旋转
-     保留原拖动和双击设置
-     */
-    UITapGestureRecognizer *singleTap =
+    UITapGestureRecognizer *landscapeTap =
     [[UITapGestureRecognizer alloc]
      initWithTarget:
-     [SBCPUAction class]
-     action:@selector(singleTapLandscapeRotate)];
+     [SBCPULandscapeAction class]
+     action:@selector(landscapeTap)];
 
-    singleTap.numberOfTapsRequired = 1;
-    singleTap.numberOfTouchesRequired = 1;
-    [singleTap requireGestureRecognizerToFail:doubleTap];
-
-    [drag addGestureRecognizer:singleTap];
+    landscapeTap.numberOfTapsRequired = 1;
+    landscapeTap.numberOfTouchesRequired = 1;
+    [landscapeTap requireGestureRecognizerToFail:doubleTap];
+    [drag addGestureRecognizer:landscapeTap];
 
 
     applyFloatingAlpha();
@@ -2515,6 +2503,8 @@ static UIInterfaceOrientation getV162SceneOrientation()
                 }
             }
         }
+
+    }
     @catch(__unused NSException *e)
     {
 
@@ -2540,49 +2530,27 @@ static void updateCPUFloatingOrientation(void)
     if(!cpuWindow)
         return;
 
-
     UIInterfaceOrientation orientation =
     getV162SceneOrientation();
 
+    BOOL landscape =
+    (orientation == UIInterfaceOrientationLandscapeLeft ||
+     orientation == UIInterfaceOrientationLandscapeRight);
 
-    static UIInterfaceOrientation lastOrientation =
-    UIInterfaceOrientationUnknown;
-
-
-    if(lastOrientation == orientation)
+    if(landscape == sbcpuLandscapeMode)
         return;
 
-
-    lastOrientation = orientation;
-
+    sbcpuLandscapeMode = landscape;
 
     dispatch_async(dispatch_get_main_queue(), ^{
-
-        if(orientation != UIInterfaceOrientationLandscapeLeft &&
-           orientation != UIInterfaceOrientationLandscapeRight)
+        if(!sbcpuLandscapeMode)
         {
-            landscapeFloatingMode = NO;
+            sbcpuManualLandscape = NO;
             cpuWindow.transform = CGAffineTransformIdentity;
-            return;
         }
-
-        // 横屏只记录状态，不自动旋转，等待用户单击
-        if(!landscapeFloatingMode)
-        {
-            cpuWindow.transform = CGAffineTransformIdentity;
-            return;
-        }
-
-        if(orientation == UIInterfaceOrientationLandscapeLeft)
-            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
-        else
-            cpuWindow.transform = CGAffineTransformMakeRotation(-M_PI_2);
-
     });
 }
 
-
-}
 
 %ctor
 {
