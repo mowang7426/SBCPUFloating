@@ -680,22 +680,15 @@ withEvent:
 
     // 只处理横屏
     if(screenSize.width <= screenSize.height)
+    {
         return;
+    }
 
-    CGRect f = label.frame;
-
-    CGFloat width = f.size.width;
-    CGFloat height = f.size.height;
-
-    // 横屏时移动到右侧中间可视区域
-    f.origin.x = screenSize.width - width - 20;
-    f.origin.y = (screenSize.height - height) / 2.0;
-
+    // 横屏状态：保持当前位置，只旋转悬浮窗内容
     [UIView animateWithDuration:0.25 animations:^{
-        label.frame = f;
-        cpuDragView.frame = f;
+        label.transform = CGAffineTransformMakeRotation(M_PI_2);
+        cpuDragView.transform = CGAffineTransformMakeRotation(M_PI_2);
     }];
-
 }
 
 
