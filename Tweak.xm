@@ -2518,16 +2518,25 @@ static void updateCPUFloatingOrientation(void)
 
     dispatch_async(dispatch_get_main_queue(), ^{
 
-        if(!cpuContentView)
-            return;
+        /*
+         V1.6.2 Test5_fix1:
+         不旋转 cpuContentView。
+         cpuDragView 是触摸层，旋转父容器会导致：
+         - 拖动坐标异常
+         - 双击失效
+         - 点击区域偏移
 
-        CGPoint oldCenter = cpuContentView.center;
+         只旋转显示层 label。
+         */
+
+        if(!label)
+            return;
 
         switch(orientation)
         {
             case UIInterfaceOrientationLandscapeLeft:
 
-                cpuContentView.transform =
+                label.transform =
                 CGAffineTransformMakeRotation(M_PI_2);
 
                 break;
@@ -2535,7 +2544,7 @@ static void updateCPUFloatingOrientation(void)
 
             case UIInterfaceOrientationLandscapeRight:
 
-                cpuContentView.transform =
+                label.transform =
                 CGAffineTransformMakeRotation(-M_PI_2);
 
                 break;
@@ -2543,14 +2552,11 @@ static void updateCPUFloatingOrientation(void)
 
             default:
 
-                cpuContentView.transform =
+                label.transform =
                 CGAffineTransformIdentity;
 
                 break;
         }
-
-        // keep floating window position stable after rotation
-        cpuContentView.center = oldCenter;
 
     });
 }
