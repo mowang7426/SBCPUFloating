@@ -2436,8 +2436,6 @@ static void startV162OrientationMonitor(void)
 
 static void updateCPUFloatingOrientation(void)
 {
-    static BOOL wasLandscape = NO;
-
     CGSize size = UIScreen.mainScreen.bounds.size;
     BOOL isLandscape = (size.width > size.height);
 
@@ -2470,7 +2468,6 @@ static void updateCPUFloatingOrientation(void)
             portraitStateSaved = NO;
         }
 
-        wasLandscape = isLandscape;
     }
 }
 
