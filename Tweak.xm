@@ -694,6 +694,7 @@ withEvent:
 
 + (void)landscapeTap
 {
+    // Test7: 只允许横屏状态触发
     if(!sbcpuLandscapeMode || !cpuWindow)
         return;
 
@@ -906,7 +907,8 @@ static void createCPUWindow()
 
     landscapeTap.numberOfTapsRequired = 1;
     landscapeTap.numberOfTouchesRequired = 1;
-    [landscapeTap requireGestureRecognizerToFail:doubleTap];
+    // Test7: 横屏时单击优先，不再等待双击失败
+    // 避免单击事件被双击手势吞掉
     [drag addGestureRecognizer:landscapeTap];
 
 
