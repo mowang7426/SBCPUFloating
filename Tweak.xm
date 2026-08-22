@@ -86,6 +86,8 @@ static void openSettings(void);
 static void checkHighCPU(double cpu);
 static void applySmartLayout(void);
 static void registerV160Observers(void);
+static void updateCPUFloatingOrientation(void);
+static void applyCPUFloatingOrientation(UIInterfaceOrientation orientation);
 
 
 
@@ -2460,6 +2462,7 @@ static void registerV160Observers()
 
             // V1.6.0 Smart Layout
             registerV160Observers();
+    startV162OrientationMonitor();
             applySmartLayout();
 
 
