@@ -103,25 +103,63 @@ static void applyMotionOrientation(BOOL landscape)
     dispatch_async(dispatch_get_main_queue(), ^{
         /*
          MotionRotate Fix2:
-         不再只旋转视觉。
-         根据当前姿态切换布局模式：
-         横屏使用横屏尺寸/边界，
-         竖屏恢复竖屏尺寸/边界。
+         不再只依靠 transform。
+         方向变化时先同步内部布局状态，
+         避免出现视觉横屏但 frame 仍是竖屏的问题。
         */
 
-        CGSize screen = UIScreen.mainScreen.bounds.size;
+        BOOL changedLandscape = landscape;
 
-        CGFloat width = landscape ? MAX(screen.width, screen.height) : MIN(screen.width, screen.height);
-        CGFloat height = landscape ? MIN(screen.width, screen.height) : MAX(screen.width, screen.height);
+        if(changedLandscape)
+        {
+            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
+        }
+        else
+        {
+            cpuWindow.transform = CGAffineTransformIdentity;
+        }
+
+        updateFloatingSize();
+
+        // 强制刷新一次浮窗布局，让横竖屏参数同步
+        if([label respondsToSelector:@selector(setNeedsLayout)])
+        {
+            [label setNeedsLayout];
+        }
+
+        if(cpuDragView && [cpuDragView respondsToSelector:@selector(setNeedsLayout)])
+        {
+            [cpuDragView setNeedsLayout];
+        }
+
+        /*
+         MotionRotate Fix1:
+         之前只旋转 window 的 transform，
+         但是 frame / 边界 / 吸附仍然使用竖屏坐标。
+         这里根据当前 Motion 状态重新计算布局区域。
+        */
 
         CGRect f = label.frame;
 
-        // 重新限制当前浮窗到当前方向的有效区域
-        if(CGRectGetMaxX(f) > width - 10)
-            f.origin.x = width - f.size.width - 10;
+        CGSize area = UIScreen.mainScreen.bounds.size;
 
-        if(CGRectGetMaxY(f) > height - 10)
-            f.origin.y = height - f.size.height - 10;
+        if(landscape)
+        {
+            // 横屏状态交换可用区域
+            area = CGSizeMake(MAX(area.width, area.height),
+                              MIN(area.width, area.height));
+        }
+        else
+        {
+            area = CGSizeMake(MIN(area.width, area.height),
+                              MAX(area.width, area.height));
+        }
+
+        if(CGRectGetMaxX(f) > area.width)
+            f.origin.x = MAX(10, area.width - f.size.width - 10);
+
+        if(CGRectGetMaxY(f) > area.height)
+            f.origin.y = MAX(10, area.height - f.size.height - 10);
 
         if(f.origin.x < 10)
             f.origin.x = 10;
@@ -132,14 +170,6 @@ static void applyMotionOrientation(BOOL landscape)
         label.frame = f;
         [(UIView *)cpuDragView setFrame:f];
         lastFloatingFrame = f;
-
-        // 最后再旋转显示层，避免frame计算仍处于竖屏坐标
-        if(landscape)
-            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
-        else
-            cpuWindow.transform = CGAffineTransformIdentity;
-
-        updateFloatingSize();
     });
 }
 
