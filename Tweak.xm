@@ -2649,7 +2649,6 @@ cellForRowAtIndexPath:
         cell.textLabel.text = @"控制属性探测";
         cell.detailTextLabel.text = @"手动进入扫描";
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-    };
     }
 
     if(indexPath.row == 12)
