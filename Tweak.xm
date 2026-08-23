@@ -2312,6 +2312,7 @@ static void sbcpuSmartChargeControlPropertyProbe()
     // Test11: 探测充电控制通道（只读，不修改）
     sbcpuSmartChargeControlProbe();
     sbcpuSmartChargeExternalMethodProbe();
+    sbcpuAppleChargerUserClientProbe();
 
     [self.tableView reloadData];
 }
@@ -3557,6 +3558,74 @@ static void sbcpuSmartChargeControlProbe()
 
 
 // =====================================================
+
+// =====================================================
+// Test17 AppleCharger UserClient Probe
+// 只探测 AppleCharger / BatteryManager 控制通道
+// 不调用 ExternalMethod，不修改充电参数
+// =====================================================
+
+static NSString *sbcpuAppleChargerProbeStatus = @"未检测";
+
+static void sbcpuAppleChargerUserClientProbe(void)
+{
+    NSMutableString *result = [NSMutableString string];
+
+    NSArray *targets = @[
+        @"AppleCharger",
+        @"AppleSmartBatteryManager",
+        @"AppleSmartBattery",
+        @"IOPMPowerSource"
+    ];
+
+    for (NSString *name in targets)
+    {
+        io_service_t service =
+        IOServiceGetMatchingService(kIOMasterPortDefault,
+                                    IOServiceMatching(name.UTF8String));
+
+        if (!service)
+        {
+            [result appendFormat:@"%@: 未找到\n", name];
+            continue;
+        }
+
+        [result appendFormat:@"\n[%@]\n", name];
+
+        for (uint32_t type = 0; type <= 4; type++)
+        {
+            io_connect_t connect = MACH_PORT_NULL;
+
+            kern_return_t kr =
+            IOServiceOpen(service,
+                          mach_task_self(),
+                          type,
+                          &connect);
+
+            if (kr == KERN_SUCCESS)
+            {
+                [result appendFormat:@"type %u: UserClient OPEN SUCCESS\n", type];
+
+                IOServiceClose(connect);
+            }
+            else
+            {
+                [result appendFormat:@"type %u: failed (%d)\n", type, kr];
+            }
+        }
+
+        IOObjectRelease(service);
+    }
+
+    if (result.length == 0)
+        [result appendString:@"没有发现 AppleCharger 控制入口"];
+
+    sbcpuAppleChargerProbeStatus = [result copy];
+
+    NSLog(@"[SBCPU SmartCharge Test17 AppleChargerProbe]\n%@", sbcpuAppleChargerProbeStatus);
+}
+
+
 // Test16 SmartCharge Deep IO Probe
 // 深层属性递归探测（只读）
 // 不执行写入，不改变充电参数
