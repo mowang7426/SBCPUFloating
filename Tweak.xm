@@ -5,6 +5,10 @@
 #import <signal.h>
 #import <IOKit/IOKitLib.h>
 
+// V1.9.0 Smart Rotation Test2.5
+// Forward declaration: must appear before SBOrientationManager hook
+static void handleSmartRotationLockChange(BOOL landscape);
+
 
 // V1.9.0 Smart Rotation Test2.3
 // 通过 SpringBoard 方向管理事件辅助检测，避免部分游戏不触发 UIDevice 通知
