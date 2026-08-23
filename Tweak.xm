@@ -2233,7 +2233,12 @@ static NSString *sbcpuScanPropertyKeys(io_service_t service)
                 if(CFGetTypeID(value)==CFNumberGetTypeID())
                 {
                     long long v=0;
-                    CFNumberGetValue(value,kCFNumberLongLongType,&v);
+                    if(CFGetTypeID(value)==CFNumberGetTypeID())
+                    {
+                        CFNumberGetValue((CFNumberRef)value,
+                                         kCFNumberLongLongType,
+                                         &v);
+                    }
                     [result appendFormat:@"值: %lld\n",v];
                 }
                 else if(CFGetTypeID(value)==CFStringGetTypeID())
