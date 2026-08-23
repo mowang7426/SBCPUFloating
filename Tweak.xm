@@ -3573,8 +3573,8 @@ static void sbcpuSmartChargeDumpObject(CFTypeRef obj, NSMutableString *out, int 
         CFDictionaryRef dict = (CFDictionaryRef)obj;
         CFIndex count = CFDictionaryGetCount(dict);
 
-        const void **keys = malloc(sizeof(void *) * count);
-        const void **vals = malloc(sizeof(void *) * count);
+        const void **keys = (const void **)malloc(sizeof(void *) * count);
+        const void **vals = (const void **)malloc(sizeof(void *) * count);
 
         CFDictionaryGetKeysAndValues(dict, keys, vals);
 
