@@ -1,69 +1,8 @@
-// SmartCharge V0.1 base fix: IOKit port compatibility\n#import <objc/message.h>
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 #import <mach/mach.h>
 #import <signal.h>
 #import <IOKit/IOKitLib.h>
-
-
-// V1.9.0 SmartRotation Test2.8 Debug
-// File logger for Relaxin/iOS environment
-static void SBCPURotationLog(NSString *msg)
-{
-    NSString *path = @"/var/mobile/SBCPUFloating.log";
-    NSString *old = [NSString stringWithContentsOfFile:path
-                                               encoding:NSUTF8StringEncoding
-                                                  error:nil];
-    NSString *line = [NSString stringWithFormat:@"%@\n%@",
-                      old ?: @"",
-                      msg];
-    [line writeToFile:path
-           atomically:YES
-             encoding:NSUTF8StringEncoding
-                error:nil];
-}
-
-static void SBCPUScanRotationClasses(void)
-{
-    NSArray *classes = @[
-        @"SBOrientationLockManager",
-        @"SBOrientationManager",
-        @"SBScreenOrientationController",
-        @"SBUIController"
-    ];
-
-    for (NSString *name in classes)
-    {
-        if (NSClassFromString(name))
-        {
-            SBCPURotationLog([NSString stringWithFormat:@"[SBCPU] Found class %@", name]);
-        }
-    }
-}
-
-
-// V1.9.0 Smart Rotation Test2.5
-// Forward declaration: must appear before SBOrientationManager hook
-static void handleSmartRotationLockChange(BOOL landscape);
-
-
-// V1.9.0 Smart Rotation Test2.3
-// 通过 SpringBoard 方向管理事件辅助检测，避免部分游戏不触发 UIDevice 通知
-%hook SBOrientationManager
-
--(void)setOrientation:(int)orientation
-{
-    %orig;
-
-    BOOL landscape = (orientation == 3 || orientation == 4);
-
-    NSLog(@"SBCPU SmartRotation SBOrientationManager orientation:%d landscape:%d", orientation, landscape);
-
-    handleSmartRotationLockChange(landscape);
-}
-
-%end
-
 
 
 #pragma mark -
@@ -116,13 +55,6 @@ static CGFloat floatingAlpha = 0.70f;
  */
 static BOOL smartLayoutEnable = YES;
 static BOOL autoWindowSizeEnable = NO;
-// V1.9.0 Smart Rotation Test1
-static BOOL smartRotationEnable = YES;
-static BOOL rotationLandscapeDetected = NO;
-static NSTimeInterval rotationDelay = 1.0;
-static BOOL changedRotationLockByPlugin = NO;
-
-
 
 // V1.8.1 battery display switches
 static BOOL showBatteryPercent = YES;
@@ -160,112 +92,6 @@ static void openSettings(void);
 static void checkHighCPU(double cpu);
 static void applySmartLayout(void);
 static void registerV160Observers(void);
-
-// V1.9.0 SmartRotation Test2.6
-// 使用 SBOrientationLockManager lock/unlock 控制方向锁
-
-// V1.9.0 Smart Rotation Test2.6
-// iOS 17 Smart Orientation Lock controller
-static void setSmartRotationLock(BOOL enabled)
-{
-    SBCPURotationLog([NSString stringWithFormat:@"[SBCPU] try set rotation lock:%d", enabled]);
-
-    Class cls = NSClassFromString(@"SBOrientationLockManager");
-
-    if(!cls)
-    {
-        cls = NSClassFromString(@"SBScreenOrientationController");
-    }
-
-    if(!cls)
-    {
-        cls = NSClassFromString(@"SBUIController");
-    }
-
-    if(!cls)
-    {
-        SBCPURotationLog(@"[SBCPU] no rotation controller found");
-        return;
-    }
-
-    id controller = nil;
-
-    SEL shared = NSSelectorFromString(@"sharedInstance");
-
-    if([cls respondsToSelector:shared])
-    {
-        controller = ((id (*)(id, SEL))objc_msgSend)(cls, shared);
-    }
-
-    if(!controller)
-    {
-        controller = [cls new];
-    }
-
-    NSArray *selectors = enabled ?
-    @[@"lock", @"setOrientationLockEnabled:", @"setOrientationLocked:", @"setLockEnabled:"] :
-    @[@"unlock", @"setOrientationLockEnabled:", @"setOrientationLocked:", @"setLockEnabled:"];
-
-    for(NSString *name in selectors)
-    {
-        SEL sel = NSSelectorFromString(name);
-
-        if([controller respondsToSelector:sel])
-        {
-            if([name hasSuffix:@":"])
-            {
-                ((void (*)(id, SEL, BOOL))objc_msgSend)(controller, sel, enabled);
-            }
-            else
-            {
-                ((void (*)(id, SEL))objc_msgSend)(controller, sel);
-            }
-
-            NSString *log = [NSString stringWithFormat:@"[SBCPU] selector %@ called state:%d", name, enabled];
-            NSLog(@"%@", log);
-            SBCPURotationLog(log);
-            return;
-        }
-    }
-
-    SBCPURotationLog(@"[SBCPU] no selector matched");
-}
-
-
-
-static void handleSmartRotationLockChange(BOOL landscape)
-{
-    if(!smartRotationEnable)
-        return;
-
-
-    static BOOL currentLockState = YES;
-
-
-    if(landscape)
-    {
-        if(currentLockState)
-        {
-            currentLockState = NO;
-            changedRotationLockByPlugin = YES;
-
-            setSmartRotationLock(NO);
-        }
-    }
-    else
-    {
-        if(changedRotationLockByPlugin)
-        {
-            currentLockState = YES;
-            changedRotationLockByPlugin = NO;
-
-            setSmartRotationLock(YES);
-        }
-    }
-}
-
-
-static void handleSmartRotation(UIDeviceOrientation orientation);
 
 
 
@@ -2569,53 +2395,6 @@ static void applySmartLayout()
 }
 
 
-
-// V1.9.0 Smart Rotation Test1
-// 这里只负责检测方向和重新布局，不直接修改系统方向锁定
-static void handleSmartRotation(UIDeviceOrientation orientation)
-{
-    if(!smartRotationEnable)
-        return;
-
-    BOOL landscape =
-    (orientation == UIDeviceOrientationLandscapeLeft ||
-     orientation == UIDeviceOrientationLandscapeRight);
-
-    if(landscape != rotationLandscapeDetected)
-    {
-        rotationLandscapeDetected = landscape;
-
-        // V1.9.0 Test2.2: 自动临时处理方向锁
-        handleSmartRotationLockChange(landscape);
-
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
-                                      (int64_t)(rotationDelay * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{
-            if(cpuWindow && label)
-            {
-                updateFloatingSize();
-
-                CGRect f = label.frame;
-                CGSize s = UIScreen.mainScreen.bounds.size;
-
-                if(CGRectGetMaxX(f) > s.width)
-                    f.origin.x = s.width - f.size.width - 10;
-
-                if(CGRectGetMaxY(f) > s.height)
-                    f.origin.y = s.height - f.size.height - 10;
-
-                if(f.origin.x < 0) f.origin.x = 10;
-                if(f.origin.y < 0) f.origin.y = 10;
-
-                label.frame = f;
-                cpuDragView.frame = f;
-                lastFloatingFrame = f;
-            }
-        });
-    }
-}
-
-
 static void registerV160Observers()
 {
     static dispatch_once_t onceToken;
@@ -2630,9 +2409,6 @@ static void registerV160Observers()
          object:nil
          queue:NSOperationQueue.mainQueue
          usingBlock:^(NSNotification *n){
-
-             // V1.9.0 Smart Rotation Test1
-             handleSmartRotation([UIDevice currentDevice].orientation);
 
              // V1.6.1 fixed2: rotate only clamp/reposition, never reset style
              if(cpuWindow && label)
@@ -2762,123 +2538,54 @@ static void registerV160Observers()
 
 
 // ==============================
-// ChargingManager Test1
-// 智能温控充电管理框架
+// V1.8.2 SmartCharge Temperature Setting
+// +- 调节模式
 // ==============================
 
 static BOOL SBCPUChargingEnabled = YES;
-static double SBCPUChargeTempFast = 35.0;
-static double SBCPUChargeTempLowPower = 38.0;
-static double SBCPUChargeTempPause = 40.0;
-static double SBCPUChargeTempStop = 42.0;
+static NSInteger SBCPUFastTemp = 35;
+static NSInteger SBCPUReduceTemp = 38;
+static NSInteger SBCPUPauseTemp = 40;
+static NSInteger SBCPUCutTemp = 42;
 
-static float SBCPUGetBatteryTemperature()
-{
-    // iOS 电池温度读取基础接口
-    // Test1 只读取，不修改充电策略
-    io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault,
-                                                       IOServiceMatching("IOPMPowerSource"));
-    if (!service) return 0;
-
-    CFTypeRef value = IORegistryEntryCreateCFProperty(service,
-                                                      CFSTR("Temperature"),
-                                                      kCFAllocatorDefault,
-                                                      0);
-    IOObjectRelease(service);
-
-    if (value) {
-        float temp = 0;
-        if (CFGetTypeID(value) == CFNumberGetTypeID()) {
-            CFNumberGetValue((CFNumberRef)value,
-                             kCFNumberFloatType,
-                             &temp);
-        }
-        CFRelease(value);
-
-        // Apple 返回通常为 0.1K
-        if (temp > 100) temp = temp / 100.0;
-        return temp;
-    }
-
-    return 0;
-}
-
-static void SBCPUChargingCheck()
-{
-    if (!SBCPUChargingEnabled) return;
-
-    float temp = SBCPUGetBatteryTemperature();
-
-    NSString *action = @"NORMAL";
-
-    if (temp >= SBCPUChargeTempStop) {
-        action = @"STOP_REQUEST";
-    }
-    else if (temp >= SBCPUChargeTempPause) {
-        action = @"PAUSE_REQUEST";
-    }
-    else if (temp >= SBCPUChargeTempLowPower) {
-        action = @"LOW_POWER";
-    }
-    else {
-        action = @"FAST_CHARGE";
-    }
-
-    NSLog(@"[SBCPU Charging] Temp %.1f Action %@", temp, action);
-}
-
-
-
-// ==============================
-// ChargingManager Test2
-// 自定义温度阈值（方案A）
-// 无键盘输入，使用数字步进选择器
-// ==============================
-
-static void SBCPUChargingSaveTempValues(double fast,
-                                        double lowPower,
-                                        double pause,
-                                        double stop)
+static void SBCPUChargingLoadSettings()
 {
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
 
-    [d setDouble:fast forKey:@"SBCPUCharging.FastTemp"];
-    [d setDouble:lowPower forKey:@"SBCPUCharging.LowPowerTemp"];
-    [d setDouble:pause forKey:@"SBCPUCharging.PauseTemp"];
-    [d setDouble:stop forKey:@"SBCPUCharging.StopTemp"];
+    SBCPUChargingEnabled = [d objectForKey:@"SBCPUCharging.Enabled"] ?
+    [d boolForKey:@"SBCPUCharging.Enabled"] : YES;
 
-    [d synchronize];
+    SBCPUFastTemp = [d objectForKey:@"SBCPUCharging.FastTemp"] ?
+    [d integerForKey:@"SBCPUCharging.FastTemp"] : 35;
+
+    SBCPUReduceTemp = [d objectForKey:@"SBCPUCharging.ReduceTemp"] ?
+    [d integerForKey:@"SBCPUCharging.ReduceTemp"] : 38;
+
+    SBCPUPauseTemp = [d objectForKey:@"SBCPUCharging.PauseTemp"] ?
+    [d integerForKey:@"SBCPUCharging.PauseTemp"] : 40;
+
+    SBCPUCutTemp = [d objectForKey:@"SBCPUCharging.CutTemp"] ?
+    [d integerForKey:@"SBCPUCharging.CutTemp"] : 42;
 }
 
-static double SBCPUChargingReadTemp(NSString *key, double def)
+static void SBCPUChargingSaveValue(NSString *key, NSInteger value)
 {
-    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-
-    double v = [d doubleForKey:key];
-    if (v <= 0) return def;
-
-    return v;
+    [[NSUserDefaults standardUserDefaults] setInteger:value forKey:key];
+    [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
-// 点击温度项目后使用步进选择：
-// -1 / +1 调整温度
-// 范围限制 30℃ - 50℃
-// 保存后重新加载策略
-
-static BOOL SBCPUChargingValidate(double low,
-                                  double pause,
-                                  double stop)
+static NSInteger SBCPUChargingAdjust(NSInteger value, NSInteger step, NSInteger min, NSInteger max)
 {
-    if (pause <= low) return NO;
-    if (stop <= pause) return NO;
+    value += step;
 
-    return YES;
+    if (value < min) value = min;
+    if (value > max) value = max;
+
+    return value;
 }
 
 %ctor
 {
-    SBCPUScanRotationClasses();
-    SBCPURotationLog(@"[SBCPU] SmartRotation Test2.8 loaded");
     autoWindowSizeEnable = [[NSUserDefaults standardUserDefaults] boolForKey:@"SBCPU.AutoWindowSize"];
 
     NSString *process =
@@ -2894,16 +2601,6 @@ static BOOL SBCPUChargingValidate(double low,
 
     NSUserDefaults *def =
     NSUserDefaults.standardUserDefaults;
-
-    // SmartCharge 默认温控阈值
-    if (![def objectForKey:@"SBCPUCharging.FastTemp"])
-        [def setDouble:35.0 forKey:@"SBCPUCharging.FastTemp"];
-    if (![def objectForKey:@"SBCPUCharging.LowPowerTemp"])
-        [def setDouble:38.0 forKey:@"SBCPUCharging.LowPowerTemp"];
-    if (![def objectForKey:@"SBCPUCharging.PauseTemp"])
-        [def setDouble:40.0 forKey:@"SBCPUCharging.PauseTemp"];
-    if (![def objectForKey:@"SBCPUCharging.StopTemp"])
-        [def setDouble:42.0 forKey:@"SBCPUCharging.StopTemp"];
 
     floatingScale = [def floatForKey:@"SBCPU.FloatingScale"];
     if(floatingScale < 0.4) floatingScale = 1.0;
@@ -3015,13 +2712,6 @@ static BOOL SBCPUChargingValidate(double low,
              block:
              ^(NSTimer *timer)
              {
-
-                 // SmartCharge 温控管理
-                 SBCPUChargeTempFast = SBCPUChargingReadTemp(@"SBCPUCharging.FastTemp", 35.0);
-                 SBCPUChargeTempLowPower = SBCPUChargingReadTemp(@"SBCPUCharging.LowPowerTemp", 38.0);
-                 SBCPUChargeTempPause = SBCPUChargingReadTemp(@"SBCPUCharging.PauseTemp", 40.0);
-                 SBCPUChargeTempStop = SBCPUChargingReadTemp(@"SBCPUCharging.StopTemp", 42.0);
-                 SBCPUChargingCheck();
 
                  updateCPU();
 
