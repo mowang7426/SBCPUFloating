@@ -83,7 +83,6 @@ static BOOL autoWindowSizeEnable = NO;
 static BOOL smartRotationEnable = YES;
 static BOOL rotationLandscapeDetected = NO;
 static NSTimeInterval rotationDelay = 1.0;
-static BOOL userHadRotationLock = NO;
 static BOOL changedRotationLockByPlugin = NO;
 
 
