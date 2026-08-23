@@ -1342,28 +1342,45 @@ static void updateSmartChargeState(double temperature)
 
 static BOOL sbcpuSmartChargeControlReady = YES;
 
+static NSString *sbcpuSmartChargeControlStatus = @"Idle";
+
+static BOOL sbcpuSmartChargeActionLocked = NO;
+
 static void smartChargeControlEngine()
 {
     if (!sbcpuSmartChargeControlReady) {
+        sbcpuSmartChargeControlStatus = @"Unsupported";
         return;
     }
+
+    /*
+     Test10-B 第一阶段：
+     控制执行层框架
+
+     当前只记录控制请求，不直接修改充电硬件参数。
+     后续确认接口后在这里接入：
+     - ChargingCurrentLimit
+     - ChargingEnabled
+     - powerd / IOKit 控制
+    */
 
     switch(smartChargeState)
     {
         case SBCPUSmartChargeReduce:
-            // Test10-A: 降低功率接口预留
+            sbcpuSmartChargeControlStatus = @"Reduce Requested";
             break;
 
         case SBCPUSmartChargePause:
-            // Test10-A: 暂停充电接口预留
+            sbcpuSmartChargeControlStatus = @"Pause Requested";
             break;
 
         case SBCPUSmartChargeStop:
-            // Test10-A: 保护断充接口预留
+            sbcpuSmartChargeControlStatus = @"Stop Requested";
             break;
 
         default:
-            // 温度恢复，准备恢复策略
+            sbcpuSmartChargeControlStatus = @"Normal";
+            sbcpuSmartChargeActionLocked = NO;
             break;
     }
 }
