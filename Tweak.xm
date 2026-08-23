@@ -687,9 +687,10 @@ withEvent:
 
 + (void)doubleTapAction
 {
-    // Test10o: 修复双击后误进入控制属性探测页面
-    // 双击只负责打开主设置，不直接打开任何智能充电子页面
+    // Test10p: 强制双击只进入主设置
+    // 防止控制属性探测 Controller 被错误复用
     dispatch_async(dispatch_get_main_queue(), ^{
+        settingsShowing = NO;
         openSettings();
     });
 }
@@ -3092,6 +3093,8 @@ static void openSettings()
     keyboardShowing = NO;
 
 
+    // Test10p: 双击入口防串页
+    // 每次重新创建设置控制器，避免残留探测页面
     SBCPUSettingsController *vc =
     [[SBCPUSettingsController alloc]
      initWithStyle:
