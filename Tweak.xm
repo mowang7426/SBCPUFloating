@@ -1283,11 +1283,10 @@ static void updateCPU()
 
 
         NSString *batteryText = @"";
-
         if(battery >= 0)
         {
             batteryText =
-            [NSString stringWithFormat:@"BAT %ld%%",
+            [NSString stringWithFormat:@"🔋%ld%%",
              (long)battery];
         }
 
@@ -1297,7 +1296,7 @@ static void updateCPU()
         if(temp > 0 && temp < 100)
         {
             tempText =
-            [NSString stringWithFormat:@"TEMP %.1f℃",
+            [NSString stringWithFormat:@"🌡%.1f℃",
              temp];
         }
 
@@ -1307,25 +1306,26 @@ static void updateCPU()
         if(power > 0)
         {
             powerText =
-            [NSString stringWithFormat:@"POWER %.1fW",
+            [NSString stringWithFormat:@"⚡%.1fW",
              power];
         }
 
 
-        NSString *chargeText = charging ? @"⚡ Charging" : @"";
+        NSString *chargeText = charging ? @"Charging" : @"";
 
 
         label.text =
         [NSString stringWithFormat:
-         @"SB CPU %.1f%%\n%@ %@\n%@ %@",
+         @"SB CPU %.1f%%
+%@ %@
+%@ %@",
          cpu,
          batteryText,
          tempText,
          powerText,
          chargeText];
 
-
-        if(cpu >= 80.0)
+pu >= 80.0)
             label.textColor = UIColor.redColor;
         else
             label.textColor = UIColor.whiteColor;
