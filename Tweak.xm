@@ -2548,6 +2548,7 @@ static NSInteger SBCPUReduceTemp = 38;
 static NSInteger SBCPUPauseTemp = 40;
 static NSInteger SBCPUCutTemp = 42;
 
+__attribute__((unused))
 static void SBCPUChargingLoadSettings()
 {
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
