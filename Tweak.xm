@@ -2073,11 +2073,12 @@ static void sbcpuSmartChargeControlServiceProbe()
     sbcpuSmartChargeDeepPropertyScan();
     sbcpuSmartChargeServiceScan();
     sbcpuSmartChargeControlServiceProbe();
+    sbcpuSmartChargeControlPropertyProbe();
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    return 13;
+    return 14;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
@@ -2143,6 +2144,11 @@ static void sbcpuSmartChargeControlServiceProbe()
         cell.detailTextLabel.text = @"点击查看详情";
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     }
+    if(indexPath.row == 13){
+        cell.textLabel.text = @"控制属性探测";
+        cell.detailTextLabel.text = @"点击查看详情";
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    }
     return cell;
 }
 
@@ -2157,6 +2163,15 @@ static void sbcpuSmartChargeControlServiceProbe()
         [self.navigationController pushViewController:vc animated:YES];
      }
 
+    if(indexPath.row == 13)
+    {
+        SBCPUSmartChargeControlPropertyDetailController *vc =
+        [[SBCPUSmartChargeControlPropertyDetailController alloc]
+         initWithStyle:UITableViewStyleInsetGrouped];
+        [self.navigationController pushViewController:vc animated:YES];
+        return;
+    }
+
     if(indexPath.row == 12)
     {
         SBCPUSmartChargeControlServiceDetailController *vc =
@@ -2169,6 +2184,97 @@ static void sbcpuSmartChargeControlServiceProbe()
 }
 
 @end
+
+
+
+// ==============================
+// Test10H 控制属性探测
+// ==============================
+
+static NSString *sbcpuSmartChargeControlPropertyStatus = @"未检测";
+
+static NSString *sbcpuScanPropertyKeys(io_service_t service)
+{
+    CFMutableDictionaryRef props = NULL;
+    NSMutableString *result = [NSMutableString string];
+
+    if(IORegistryEntryCreateCFProperties(service,&props,kCFAllocatorDefault,0)==KERN_SUCCESS && props)
+    {
+        CFIndex count = CFDictionaryGetCount(props);
+        [result appendFormat:@"属性:%ld ",(long)count];
+
+        NSArray *keys = @[@"Current",@"Limit",@"Power",@"Charge",@"Enable",@"Voltage"];
+
+        for(NSString *key in keys)
+        {
+            if(CFDictionaryContainsKey(props,(__bridge CFStringRef)key))
+            {
+                [result appendFormat:@"%@:YES ",key];
+            }
+        }
+
+        CFRelease(props);
+    }
+
+    return result;
+}
+
+static void sbcpuSmartChargeControlPropertyProbe()
+{
+    NSMutableString *result=[NSMutableString string];
+
+    NSArray *services=@[@"AppleCharger",@"IOPMPowerSource",@"AppleSMC"];
+
+    for(NSString *name in services)
+    {
+        io_service_t service=IOServiceGetMatchingService(
+            kIOMasterPortDefault,
+            IOServiceMatching([name UTF8String])
+        );
+
+        if(service)
+        {
+            [result appendFormat:@"%@:%@  ",name,sbcpuScanPropertyKeys(service)];
+            IOObjectRelease(service);
+        }
+        else
+        {
+            [result appendFormat:@"%@:NO  ",name];
+        }
+    }
+
+    sbcpuSmartChargeControlPropertyStatus=result;
+}
+
+
+@interface SBCPUSmartChargeControlPropertyDetailController : UITableViewController
+@end
+
+@implementation SBCPUSmartChargeControlPropertyDetailController
+
+- (void)viewDidLoad
+{
+    [super viewDidLoad];
+    self.title=@"控制属性探测";
+}
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
+{
+    return 1;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    UITableViewCell *cell=[[UITableViewCell alloc]initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+
+    cell.textLabel.text=@"扫描结果";
+    cell.detailTextLabel.text=sbcpuSmartChargeControlPropertyStatus;
+
+    return cell;
+}
+
+@end
+
 
 @interface SBCPUSettingsController :
 UITableViewController
@@ -2494,6 +2600,15 @@ cellForRowAtIndexPath:
         cell.accessoryView = sw;
     }
 
+
+    if(indexPath.row == 13)
+    {
+        SBCPUSmartChargeControlPropertyDetailController *vc =
+        [[SBCPUSmartChargeControlPropertyDetailController alloc]
+         initWithStyle:UITableViewStyleInsetGrouped];
+        [self.navigationController pushViewController:vc animated:YES];
+        return;
+    }
 
     if(indexPath.row == 12)
     {
