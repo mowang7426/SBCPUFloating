@@ -1093,6 +1093,59 @@ static double getBatteryTemperature()
 }
 
 
+
+
+static double getBatteryCurrent()
+{
+    io_iterator_t iterator = 0;
+    io_service_t service = IO_OBJECT_NULL;
+
+    CFMutableDictionaryRef matching =
+    IOServiceMatching("AppleSmartBattery");
+
+    if(!matching)
+        return -1;
+
+    if(IOServiceGetMatchingServices(kIOMasterPortDefault,
+                                    matching,
+                                    &iterator) != KERN_SUCCESS)
+        return -1;
+
+    while((service = IOIteratorNext(iterator)))
+    {
+        CFTypeRef value =
+        IORegistryEntryCreateCFProperty(
+            service,
+            CFSTR("Amperage"),
+            kCFAllocatorDefault,
+            0);
+
+        if(value)
+        {
+            double current = -1;
+
+            if(CFGetTypeID(value) == CFNumberGetTypeID())
+            {
+                CFNumberGetValue((CFNumberRef)value,
+                                 kCFNumberDoubleType,
+                                 &current);
+            }
+
+            CFRelease(value);
+            IOObjectRelease(service);
+            IOObjectRelease(iterator);
+
+            return current;
+        }
+
+        IOObjectRelease(service);
+    }
+
+    IOObjectRelease(iterator);
+
+    return -1;
+}
+
 static BOOL isCharging()
 {
     io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault,
