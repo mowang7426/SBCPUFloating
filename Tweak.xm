@@ -2209,21 +2209,46 @@ static NSString *sbcpuScanPropertyKeys(io_service_t service)
         CFIndex count = CFDictionaryGetCount(props);
         [result appendFormat:@"属性数量: %ld\n",(long)count];
 
-        NSArray *keys = @[@"Current",@"Limit",@"Power",@"Charge",@"Enable",@"Voltage",
-                          @"ChargingCurrent",@"ChargingVoltage",@"BatteryPercent"];
+        NSArray *keys = @[@"Current",
+                          @"CurrentLimit",
+                          @"ChargeCurrent",
+                          @"InputCurrent",
+                          @"MaxCurrent",
+                          @"ChargingCurrent",
+                          @"Voltage",
+                          @"ChargingVoltage",
+                          @"Power",
+                          @"Charge",
+                          @"Enable",
+                          @"BatteryPercent"];
 
         for(NSString *key in keys)
         {
-            if(CFDictionaryContainsKey(props,(__bridge CFStringRef)key))
+            CFTypeRef value = CFDictionaryGetValue(props,(__bridge CFStringRef)key);
+
+            if(value)
             {
-                [result appendFormat:@"  %@ : 支持\n",key];
+                [result appendFormat:@"\n⚡发现字段:\n%@\n",key];
+
+                if(CFGetTypeID(value)==CFNumberGetTypeID())
+                {
+                    long long v=0;
+                    CFNumberGetValue(value,kCFNumberLongLongType,&v);
+                    [result appendFormat:@"值: %lld\n",v];
+                }
+                else if(CFGetTypeID(value)==CFStringGetTypeID())
+                {
+                    [result appendFormat:@"值: %@\n",(__bridge NSString *)value];
+                }
+                else
+                {
+                    [result appendFormat:@"类型: %@\n",
+                     (__bridge NSString *)CFCopyTypeIDDescription(CFGetTypeID(value))];
+                }
             }
         }
 
-        if(result.length == [[NSString stringWithFormat:@"属性数量: %ld\n",(long)count] length])
-        {
-            [result appendString:@"  未发现常用控制字段\n"];
-        }
+        [result appendString:@"\n全部关键字扫描完成\n"];
 
         CFRelease(props);
     }
