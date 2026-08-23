@@ -1322,6 +1322,48 @@ static void updateSmartChargeState(double temperature)
     }
 }
 
+
+#pragma mark -
+#pragma mark SmartCharge Control Engine Test10-A
+#pragma mark -
+
+/*
+ Test10-A:
+ 充电控制接口探测层
+
+ 当前阶段只负责准备控制入口：
+ - 根据 SmartCharge 状态进入对应策略
+ - 不直接修改系统充电参数
+ - 避免接口不兼容导致无法恢复充电
+
+ 后续确认接口后在这里接入：
+ 降低功率 / 暂停充电 / 恢复充电
+*/
+
+static BOOL sbcpuSmartChargeControlReady = NO;
+
+static void smartChargeControlEngine()
+{
+    switch(smartChargeState)
+    {
+        case SBCPUSmartChargeReduce:
+            // Test10-A: 降低功率接口预留
+            break;
+
+        case SBCPUSmartChargePause:
+            // Test10-A: 暂停充电接口预留
+            break;
+
+        case SBCPUSmartChargeStop:
+            // Test10-A: 保护断充接口预留
+            break;
+
+        default:
+            // 温度恢复，准备恢复策略
+            break;
+    }
+}
+
 #pragma mark -
 #pragma mark CPU刷新
 #pragma mark -
@@ -1351,6 +1393,7 @@ static void updateCPU()
         BOOL charging = isCharging();
 
         updateSmartChargeState(temp);
+        smartChargeControlEngine();
 
 
         NSString *batteryText = @"";
