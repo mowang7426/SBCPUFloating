@@ -3408,7 +3408,9 @@ static void sbcpuSmartChargeExternalMethodProbe()
 {
     NSArray *targets = @[
         @"AppleCharger",
-        @"AppleSmartBatteryManager"
+        @"AppleSmartBatteryManager",
+        @"AppleSmartBattery",
+        @"IOPMPowerSource"
     ];
 
     NSMutableString *result = [NSMutableString string];
@@ -3427,36 +3429,37 @@ static void sbcpuSmartChargeExternalMethodProbe()
 
         [result appendFormat:@"%@: FOUND\n", name];
 
-        io_connect_t connect = MACH_PORT_NULL;
-
-        kern_return_t open =
-        IOServiceOpen(service,
-                      mach_task_self(),
-                      0,
-                      &connect);
-
-        if (open != KERN_SUCCESS)
+        for (uint32_t type = 0; type <= 4; type++)
         {
-            [result appendFormat:@"  Open失败: %d\n", open];
-            IOObjectRelease(service);
-            continue;
+            io_connect_t connect = MACH_PORT_NULL;
+
+            kern_return_t open =
+            IOServiceOpen(service,
+                          mach_task_self(),
+                          type,
+                          &connect);
+
+            if (open == KERN_SUCCESS)
+            {
+                [result appendFormat:@"  type %u: OPEN SUCCESS\n", type];
+                [result appendString:@"  UserClient入口存在\n"];
+
+                IOServiceClose(connect);
+            }
+            else
+            {
+                [result appendFormat:@"  type %u: failed (%d)\n", type, open];
+            }
         }
 
-        [result appendString:@"  Open成功\n"];
-        [result appendString:@"  Method探测: 已连接\n"];
+        [result appendString:@"  ExternalMethod: 未调用(安全模式)\n"];
 
-        /*
-         注意：
-         当前阶段只建立连接，不调用未知 selector。
-         */
-
-        IOServiceClose(connect);
         IOObjectRelease(service);
     }
 
     sbcpuSmartChargeMethodProbeStatus = [result copy];
 
-    NSLog(@"[SBCPU SmartCharge MethodProbe]\n%@", sbcpuSmartChargeMethodProbeStatus);
+    NSLog(@"[SBCPU SmartCharge UserClientProbe]\n%@", sbcpuSmartChargeMethodProbeStatus);
 }
 
 // =====================================================
