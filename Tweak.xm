@@ -3029,13 +3029,13 @@ static void openSettings()
 
     if(settingsShowing)
     {
-        return cell;
+        return;
     }
 
 
     if(!cpuWindow)
     {
-        return cell;
+        return;
     }
 
 
@@ -3045,7 +3045,7 @@ static void openSettings()
 
     if(!root)
     {
-        return cell;
+        return;
     }
 
 
@@ -3055,7 +3055,7 @@ static void openSettings()
 
     if(root.presentedViewController)
     {
-        return cell;
+        return;
     }
 
 
@@ -3107,13 +3107,13 @@ static void openSettings()
 static void applySmartLayout()
 {
     if(!cpuWindow || !label || !smartLayoutEnable || settingsShowing)
-        return cell;
+        return;
 
     dispatch_async(dispatch_get_main_queue(), ^{
 
         UIWindowScene *scene = cpuWindow.windowScene;
         if(!scene)
-            return cell;
+            return;
 
         CGRect area = scene.coordinateSpace.bounds;
         UIEdgeInsets safe = scene.windows.firstObject.safeAreaInsets;
@@ -3195,7 +3195,7 @@ static void registerV160Observers()
              usingBlock:^(NSNotification *n){
 
                  if(settingsShowing)
-                    return cell;
+                    return;
 
                  keyboardShowing = YES;
 
@@ -3211,7 +3211,7 @@ static void registerV160Observers()
 
                      if(centerY < limitY)
                      {
-                         return cell;
+                         return;
                      }
 
                      // 只临时移动位置，不重新布局，不修改尺寸/透明度/圆角
@@ -3354,7 +3354,7 @@ static NSInteger SBCPUChargingAdjust(NSInteger value, NSInteger step, NSInteger 
     if(![process
          isEqualToString:@"SpringBoard"])
     {
-        return cell;
+        return;
     }
 
 
