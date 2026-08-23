@@ -1,4 +1,4 @@
-name: Build SBCPUFloating V1.6.0
+name: Build SBCPUFloating V1.6.3
 
 on:
   workflow_dispatch:
@@ -208,7 +208,7 @@ jobs:
           echo "$ROOTLESS_DEB"
 
           cp "$ROOTLESS_DEB" \
-            "build/SBCPUFloating-V1.5.5-rootless.deb"
+            "build/SBCPUFloating-V1.6.3-rootless.deb"
 
 
       # ==============================
@@ -260,7 +260,7 @@ jobs:
           echo "$ROOTHIDE_DEB"
 
           cp "$ROOTHIDE_DEB" \
-            "build/SBCPUFloating-V1.5.5-roothide.deb"
+            "build/SBCPUFloating-V1.6.3-roothide.deb"
 
 
       # ==============================
@@ -272,7 +272,7 @@ jobs:
 
           echo ""
           echo "========================================"
-          echo " SBCPUFloating V1.5.5"
+          echo " SBCPUFloating V1.6.3"
           echo "========================================"
 
           echo ""
@@ -283,8 +283,8 @@ jobs:
           echo ""
           echo "Checking packages..."
 
-          test -f "build/SBCPUFloating-V1.5.5-rootless.deb"
-          test -f "build/SBCPUFloating-V1.5.5-roothide.deb"
+          test -f "build/SBCPUFloating-V1.6.3-rootless.deb"
+          test -f "build/SBCPUFloating-V1.6.3-roothide.deb"
 
           echo ""
           echo "========================================"
@@ -293,11 +293,11 @@ jobs:
 
           echo ""
           echo "Rootless:"
-          ls -lh "build/SBCPUFloating-V1.5.5-rootless.deb"
+          ls -lh "build/SBCPUFloating-V1.6.3-rootless.deb"
 
           echo ""
           echo "RootHide:"
-          ls -lh "build/SBCPUFloating-V1.5.5-roothide.deb"
+          ls -lh "build/SBCPUFloating-V1.6.3-roothide.deb"
 
           echo ""
           echo "========================================"
@@ -314,6 +314,6 @@ jobs:
 
         with:
 
-          name: SBCPUFloating-V1.5.5
+          name: SBCPUFloating-V1.6.3
 
           path: build/*.deb
