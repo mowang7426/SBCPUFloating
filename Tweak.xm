@@ -31,6 +31,12 @@ static NSInteger sbcpuChargeTempReduce = 38;
 static NSInteger sbcpuChargeTempPause = 40;
 static NSInteger sbcpuChargeTempStop = 42;
 
+// SmartCharge 临时编辑值：点击完成后才正式保存
+static NSInteger sbcpuEditChargeTempFast = 35;
+static NSInteger sbcpuEditChargeTempReduce = 38;
+static NSInteger sbcpuEditChargeTempPause = 40;
+static NSInteger sbcpuEditChargeTempStop = 42;
+
 /*
  设置页面是否正在显示
  */
@@ -2208,10 +2214,16 @@ didSelectRowAtIndexPath:
     }
 
 
-    // SmartCharge 温度 +- 调节
+    // SmartCharge 温度 +- 调节（临时编辑，完成后生效）
     if(indexPath.row >= 17 && indexPath.row <= 20)
     {
         NSInteger type = indexPath.row - 17;
+
+        // 复制当前值到临时变量，不立即修改正式参数
+        sbcpuEditChargeTempFast = sbcpuChargeTempFast;
+        sbcpuEditChargeTempReduce = sbcpuChargeTempReduce;
+        sbcpuEditChargeTempPause = sbcpuChargeTempPause;
+        sbcpuEditChargeTempStop = sbcpuChargeTempStop;
 
         NSString *title = @[@"保持快充温度",
                             @"降低功率温度",
@@ -2222,38 +2234,47 @@ didSelectRowAtIndexPath:
 
         UIAlertController *alert =
         [UIAlertController alertControllerWithTitle:title
-                                            message:@"使用 + / - 调节温度"
+                                            message:@"调整后点击完成才会保存"
                                      preferredStyle:UIAlertControllerStyleAlert];
 
-        [alert addAction:[UIAlertAction actionWithTitle:@"-1℃"
-                                                  style:UIAlertActionStyleDefault
-                                                handler:^(UIAlertAction *a){
-            switch(type)
-            {
-                case 0: sbcpuChargeTempFast = MAX(30, sbcpuChargeTempFast - 1); break;
-                case 1: sbcpuChargeTempReduce = MAX(35, sbcpuChargeTempReduce - 1); break;
-                case 2: sbcpuChargeTempPause = MAX(38, sbcpuChargeTempPause - 1); break;
-                case 3: sbcpuChargeTempStop = MAX(40, sbcpuChargeTempStop - 1); break;
+        UIAlertAction *minus = [UIAlertAction actionWithTitle:@"-1℃"
+                                                        style:UIAlertActionStyleDefault
+                                                      handler:^(UIAlertAction *a){
+            switch(type){
+                case 0: sbcpuEditChargeTempFast = MAX(30, sbcpuEditChargeTempFast-1); break;
+                case 1: sbcpuEditChargeTempReduce = MAX(35, sbcpuEditChargeTempReduce-1); break;
+                case 2: sbcpuEditChargeTempPause = MAX(38, sbcpuEditChargeTempPause-1); break;
+                case 3: sbcpuEditChargeTempStop = MAX(40, sbcpuEditChargeTempStop-1); break;
             }
-            [weakSelf saveSmartChargeTemps];
-        }]];
+            [weakSelf tableView:weakSelf.tableView didSelectRowAtIndexPath:indexPath];
+        }];
 
-        [alert addAction:[UIAlertAction actionWithTitle:@"+1℃"
-                                                  style:UIAlertActionStyleDefault
-                                                handler:^(UIAlertAction *a){
-            switch(type)
-            {
-                case 0: sbcpuChargeTempFast = MIN(45, sbcpuChargeTempFast + 1); break;
-                case 1: sbcpuChargeTempReduce = MIN(50, sbcpuChargeTempReduce + 1); break;
-                case 2: sbcpuChargeTempPause = MIN(55, sbcpuChargeTempPause + 1); break;
-                case 3: sbcpuChargeTempStop = MIN(60, sbcpuChargeTempStop + 1); break;
+        UIAlertAction *plus = [UIAlertAction actionWithTitle:@"+1℃"
+                                                       style:UIAlertActionStyleDefault
+                                                     handler:^(UIAlertAction *a){
+            switch(type){
+                case 0: sbcpuEditChargeTempFast = MIN(45, sbcpuEditChargeTempFast+1); break;
+                case 1: sbcpuEditChargeTempReduce = MIN(50, sbcpuEditChargeTempReduce+1); break;
+                case 2: sbcpuEditChargeTempPause = MIN(55, sbcpuEditChargeTempPause+1); break;
+                case 3: sbcpuEditChargeTempStop = MIN(60, sbcpuEditChargeTempStop+1); break;
             }
-            [weakSelf saveSmartChargeTemps];
-        }]];
+            [weakSelf tableView:weakSelf.tableView didSelectRowAtIndexPath:indexPath];
+        }];
 
-        [alert addAction:[UIAlertAction actionWithTitle:@"完成"
-                                                  style:UIAlertActionStyleCancel
-                                                handler:nil]];
+        UIAlertAction *done = [UIAlertAction actionWithTitle:@"完成"
+                                                        style:UIAlertActionStyleCancel
+                                                      handler:^(UIAlertAction *a){
+            sbcpuChargeTempFast = sbcpuEditChargeTempFast;
+            sbcpuChargeTempReduce = sbcpuEditChargeTempReduce;
+            sbcpuChargeTempPause = sbcpuEditChargeTempPause;
+            sbcpuChargeTempStop = sbcpuEditChargeTempStop;
+            [weakSelf saveSmartChargeTemps];
+            [weakSelf.tableView reloadData];
+        }];
+
+        [alert addAction:minus];
+        [alert addAction:plus];
+        [alert addAction:done];
 
         [self presentViewController:alert animated:YES completion:nil];
     }
