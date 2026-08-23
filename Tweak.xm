@@ -3,7 +3,6 @@
 #import <mach/mach.h>
 #import <signal.h>
 #import <IOKit/IOKitLib.h>
-#import <CoreMotion/CoreMotion.h>
 
 
 #pragma mark -
@@ -88,144 +87,8 @@ static void checkHighCPU(double cpu);
 static void applySmartLayout(void);
 static void registerV160Observers(void);
 static void updateCPUFloatingOrientation(void);
-static void updateFloatingSize(void);
-
-// V1.6.3 MotionRotate
-static CMMotionManager *sbcMotionManager;
-static NSInteger sbcMotionState = 0; // 0 unknown 1 portrait 2 landscape
-static BOOL sbcMotionEnabledByTap = NO;
-
-static BOOL sbcLandscapeLayout = NO;
-
-static void applyMotionOrientation(BOOL landscape)
-{
-    if(!cpuWindow || !label)
-        return;
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-
-        sbcLandscapeLayout = landscape;
-
-        /*
-         Test5:
-         不再旋转整个窗口作为主要方案。
-         方向变化时切换布局模式，重新计算浮窗尺寸和边界。
-        */
-
-        cpuWindow.transform = CGAffineTransformIdentity;
-
-        if(landscape)
-        {
-            updateFloatingSize();
-            label.transform = CGAffineTransformMakeRotation(M_PI_2);
-        }
-        else
-        {
-            updateFloatingSize();
-            label.transform = CGAffineTransformIdentity;
-        }
-
-        CGRect f = label.frame;
-        CGSize area = UIScreen.mainScreen.bounds.size;
-
-        if(landscape)
-        {
-            area = CGSizeMake(MAX(area.width, area.height),
-                              MIN(area.width, area.height));
-        }
-        else
-        {
-            area = CGSizeMake(MIN(area.width, area.height),
-                              MAX(area.width, area.height));
-        }
-
-        if(CGRectGetMaxX(f) > area.width)
-            f.origin.x = MAX(10, area.width - f.size.width - 10);
-
-        if(CGRectGetMaxY(f) > area.height)
-            f.origin.y = MAX(10, area.height - f.size.height - 10);
-
-        if(f.origin.x < 10) f.origin.x = 10;
-        if(f.origin.y < 10) f.origin.y = 10;
-
-        label.frame = f;
-        [(UIView *)cpuDragView setFrame:f];
-        lastFloatingFrame = f;
-    });
-}
-
-static void startMotionRotateMonitor(void)
-{
-    if(sbcMotionManager)
-        return;
-
-    sbcMotionManager = [[CMMotionManager alloc] init];
-
-    if(!sbcMotionManager.deviceMotionAvailable)
-        return;
-
-    sbcMotionManager.deviceMotionUpdateInterval = 0.3;
-
-    [sbcMotionManager startDeviceMotionUpdatesToQueue:
-     NSOperationQueue.mainQueue
-     withHandler:^(CMDeviceMotion *motion, NSError *error){
-
-        if(error || !motion)
-            return;
-
-        double x = motion.gravity.x;
-        double y = motion.gravity.y;
-
-        NSInteger state = 0;
-
-        if(fabs(x) > fabs(y))
-        {
-            if(fabs(x) > 0.55)
-                state = 2;
-        }
-        else
-        {
-            if(fabs(y) > 0.55)
-                state = 1;
-        }
-
-        if(state != 0 && state != sbcMotionState)
-        {
-            sbcMotionState = state;
-            applyMotionOrientation(state == 2);
-        }
-     }];
-}
-
-
-static void stopMotionRotateMonitor(void)
-{
-    if(sbcMotionManager)
-    {
-        [sbcMotionManager stopDeviceMotionUpdates];
-        sbcMotionManager = nil;
-    }
-
-    sbcMotionState = 0;
-}
-
-static void toggleMotionRotateMonitor(void)
-{
-    sbcMotionEnabledByTap = !sbcMotionEnabledByTap;
-
-    if(sbcMotionEnabledByTap)
-    {
-        startMotionRotateMonitor();
-    }
-    else
-    {
-        stopMotionRotateMonitor();
-    }
-}
-
-
-
 static void startV162OrientationMonitor(void);
+static void applyCPUFloatingOrientation(UIInterfaceOrientation orientation);
 
 
 
@@ -809,14 +672,6 @@ withEvent:
 }
 
 
-+ (void)singleTapAction
-{
-
-    toggleMotionRotateMonitor();
-
-}
-
-
 @end
 
 
@@ -966,21 +821,6 @@ static void createCPUWindow()
 
 
     /*
-     单击开启/关闭陀螺仪
-     */
-
-    UITapGestureRecognizer *singleTap =
-    [[UITapGestureRecognizer alloc]
-     initWithTarget:
-     [SBCPUAction class]
-     action:@selector(singleTapAction)];
-
-    singleTap.numberOfTapsRequired = 1;
-
-    [drag addGestureRecognizer:singleTap];
-
-
-    /*
      双击
      */
 
@@ -998,8 +838,6 @@ static void createCPUWindow()
     doubleTap.numberOfTouchesRequired =
     1;
 
-
-    [singleTap requireGestureRecognizerToFail:doubleTap];
 
     [drag addGestureRecognizer:
      doubleTap];
@@ -1292,7 +1130,7 @@ static void updateFloatingSize()
 
         if(cpuDragView)
         {
-            [(UIView *)cpuDragView setFrame:label.frame];
+            cpuDragView.frame = label.frame;
         }
 
         label.layer.cornerRadius =
@@ -2395,7 +2233,7 @@ static void registerV160Observers()
                  if(f.origin.x < 0) f.origin.x = 10;
                  if(f.origin.y < 0) f.origin.y = 10;
                  label.frame = f;
-                 [(UIView *)cpuDragView setFrame:f];
+                 cpuDragView.frame = f;
                  lastFloatingFrame = f;
              }
 
@@ -2451,7 +2289,7 @@ static void registerV160Observers()
                      f.origin.y = MAX(20, f.origin.y - keyboardHeight);
 
                      label.frame = f;
-                     [(UIView *)cpuDragView setFrame:f];
+                     cpuDragView.frame = f;
                      keyboardMoved = YES;
                  }
 
@@ -2674,7 +2512,7 @@ static void updateCPUFloatingOrientation(void)
 
             // V1.6.0 Smart Layout
             registerV160Observers();
-            startV162OrientationMonitor();
+    startV162OrientationMonitor();
             applySmartLayout();
 
 
