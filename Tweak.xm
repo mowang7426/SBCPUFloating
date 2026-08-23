@@ -1197,7 +1197,7 @@ static BOOL isCharging()
     if(value)
     {
         if(CFGetTypeID(value) == CFBooleanGetTypeID())
-            charging = CFBooleanGetValue(value);
+            charging = CFBooleanGetValue((CFBooleanRef)value);
 
         CFRelease(value);
     }
