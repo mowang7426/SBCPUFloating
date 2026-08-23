@@ -1566,6 +1566,89 @@ cellForRowAtIndexPath:
 #pragma mark -
 
 
+
+#pragma mark - SmartCharge Temp Edit Test8
+
+@interface SBChargeTempEditController : UIViewController
+@property(nonatomic,assign) NSInteger tempValue;
+@property(nonatomic,copy) NSString *tempTitle;
+@property(nonatomic,copy) void (^finishBlock)(NSInteger value);
+@end
+
+@implementation SBChargeTempEditController
+{
+    UILabel *_valueLabel;
+}
+
+- (void)viewDidLoad
+{
+    [super viewDidLoad];
+
+    self.view.backgroundColor = UIColor.systemGroupedBackgroundColor;
+    self.title = self.tempTitle;
+
+    UIButton *minus = [UIButton buttonWithType:UIButtonTypeSystem];
+    [minus setTitle:@"-" forState:UIControlStateNormal];
+    minus.titleLabel.font = [UIFont systemFontOfSize:40];
+    [minus addTarget:self action:@selector(changeMinus) forControlEvents:UIControlEventTouchUpInside];
+
+    UIButton *plus = [UIButton buttonWithType:UIButtonTypeSystem];
+    [plus setTitle:@"+" forState:UIControlStateNormal];
+    plus.titleLabel.font = [UIFont systemFontOfSize:40];
+    [plus addTarget:self action:@selector(changePlus) forControlEvents:UIControlEventTouchUpInside];
+
+    _valueLabel = [[UILabel alloc] init];
+    _valueLabel.textAlignment = NSTextAlignmentCenter;
+    _valueLabel.font = [UIFont boldSystemFontOfSize:32];
+
+    UIButton *done = [UIButton buttonWithType:UIButtonTypeSystem];
+    [done setTitle:@"完成" forState:UIControlStateNormal];
+    [done addTarget:self action:@selector(doneClick) forControlEvents:UIControlEventTouchUpInside];
+
+    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[minus,_valueLabel,plus]];
+    row.axis = UILayoutConstraintAxisHorizontal;
+    row.distribution = UIStackViewDistributionEqualSpacing;
+
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[row,done]];
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.spacing = 40;
+
+    [self.view addSubview:stack];
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [stack.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor]
+    ]];
+
+    [self refresh];
+}
+
+- (void)refresh
+{
+    _valueLabel.text = [NSString stringWithFormat:@"%ld℃",(long)self.tempValue];
+}
+
+- (void)changeMinus
+{
+    if(self.tempValue > 0) self.tempValue--;
+    [self refresh];
+}
+
+- (void)changePlus
+{
+    self.tempValue++;
+    [self refresh];
+}
+
+- (void)doneClick
+{
+    if(self.finishBlock) self.finishBlock(self.tempValue);
+    [self.navigationController popViewControllerAnimated:YES];
+}
+
+@end
+
 @interface SBCPUSettingsController :
 UITableViewController
 
@@ -2226,20 +2309,33 @@ didSelectRowAtIndexPath:
 
     }
 
-    // SmartCharge Test7: Inline Expand Edit
-    // 展开式编辑逻辑占位，避免弹窗。
-    // 具体展开 Cell 由下一步 UI 数据源接入。
-
+    // SmartCharge Test8: 独立温度编辑页面
     if(indexPath.row >= 17 && indexPath.row <= 20)
     {
         NSInteger type = indexPath.row - 17;
 
-        sbcpuEditChargeTempFast = sbcpuChargeTempFast;
-        sbcpuEditChargeTempReduce = sbcpuChargeTempReduce;
-        sbcpuEditChargeTempPause = sbcpuChargeTempPause;
-        sbcpuEditChargeTempStop = sbcpuChargeTempStop;
+        NSInteger current = 35;
+        NSString *title = @"温度";
 
-        NSLog(@"SmartCharge Inline Edit type:%ld",(long)type);
+        if(type == 0){ current = sbcpuChargeTempFast; title = @"保持快充温度"; }
+        if(type == 1){ current = sbcpuChargeTempReduce; title = @"降低功率温度"; }
+        if(type == 2){ current = sbcpuChargeTempPause; title = @"暂停充电温度"; }
+        if(type == 3){ current = sbcpuChargeTempStop; title = @"断充保护温度"; }
+
+        SBChargeTempEditController *vc = [SBChargeTempEditController new];
+        vc.tempValue = current;
+        vc.tempTitle = title;
+
+        vc.finishBlock = ^(NSInteger value){
+            if(type == 0) sbcpuChargeTempFast = value;
+            if(type == 1) sbcpuChargeTempReduce = value;
+            if(type == 2) sbcpuChargeTempPause = value;
+            if(type == 3) sbcpuChargeTempStop = value;
+            [self saveSmartChargeTemps];
+        };
+
+        [self.navigationController pushViewController:vc animated:YES];
+        return;
     }
 
 
