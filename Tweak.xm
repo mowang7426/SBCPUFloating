@@ -687,9 +687,11 @@ withEvent:
 
 + (void)doubleTapAction
 {
-
-    openSettings();
-
+    // Test10o: 修复双击后误进入控制属性探测页面
+    // 双击只负责打开主设置，不直接打开任何智能充电子页面
+    dispatch_async(dispatch_get_main_queue(), ^{
+        openSettings();
+    });
 }
 
 
