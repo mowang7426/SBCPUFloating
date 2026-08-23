@@ -55,6 +55,11 @@ static CGFloat floatingAlpha = 0.70f;
  */
 static BOOL smartLayoutEnable = YES;
 static BOOL autoWindowSizeEnable = NO;
+
+// V1.8.1 battery display switches
+static BOOL showBatteryPercent = YES;
+static BOOL showBatteryTemperature = YES;
+static BOOL showBatteryCurrent = YES;
 static BOOL autoMoveEnable __attribute__((unused)) = YES;
 static BOOL keyboardAvoidEnable __attribute__((unused)) = YES;
 static BOOL hideControlCenterEnable __attribute__((unused)) = YES;
@@ -1312,14 +1317,25 @@ static void updateCPU()
         NSString *chargeText = charging ? @"⚡" : @"";
 
 
-        label.text =
-        [NSString stringWithFormat:
-         @"SB CPU %.1f%%\n🔋%@ 🌡%@\n%@%@",
-         cpu,
-         batteryText,
-         tempText,
-         chargeText,
-         currentText];
+        NSMutableArray *displayLines = [NSMutableArray array];
+
+        [displayLines addObject:[NSString stringWithFormat:@"SB CPU %.1f%%", cpu]];
+
+        NSMutableArray *batteryLine = [NSMutableArray array];
+
+        if(showBatteryPercent && battery >= 0)
+            [batteryLine addObject:[NSString stringWithFormat:@"🔋%@", batteryText]];
+
+        if(showBatteryTemperature && tempText.length)
+            [batteryLine addObject:[NSString stringWithFormat:@"🌡%@", tempText]];
+
+        if(batteryLine.count)
+            [displayLines addObject:[batteryLine componentsJoinedByString:@" "]];
+
+        if(showBatteryCurrent && currentText.length)
+            [displayLines addObject:[NSString stringWithFormat:@"%@%@", chargeText, currentText]];
+
+        label.text = [displayLines componentsJoinedByString:@"\n"];
 
 if (cpu >= 80.0)
             label.textColor = UIColor.redColor;
@@ -1678,7 +1694,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 13;
+    return 16;
 
 }
 
@@ -1954,10 +1970,61 @@ cellForRowAtIndexPath:
         cell.accessoryView = sw;
     }
 
+    if(indexPath.row == 13)
+    {
+        cell.textLabel.text = @"显示电池百分比";
+        UISwitch *sw = [[UISwitch alloc] init];
+        sw.on = showBatteryPercent;
+        [sw addTarget:self action:@selector(changeShowBattery:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = sw;
+    }
+
+    if(indexPath.row == 14)
+    {
+        cell.textLabel.text = @"显示电池温度";
+        UISwitch *sw = [[UISwitch alloc] init];
+        sw.on = showBatteryTemperature;
+        [sw addTarget:self action:@selector(changeShowTemperature:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = sw;
+    }
+
+    if(indexPath.row == 15)
+    {
+        cell.textLabel.text = @"显示实时电流";
+        UISwitch *sw = [[UISwitch alloc] init];
+        sw.on = showBatteryCurrent;
+        [sw addTarget:self action:@selector(changeShowCurrent:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = sw;
+    }
+
     return cell;
 
 }
 
+
+- (void)changeShowBattery:(UISwitch *)sw
+{
+    showBatteryPercent = sw.isOn;
+    [[NSUserDefaults standardUserDefaults] setBool:showBatteryPercent forKey:@"SBCPU.ShowBattery"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    updateFloatingSize();
+}
+
+- (void)changeShowTemperature:(UISwitch *)sw
+{
+    showBatteryTemperature = sw.isOn;
+    [[NSUserDefaults standardUserDefaults] setBool:showBatteryTemperature forKey:@"SBCPU.ShowTemperature"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    updateFloatingSize();
+}
+
+- (void)changeShowCurrent:(UISwitch *)sw
+{
+    showBatteryCurrent = sw.isOn;
+    [[NSUserDefaults standardUserDefaults] setBool:showBatteryCurrent forKey:@"SBCPU.ShowCurrent"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    updateFloatingSize();
+}
 
 - (void)changeAutoWindowSize:(UISwitch *)sw
 {
