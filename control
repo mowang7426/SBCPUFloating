@@ -1,8 +1,10 @@
 Package: com.sbcpu.floating
 Name: SB CPU Floating
-Version: 1.0
-Architecture: iphoneos-arm64
-Description: SpringBoard CPU Monitor Floating Window
+Version: 1.6.3
+Architecture: iphoneos-arm64 arm64e
+Description: SpringBoard CPU 监控 springboard 的进程 cpu，主要功能检测 cpu 占用太高持续 60 秒完成自动注销
+新增横屏模式点击浮窗旋转浮窗横屏，退出横屏前需在点一次不然会有 bug（当然，这是竖屏锁定的情况下）
+关闭竖屏锁定则无需操作
 Maintainer: SBCPUFloating
 Author: SBCPUFloating
 Section: Tweaks
