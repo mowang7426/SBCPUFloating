@@ -2606,7 +2606,7 @@ cellForRowAtIndexPath:
         [[SBCPUSmartChargeControlPropertyDetailController alloc]
          initWithStyle:UITableViewStyleInsetGrouped];
         [self.navigationController pushViewController:vc animated:YES];
-        return cell;
+        return;
     }
 
     if(indexPath.row == 12)
@@ -2870,7 +2870,7 @@ didSelectRowAtIndexPath:
          pushViewController:vc
          animated:YES];
 
-        return cell;
+        return;
     }
 
 
@@ -2991,7 +2991,7 @@ didSelectRowAtIndexPath:
         };
 
         [self.navigationController pushViewController:vc animated:YES];
-        return cell;
+        return;
     }
 
 
