@@ -86,8 +86,6 @@ static void openSettings(void);
 static void checkHighCPU(double cpu);
 static void applySmartLayout(void);
 static void registerV160Observers(void);
-static void updateCPUFloatingOrientation(void);
-static void startV162OrientationMonitor(void);
 
 
 
@@ -1095,6 +1093,121 @@ static double getBatteryTemperature()
 }
 
 
+// V1.7 Alpha Battery Power Monitor
+
+static double getBatteryVoltage()
+{
+    io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault,
+        IOServiceMatching("AppleSmartBattery"));
+
+    if(!service)
+        return -1;
+
+    CFTypeRef value = IORegistryEntryCreateCFProperty(service,
+        CFSTR("Voltage"),
+        kCFAllocatorDefault,
+        0);
+
+    double voltage = -1;
+
+    if(value)
+    {
+        if(CFGetTypeID(value) == CFNumberGetTypeID())
+        {
+            double v = 0;
+            CFNumberGetValue((CFNumberRef)value,
+                             kCFNumberDoubleType,
+                             &v);
+
+            voltage = v / 1000.0;
+        }
+
+        CFRelease(value);
+    }
+
+    IOObjectRelease(service);
+
+    return voltage;
+}
+
+
+static double getBatteryCurrent()
+{
+    io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault,
+        IOServiceMatching("AppleSmartBattery"));
+
+    if(!service)
+        return -1;
+
+    CFTypeRef value = IORegistryEntryCreateCFProperty(service,
+        CFSTR("Amperage"),
+        kCFAllocatorDefault,
+        0);
+
+    double current = -1;
+
+    if(value)
+    {
+        if(CFGetTypeID(value) == CFNumberGetTypeID())
+        {
+            double a = 0;
+            CFNumberGetValue((CFNumberRef)value,
+                             kCFNumberDoubleType,
+                             &a);
+
+            current = fabs(a) / 1000.0;
+        }
+
+        CFRelease(value);
+    }
+
+    IOObjectRelease(service);
+
+    return current;
+}
+
+
+static double getChargingPower()
+{
+    double voltage = getBatteryVoltage();
+    double current = getBatteryCurrent();
+
+    if(voltage <= 0 || current <= 0)
+        return -1;
+
+    return voltage * current;
+}
+
+
+static BOOL isCharging()
+{
+    io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault,
+        IOServiceMatching("AppleSmartBattery"));
+
+    if(!service)
+        return NO;
+
+    CFTypeRef value = IORegistryEntryCreateCFProperty(service,
+        CFSTR("IsCharging"),
+        kCFAllocatorDefault,
+        0);
+
+    BOOL charging = NO;
+
+    if(value)
+    {
+        if(CFGetTypeID(value) == CFBooleanGetTypeID())
+            charging = CFBooleanGetValue(value);
+
+        CFRelease(value);
+    }
+
+    IOObjectRelease(service);
+
+    return charging;
+}
+
+
 #pragma mark -
 #pragma mark 横竖屏尺寸调整
 #pragma mark -
@@ -1148,91 +1261,77 @@ static void updateFloatingSize()
 static void updateCPU()
 {
 
-    double cpu =
-    getCPUUsage();
-
+    double cpu = getCPUUsage();
 
     checkHighCPU(cpu);
 
+    dispatch_async(dispatch_get_main_queue(), ^{
 
-    dispatch_async(
-        dispatch_get_main_queue(),
-        ^{
+        if(!label)
+            return;
 
-            if(!label)
-            {
-                return;
-            }
+        updateFloatingSize();
 
-            updateFloatingSize();
-
-            label.font =
-            [UIFont systemFontOfSize:(isLandscapeMode() ? landscapeFontSize : floatingFontSize)];
+        label.font =
+        [UIFont systemFontOfSize:(isLandscapeMode() ? landscapeFontSize : floatingFontSize)];
 
 
-            if(isLandscapeMode())
-            {
-                NSInteger battery = getBatteryPercent();
-
-                if(battery >= 0)
-                {
-                    double temp = getBatteryTemperature();
-
-                    if(temp > 0 && temp < 100)
-                    {
-                        label.text =
-                        [NSString stringWithFormat:
-                         @"SB CPU %.1f%%\n电量 %ld%% %.1f℃",
-                         cpu,
-                         (long)battery,
-                         temp];
-                    }
-                    else
-                    {
-                        label.text =
-                        [NSString stringWithFormat:
-                         @"SB CPU %.1f%%\n电量 %ld%%",
-                         cpu,
-                         (long)battery];
-                    }
-                }
-                else
-                {
-                    label.text =
-                    [NSString stringWithFormat:
-                     @"SB CPU\n%.1f%%",
-                     cpu];
-                }
-            }
-            else
-            {
-                label.text =
-                [NSString stringWithFormat:
-                 @"SB CPU\n%.1f%%",
-                 cpu];
-            }
+        NSInteger battery = getBatteryPercent();
+        double temp = getBatteryTemperature();
+        double power = getChargingPower();
+        BOOL charging = isCharging();
 
 
-            if(cpu >= 80.0)
-            {
+        NSString *batteryText = @"";
 
-                label.textColor =
-                UIColor.redColor;
-
-            }
-            else
-            {
-
-                label.textColor =
-                UIColor.whiteColor;
-
-            }
-
+        if(battery >= 0)
+        {
+            batteryText =
+            [NSString stringWithFormat:@"BAT %ld%%",
+             (long)battery];
         }
-    );
 
+
+        NSString *tempText = @"";
+
+        if(temp > 0 && temp < 100)
+        {
+            tempText =
+            [NSString stringWithFormat:@"TEMP %.1f℃",
+             temp];
+        }
+
+
+        NSString *powerText = @"";
+
+        if(power > 0)
+        {
+            powerText =
+            [NSString stringWithFormat:@"POWER %.1fW",
+             power];
+        }
+
+
+        NSString *chargeText = charging ? @"⚡ Charging" : @"";
+
+
+        label.text =
+        [NSString stringWithFormat:
+         @"SB CPU %.1f%%\n%@ %@\n%@ %@",
+         cpu,
+         batteryText,
+         tempText,
+         powerText,
+         chargeText];
+
+
+        if(cpu >= 80.0)
+            label.textColor = UIColor.redColor;
+        else
+            label.textColor = UIColor.whiteColor;
+
+    });
 }
-
 
 
 #pragma mark -
@@ -2345,55 +2444,6 @@ static void registerV160Observers()
     });
 }
 
-
-static void startV162OrientationMonitor(void)
-{
-    static dispatch_once_t onceToken;
-
-    dispatch_once(&onceToken, ^{
-        dispatch_source_t timer =
-        dispatch_source_create(
-            DISPATCH_SOURCE_TYPE_TIMER,
-            0,
-            0,
-            dispatch_get_main_queue()
-        );
-
-        dispatch_source_set_timer(
-            timer,
-            dispatch_time(DISPATCH_TIME_NOW, 0),
-            500ull * NSEC_PER_MSEC,
-            50ull * NSEC_PER_MSEC
-        );
-
-        dispatch_source_set_event_handler(timer, ^{
-            updateCPUFloatingOrientation();
-        });
-
-        dispatch_resume(timer);
-    });
-}
-
-
-static void updateCPUFloatingOrientation(void)
-{
-    UIInterfaceOrientation orientation = UIInterfaceOrientationPortrait;
-
-    CGSize size = UIScreen.mainScreen.bounds.size;
-    if(size.width > size.height)
-    {
-        orientation = UIInterfaceOrientationLandscapeLeft;
-    }
-
-    if(cpuWindow)
-    {
-        if(orientation == UIInterfaceOrientationLandscapeLeft)
-            cpuWindow.transform = CGAffineTransformMakeRotation(M_PI_2);
-        else
-            cpuWindow.transform = CGAffineTransformIdentity;
-    }
-}
-
 %ctor
 {
 
@@ -2511,7 +2561,6 @@ static void updateCPUFloatingOrientation(void)
 
             // V1.6.0 Smart Layout
             registerV160Observers();
-    startV162OrientationMonitor();
             applySmartLayout();
 
 
