@@ -1155,7 +1155,7 @@ static double getBatteryCurrent()
                              kCFNumberDoubleType,
                              &a);
 
-            current = fabs(a) / 1000.0;
+            current = a;
         }
 
         CFRelease(value);
@@ -1278,7 +1278,7 @@ static void updateCPU()
 
         NSInteger battery = getBatteryPercent();
         double temp = getBatteryTemperature();
-        double power = getChargingPower();
+        double current = getBatteryCurrent();
         BOOL charging = isCharging();
 
 
@@ -1286,7 +1286,7 @@ static void updateCPU()
         if(battery >= 0)
         {
             batteryText =
-            [NSString stringWithFormat:@"🔋%ld%%",
+            [NSString stringWithFormat:@"%ld%%",
              (long)battery];
         }
 
@@ -1296,32 +1296,32 @@ static void updateCPU()
         if(temp > 0 && temp < 100)
         {
             tempText =
-            [NSString stringWithFormat:@"🌡%.1f℃",
+            [NSString stringWithFormat:@"%.1f℃",
              temp];
         }
 
 
-        NSString *powerText = @"";
+        NSString *currentText = @"";
 
-        if(power > 0)
+        if(current != -1)
         {
-            powerText =
-            [NSString stringWithFormat:@"⚡%.1fW",
-             power];
+            currentText =
+            [NSString stringWithFormat:@"%.0fmA",
+             current];
         }
 
 
-        NSString *chargeText = charging ? @"Charging" : @"";
+        NSString *chargeText = charging ? @"⚡" : @"";
 
 
         label.text =
         [NSString stringWithFormat:
-         @"SB CPU %.1f%%\n🔋%@ 🌡%@\n⚡%@ %@",
+         @"SB CPU %.1f%%\n🔋%@ 🌡%@\n%@%@",
          cpu,
          batteryText,
          tempText,
-         powerText,
-         chargeText];
+         chargeText,
+         currentText];
 
 if (cpu >= 80.0)
             label.textColor = UIColor.redColor;
