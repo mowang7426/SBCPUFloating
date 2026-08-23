@@ -3079,12 +3079,14 @@ static void openSettings()
 
 
     /*
-     防止重复打开
+     Test10q: 修复双击后进入旧探测页面
+     如果之前残留了控制属性探测页面，先关闭
+     不再直接复用旧 presented controller
      */
 
     if(root.presentedViewController)
     {
-        return;
+        [root.presentedViewController dismissViewControllerAnimated:NO completion:nil];
     }
 
 
