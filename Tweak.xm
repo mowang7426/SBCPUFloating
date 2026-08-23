@@ -28,6 +28,7 @@ static SBCPUDragView *cpuDragView;
 
 // Test11 SmartCharge ControlProbe forward declaration
 static void sbcpuSmartChargeControlProbe(void);
+static void sbcpuSmartChargeExternalMethodProbe(void);
 
 
 
@@ -2279,6 +2280,7 @@ static void sbcpuSmartChargeControlPropertyProbe()
     sbcpuSmartChargeControlPropertyProbe();
     // Test11: 探测充电控制通道（只读，不修改）
     sbcpuSmartChargeControlProbe();
+    sbcpuSmartChargeExternalMethodProbe();
 
     [self.tableView reloadData];
 }
@@ -3392,6 +3394,70 @@ static NSInteger SBCPUChargingAdjust(NSInteger value, NSInteger step, NSInteger 
     return value;
 }
 
+
+
+// =====================================================
+// Test11.5 SmartCharge External Method Probe
+// 只探测 user client / external method 入口
+// 不执行任何写入
+// =====================================================
+
+static NSString *sbcpuSmartChargeMethodProbeStatus = @"未检测";
+
+static void sbcpuSmartChargeExternalMethodProbe()
+{
+    NSArray *targets = @[
+        @"AppleCharger",
+        @"AppleSmartBatteryManager"
+    ];
+
+    NSMutableString *result = [NSMutableString string];
+
+    for (NSString *name in targets)
+    {
+        io_service_t service =
+        IOServiceGetMatchingService(kIOMainPortDefault,
+                                    IOServiceMatching(name.UTF8String));
+
+        if (!service)
+        {
+            [result appendFormat:@"%@: 未找到\n", name];
+            continue;
+        }
+
+        [result appendFormat:@"%@: FOUND\n", name];
+
+        io_connect_t connect = MACH_PORT_NULL;
+
+        kern_return_t open =
+        IOServiceOpen(service,
+                      mach_task_self(),
+                      0,
+                      &connect);
+
+        if (open != KERN_SUCCESS)
+        {
+            [result appendFormat:@"  Open失败: %d\n", open];
+            IOObjectRelease(service);
+            continue;
+        }
+
+        [result appendString:@"  Open成功\n"];
+        [result appendString:@"  Method探测: 已连接\n"];
+
+        /*
+         注意：
+         当前阶段只建立连接，不调用未知 selector。
+         */
+
+        IOServiceClose(connect);
+        IOObjectRelease(service);
+    }
+
+    sbcpuSmartChargeMethodProbeStatus = [result copy];
+
+    NSLog(@"[SBCPU SmartCharge MethodProbe]\n%@", sbcpuSmartChargeMethodProbeStatus);
+}
 
 // =====================================================
 // Test11 SmartCharge ControlProbe
