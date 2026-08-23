@@ -1167,16 +1167,6 @@ static double getBatteryCurrent()
 }
 
 
-static double getChargingPower()
-{
-    double voltage = getBatteryVoltage();
-    double current = getBatteryCurrent();
-
-    if(voltage <= 0 || current <= 0)
-        return -1;
-
-    return voltage * current;
-}
 
 
 static BOOL isCharging()
