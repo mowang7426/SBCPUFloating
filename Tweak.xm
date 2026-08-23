@@ -6,6 +6,27 @@
 #import <IOKit/IOKitLib.h>
 
 
+// V1.9.0 Smart Rotation Test2.3
+// 通过 SpringBoard 方向管理事件辅助检测，避免部分游戏不触发 UIDevice 通知
+%hook SBOrientationManager
+
+-(void)setOrientation:(int)orientation
+{
+    %orig;
+
+    BOOL landscape = (orientation == 3 || orientation == 4);
+
+    NSLog(@"SBCPU SmartRotation SBOrientationManager orientation:%d landscape:%d", orientation, landscape);
+
+    handleSmartRotationLockChange(landscape);
+}
+
+%end
+
+
+
+static void handleSmartRotationLockChange(BOOL landscape);
+
 #pragma mark -
 #pragma mark V1.5.8 Global
 #pragma mark -
