@@ -26,9 +26,14 @@ static CGFloat batteryFontSize = 12.0;
 static CGFloat landscapeFontSize = 12.0;
 static SBCPUDragView *cpuDragView;
 
-// Test11 SmartCharge ControlProbe forward declaration
+// Test11-Test17 SmartCharge Probe forward declaration
 static void sbcpuSmartChargeControlProbe(void);
 static void sbcpuSmartChargeExternalMethodProbe(void);
+static void sbcpuSmartChargeDeepProbe(void);
+static void sbcpuSmartChargeControlServiceProbe(void);
+static void sbcpuSmartChargeControlPropertyProbe(void);
+static void sbcpuSmartChargeDeepIOProbe(void);
+static void sbcpuAppleChargerUserClientProbe(void);
 
 
 
