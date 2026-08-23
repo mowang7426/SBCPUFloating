@@ -54,6 +54,7 @@ static CGFloat floatingAlpha = 0.70f;
  V1.6.0 智能布局
  */
 static BOOL smartLayoutEnable = YES;
+static BOOL autoWindowSizeEnable = NO;
 static BOOL autoMoveEnable __attribute__((unused)) = YES;
 static BOOL keyboardAvoidEnable __attribute__((unused)) = YES;
 static BOOL hideControlCenterEnable __attribute__((unused)) = YES;
@@ -1186,6 +1187,36 @@ static void updateFloatingSize()
         return;
     }
 
+    if(autoWindowSizeEnable)
+    {
+        CGSize maxSize = CGSizeMake(UIScreen.mainScreen.bounds.size.width - 40, 200);
+
+        CGSize textSize = [label sizeThatFits:maxSize];
+
+        CGSize targetSize = CGSizeMake(textSize.width + 30, textSize.height + 20);
+
+        if(targetSize.width < 100)
+            targetSize.width = 100;
+
+        if(targetSize.height < 48)
+            targetSize.height = 48;
+
+        CGPoint center = label.center;
+
+        CGRect frame = label.frame;
+        frame.size = targetSize;
+        label.frame = frame;
+        label.center = center;
+
+        if(cpuDragView)
+            cpuDragView.frame = label.frame;
+
+        label.layer.cornerRadius = 18;
+
+        [label setNeedsLayout];
+        return;
+    }
+
     BOOL landscape = isLandscapeMode();
 
     CGFloat scale = landscape ? landscapeScale : floatingScale;
@@ -1647,7 +1678,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 12;
+    return 13;
 
 }
 
@@ -1909,8 +1940,36 @@ cellForRowAtIndexPath:
     }
 
 
+    if(indexPath.row == 12)
+    {
+        cell.textLabel.text = @"自动调整浮窗大小";
+
+        UISwitch *sw = [[UISwitch alloc] init];
+        sw.on = autoWindowSizeEnable;
+
+        [sw addTarget:self
+               action:@selector(changeAutoWindowSize:)
+     forControlEvents:UIControlEventValueChanged];
+
+        cell.accessoryView = sw;
+    }
+
     return cell;
 
+}
+
+
+- (void)changeAutoWindowSize:(UISwitch *)sw
+{
+    autoWindowSizeEnable = sw.isOn;
+
+    [[NSUserDefaults standardUserDefaults]
+     setBool:autoWindowSizeEnable
+     forKey:@"SBCPU.AutoWindowSize"];
+
+    [[NSUserDefaults standardUserDefaults] synchronize];
+
+    updateFloatingSize();
 }
 
 #pragma mark 智能布局控制
@@ -2409,8 +2468,11 @@ static void registerV160Observers()
     });
 }
 
+static void loadAutoWindowSize(){ autoWindowSizeEnable = [[NSUserDefaults standardUserDefaults] boolForKey:@"SBCPU.AutoWindowSize"]; }
+
 %ctor
 {
+    autoWindowSizeEnable = [[NSUserDefaults standardUserDefaults] boolForKey:@"SBCPU.AutoWindowSize"];
 
     NSString *process =
     NSProcessInfo.processInfo.processName;
