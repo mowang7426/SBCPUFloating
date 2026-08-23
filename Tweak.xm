@@ -55,6 +55,11 @@ static CGFloat floatingAlpha = 0.70f;
  */
 static BOOL smartLayoutEnable = YES;
 static BOOL autoWindowSizeEnable = NO;
+// V1.9.0 Smart Rotation Test1
+static BOOL smartRotationEnable = YES;
+static BOOL rotationLandscapeDetected = NO;
+static NSTimeInterval rotationDelay = 1.0;
+
 
 // V1.8.1 battery display switches
 static BOOL showBatteryPercent = YES;
@@ -92,6 +97,7 @@ static void openSettings(void);
 static void checkHighCPU(double cpu);
 static void applySmartLayout(void);
 static void registerV160Observers(void);
+static void handleSmartRotation(UIDeviceOrientation orientation);
 
 
 
@@ -2395,6 +2401,50 @@ static void applySmartLayout()
 }
 
 
+
+// V1.9.0 Smart Rotation Test1
+// 这里只负责检测方向和重新布局，不直接修改系统方向锁定
+static void handleSmartRotation(UIDeviceOrientation orientation)
+{
+    if(!smartRotationEnable)
+        return;
+
+    BOOL landscape =
+    (orientation == UIDeviceOrientationLandscapeLeft ||
+     orientation == UIDeviceOrientationLandscapeRight);
+
+    if(landscape != rotationLandscapeDetected)
+    {
+        rotationLandscapeDetected = landscape;
+
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+                                      (int64_t)(rotationDelay * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            if(cpuWindow && label)
+            {
+                updateFloatingSize();
+
+                CGRect f = label.frame;
+                CGSize s = UIScreen.mainScreen.bounds.size;
+
+                if(CGRectGetMaxX(f) > s.width)
+                    f.origin.x = s.width - f.size.width - 10;
+
+                if(CGRectGetMaxY(f) > s.height)
+                    f.origin.y = s.height - f.size.height - 10;
+
+                if(f.origin.x < 0) f.origin.x = 10;
+                if(f.origin.y < 0) f.origin.y = 10;
+
+                label.frame = f;
+                cpuDragView.frame = f;
+                lastFloatingFrame = f;
+            }
+        });
+    }
+}
+
+
 static void registerV160Observers()
 {
     static dispatch_once_t onceToken;
@@ -2409,6 +2459,9 @@ static void registerV160Observers()
          object:nil
          queue:NSOperationQueue.mainQueue
          usingBlock:^(NSNotification *n){
+
+             // V1.9.0 Smart Rotation Test1
+             handleSmartRotation([UIDevice currentDevice].orientation);
 
              // V1.6.1 fixed2: rotate only clamp/reposition, never reset style
              if(cpuWindow && label)
