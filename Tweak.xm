@@ -2308,6 +2308,7 @@ static void sbcpuSmartChargeControlPropertyProbe()
 
     // 进入页面自动扫描
     sbcpuSmartChargeControlPropertyProbe();
+       sbcpuSmartChargeDeepIOProbe();
     // Test11: 探测充电控制通道（只读，不修改）
     sbcpuSmartChargeControlProbe();
     sbcpuSmartChargeExternalMethodProbe();
@@ -3552,6 +3553,107 @@ static void sbcpuSmartChargeControlProbe()
 
     NSLog(@"[SBCPU SmartCharge Test11]\n%@", sbcpuSmartChargeControlProbeStatus);
 }
+
+
+
+// =====================================================
+// Test16 SmartCharge Deep IO Probe
+// 深层属性递归探测（只读）
+// 不执行写入，不改变充电参数
+// =====================================================
+
+static NSString *sbcpuSmartChargeDeepIOProbeStatus = @"未检测";
+
+static void sbcpuSmartChargeDumpObject(CFTypeRef obj, NSMutableString *out, int level)
+{
+    if(!obj || level > 5) return;
+
+    if(CFGetTypeID(obj) == CFDictionaryGetTypeID())
+    {
+        CFDictionaryRef dict = (CFDictionaryRef)obj;
+        CFIndex count = CFDictionaryGetCount(dict);
+
+        const void **keys = malloc(sizeof(void *) * count);
+        const void **vals = malloc(sizeof(void *) * count);
+
+        CFDictionaryGetKeysAndValues(dict, keys, vals);
+
+        for(CFIndex i=0;i<count;i++)
+        {
+            NSString *key = [(__bridge id)keys[i] description];
+            [out appendFormat:@"\n%@%@",
+             [@"" stringByPaddingToLength:level*2 withString:@" " startingAtIndex:0],
+             key];
+
+            if([key rangeOfString:@"Current" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+               [key rangeOfString:@"Charge" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+               [key rangeOfString:@"Limit" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+               [key rangeOfString:@"Power" options:NSCaseInsensitiveSearch].location != NSNotFound ||
+               [key rangeOfString:@"Voltage" options:NSCaseInsensitiveSearch].location != NSNotFound)
+            {
+                [out appendString:@"  <-- 可能控制字段"];
+            }
+
+            sbcpuSmartChargeDumpObject(vals[i], out, level+1);
+        }
+
+        free(keys);
+        free(vals);
+    }
+}
+
+static void sbcpuSmartChargeDeepIOProbe()
+{
+    NSMutableString *result=[NSMutableString string];
+
+    NSArray *targets=@[
+        @"AppleCharger",
+        @"AppleSmartBatteryManager",
+        @"AppleSmartBattery",
+        @"IOPMPowerSource"
+    ];
+
+    for(NSString *name in targets)
+    {
+        io_service_t service =
+        IOServiceGetMatchingService(kIOMasterPortDefault,
+                                    IOServiceMatching(name.UTF8String));
+
+        if(service)
+        {
+            [result appendFormat:@"\n\n[%@]\n",name];
+
+            CFMutableDictionaryRef props=NULL;
+
+            if(IORegistryEntryCreateCFProperties(service,
+                                                  &props,
+                                                  kCFAllocatorDefault,
+                                                  0)==KERN_SUCCESS && props)
+            {
+                sbcpuSmartChargeDumpObject(props,result,1);
+                CFRelease(props);
+            }
+            else
+            {
+                [result appendString:@"读取失败"];
+            }
+
+            IOObjectRelease(service);
+        }
+        else
+        {
+            [result appendFormat:@"\n[%@] 未找到",name];
+        }
+    }
+
+    if(result.length==0)
+        [result appendString:@"没有发现深层属性"];
+
+    sbcpuSmartChargeDeepIOProbeStatus=[result copy];
+
+    NSLog(@"[SBCPU SmartCharge Test16]\n%@",sbcpuSmartChargeDeepIOProbeStatus);
+}
+
 
 %ctor
 {
