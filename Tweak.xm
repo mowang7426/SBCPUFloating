@@ -1,3 +1,4 @@
+#import <objc/message.h>
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 #import <mach/mach.h>
@@ -102,17 +103,20 @@ static void checkHighCPU(double cpu);
 static void applySmartLayout(void);
 static void registerV160Observers(void);
 
-// V1.9.0 SmartRotation Test2
+// V1.9.0 SmartRotation Test2.1
+// Runtime 调用私有方向锁接口，避免 Theos 编译阶段找不到 selector
 static id getOrientationLockManager()
 {
     Class cls = NSClassFromString(@"SBOrientationLockManager");
     if(!cls) return nil;
 
-    id manager = nil;
-    if([cls respondsToSelector:@selector(sharedInstance)])
-        manager = [cls sharedInstance];
+    SEL sharedSel = NSSelectorFromString(@"sharedInstance");
+    if([cls respondsToSelector:sharedSel])
+    {
+        return ((id (*)(id, SEL))objc_msgSend)(cls, sharedSel);
+    }
 
-    return manager;
+    return nil;
 }
 
 static void setSmartRotationLock(BOOL enabled)
@@ -120,10 +124,19 @@ static void setSmartRotationLock(BOOL enabled)
     id manager = getOrientationLockManager();
     if(!manager) return;
 
-    SEL sel = @selector(setOrientationLockEnabled:);
+    SEL sel = NSSelectorFromString(@"setOrientationLockEnabled:");
     if([manager respondsToSelector:sel])
     {
-        [manager setOrientationLockEnabled:enabled];
+        NSMethodSignature *sig = [manager methodSignatureForSelector:sel];
+        if(!sig) return;
+
+        NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+        BOOL value = enabled;
+
+        [inv setTarget:manager];
+        [inv setSelector:sel];
+        [inv setArgument:&value atIndex:2];
+        [inv invoke];
     }
 }
 
