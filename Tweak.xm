@@ -1323,6 +1323,51 @@ static void updateSmartChargeState(double temperature)
 }
 
 
+
+// SmartCharge Control Test10C - Hardware Probe
+// 仅探测设备支持情况，不修改充电参数
+static BOOL sbcpuSmartChargeProbeDone = NO;
+static NSString *sbcpuSmartChargeHardwareStatus = @"Unknown";
+
+static void smartChargeHardwareProbe()
+{
+    if (sbcpuSmartChargeProbeDone) return;
+
+    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault,
+                                                       IOServiceMatching("AppleSmartBattery"));
+    if (service)
+    {
+        CFTypeRef limit = IORegistryEntryCreateCFProperty(service,
+                                                           CFSTR("ChargeCurrentLimit"),
+                                                           kCFAllocatorDefault,
+                                                           0);
+        CFTypeRef enabled = IORegistryEntryCreateCFProperty(service,
+                                                             CFSTR("ChargingEnabled"),
+                                                             kCFAllocatorDefault,
+                                                             0);
+
+        if (limit || enabled)
+        {
+            sbcpuSmartChargeHardwareStatus = @"Detected";
+        }
+        else
+        {
+            sbcpuSmartChargeHardwareStatus = @"Read Only";
+        }
+
+        if (limit) CFRelease(limit);
+        if (enabled) CFRelease(enabled);
+
+        IOObjectRelease(service);
+    }
+    else
+    {
+        sbcpuSmartChargeHardwareStatus = @"Unavailable";
+    }
+
+    sbcpuSmartChargeProbeDone = YES;
+}
+
 #pragma mark -
 #pragma mark SmartCharge Control Engine Test10-A
 #pragma mark -
@@ -1348,6 +1393,7 @@ static BOOL sbcpuSmartChargeActionLocked = NO;
 
 static void smartChargeControlEngine()
 {
+    smartChargeHardwareProbe();
     if (!sbcpuSmartChargeControlReady) {
         sbcpuSmartChargeControlStatus = @"Unsupported";
         return;
