@@ -1461,6 +1461,19 @@ didSelectRowAtIndexPath:
 (NSIndexPath *)indexPath
 {
 
+    // 智能温控 +- 调节
+    if(indexPath.row >= 17 && indexPath.row <= 20)
+    {
+        NSInteger *ptrs[] = {&sbcpuChargeTempFast,&sbcpuChargeTempReduce,&sbcpuChargeTempPause,&sbcpuChargeTempStop};
+        NSInteger *v = ptrs[indexPath.row-17];
+        *v += 1;
+        if(*v > 60) *v = 20;
+        [[NSUserDefaults standardUserDefaults] setInteger:*v forKey:[NSString stringWithFormat:@"SBCPU.ChargeTemp.%ld",(long)(indexPath.row-17)]];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+        return;
+    }
+
     NSArray *values =
     @[
       @80,
@@ -2097,19 +2110,6 @@ cellForRowAtIndexPath:
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
-{
-    if(indexPath.row >= 17 && indexPath.row <= 20)
-    {
-        NSInteger *ptrs[] = {&sbcpuChargeTempFast,&sbcpuChargeTempReduce,&sbcpuChargeTempPause,&sbcpuChargeTempStop};
-        NSInteger *v = ptrs[indexPath.row-17];
-        *v += 1;
-        if(*v > 60) *v = 20;
-        [[NSUserDefaults standardUserDefaults] setInteger:*v forKey:[NSString stringWithFormat:@"SBCPU.ChargeTemp.%ld",(long)(indexPath.row-17)]];
-        [[NSUserDefaults standardUserDefaults] synchronize];
-        [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
-    }
-}
 
 #pragma mark 自动注销
 
