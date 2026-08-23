@@ -1821,6 +1821,65 @@ cellForRowAtIndexPath:
 
 @end
 
+
+@interface SBCPUSmartChargeDiagnosticsController : UITableViewController
+@end
+
+@implementation SBCPUSmartChargeDiagnosticsController
+
+- (void)viewDidLoad
+{
+    [super viewDidLoad];
+    self.title = @"SmartCharge 诊断";
+}
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
+{
+    return 7;
+}
+
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
+{
+    return @"硬件检测状态";
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+    
+    if(indexPath.row == 0){
+        cell.textLabel.text = @"AppleSmartBattery";
+        cell.detailTextLabel.text = sbcpuSmartChargeHardwareStatus;
+    }
+    if(indexPath.row == 1){
+        cell.textLabel.text = @"温度读取";
+        cell.detailTextLabel.text = getBatteryTemperature() > 0 ? @"正常" : @"失败";
+    }
+    if(indexPath.row == 2){
+        cell.textLabel.text = @"当前温度";
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%.1f℃", getBatteryTemperature()];
+    }
+    if(indexPath.row == 3){
+        cell.textLabel.text = @"充电状态";
+        cell.detailTextLabel.text = isCharging() ? @"充电中" : @"未充电";
+    }
+    if(indexPath.row == 4){
+        cell.textLabel.text = @"控制接口";
+        cell.detailTextLabel.text = sbcpuSmartChargeHardwareStatus;
+    }
+    if(indexPath.row == 5){
+        cell.textLabel.text = @"控制状态";
+        cell.detailTextLabel.text = sbcpuSmartChargeControlStatus;
+    }
+    if(indexPath.row == 6){
+        cell.textLabel.text = @"SmartCharge 状态";
+        cell.detailTextLabel.text = smartChargeStateText();
+    }
+    return cell;
+}
+
+@end
+
 @interface SBCPUSettingsController :
 UITableViewController
 
@@ -1884,7 +1943,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 21;
+    return 22;
 
 }
 
@@ -2129,6 +2188,13 @@ cellForRowAtIndexPath:
         cell.accessoryView = sw;
     }
 
+    if(indexPath.row == 21)
+    {
+        SBCPUSmartChargeDiagnosticsController *vc = [SBCPUSmartChargeDiagnosticsController new];
+        [self.navigationController pushViewController:vc animated:YES];
+        return;
+    }
+
     if(indexPath.row == 10)
     {
         cell.textLabel.text = @"吸附模式";
@@ -2206,6 +2272,13 @@ cellForRowAtIndexPath:
         cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld℃", (long)[chargeValues[i] integerValue]];
     }
 
+
+    if(indexPath.row == 21)
+    {
+        cell.textLabel.text = @"SmartCharge 诊断";
+        cell.detailTextLabel.text = @"查看硬件接口状态";
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    }
     return cell;
 
 }
