@@ -2396,6 +2396,195 @@ titleForHeaderInSection:
         [self.navigationController pushViewController:vc animated:YES];
     }
 
+
+
+    if(indexPath.row == 10)
+    {
+        NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
+        dockMode = (dockMode + 1) % modes.count;
+        [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPU.DockMode"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+        return;
+    }
+
+    if(indexPath.row == 1)
+    {
+
+        SBCPUValuePickerController *vc =
+        [[SBCPUValuePickerController alloc]
+         initWithStyle:
+         UITableViewStyleInsetGrouped];
+
+
+        [self.navigationController
+         pushViewController:
+         vc
+         animated:YES];
+
+    }
+
+
+    if(indexPath.row == 2)
+    {
+
+        SBCPUTimePickerController *vc =
+        [[SBCPUTimePickerController alloc]
+         initWithStyle:
+         UITableViewStyleInsetGrouped];
+
+
+        [self.navigationController
+         pushViewController:
+         vc
+         animated:YES];
+
+    }
+
+
+    if(indexPath.row == 21)
+    {
+        SBCPUSmartChargeDiagnosticsController *vc =
+        [[SBCPUSmartChargeDiagnosticsController alloc]
+         initWithStyle:UITableViewStyleInsetGrouped];
+
+        [self.navigationController
+         pushViewController:vc
+         animated:YES];
+
+        return;
+    }
+
+
+    if(indexPath.row == 4)
+    {
+
+        UIAlertController *alert =
+        [UIAlertController
+         alertControllerWithTitle:
+         @"透明度"
+         message:
+         @"选择悬浮窗透明度"
+         preferredStyle:
+         UIAlertControllerStyleActionSheet];
+
+
+        NSArray *titles =
+        @[
+          @"20%",
+          @"40%",
+          @"60%",
+          @"70%",
+          @"80%",
+          @"100%"
+        ];
+
+
+        NSArray *values =
+        @[
+          @0.2,
+          @0.4,
+          @0.6,
+          @0.7,
+          @0.8,
+          @1.0
+        ];
+
+
+        for(NSInteger i = 0;
+            i < titles.count;
+            i++)
+        {
+
+            [alert addAction:
+             [UIAlertAction
+              actionWithTitle:
+              titles[i]
+              style:
+              UIAlertActionStyleDefault
+              handler:
+              ^(UIAlertAction *action)
+              {
+
+                  floatingAlpha =
+                  [values[i] floatValue];
+
+
+                  [[NSUserDefaults standardUserDefaults]
+                   setFloat:
+                   floatingAlpha
+                   forKey:
+                   @"SBCPU.FloatingAlpha"];
+
+
+                  [[NSUserDefaults standardUserDefaults]
+                   synchronize];
+
+
+                  applyFloatingAlpha();
+
+
+                  [self.tableView reloadData];
+
+              }]];
+
+        }
+
+
+        [alert addAction:
+         [UIAlertAction
+          actionWithTitle:
+          @"取消"
+          style:
+          UIAlertActionStyleCancel
+          handler:nil]];
+
+
+        [self presentViewController:
+         alert
+         animated:YES
+         completion:nil];
+
+    }
+
+    // SmartCharge Test8: 独立温度编辑页面
+    if(indexPath.row >= 17 && indexPath.row <= 20)
+    {
+        NSInteger type = indexPath.row - 17;
+
+        NSInteger current = 35;
+        NSString *title = @"温度";
+
+        if(type == 0){ current = sbcpuChargeTempFast; title = @"保持快充温度"; }
+        if(type == 1){ current = sbcpuChargeTempReduce; title = @"降低功率温度"; }
+        if(type == 2){ current = sbcpuChargeTempPause; title = @"暂停充电温度"; }
+        if(type == 3){ current = sbcpuChargeTempStop; title = @"断充保护温度"; }
+
+        SBChargeTempEditController *vc = [SBChargeTempEditController new];
+        vc.tempValue = current;
+        vc.tempTitle = title;
+
+        vc.finishBlock = ^(NSInteger value){
+            if(type == 0) sbcpuChargeTempFast = value;
+            if(type == 1) sbcpuChargeTempReduce = value;
+            if(type == 2) sbcpuChargeTempPause = value;
+            if(type == 3) sbcpuChargeTempStop = value;
+            [self saveSmartChargeTemps];
+        };
+
+        [self.navigationController pushViewController:vc animated:YES];
+        return;
+    }
+
+
+
+
+    [tableView deselectRowAtIndexPath:
+     indexPath
+     animated:YES];
+
+
+
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 }
 
@@ -2852,198 +3041,7 @@ cellForRowAtIndexPath:
 #pragma mark 点击项目
 
 
-- (void)tableView:
-(UITableView *)tableView
-didSelectRowAtIndexPath:
-(NSIndexPath *)indexPath
-{
 
-    if(indexPath.row == 10)
-    {
-        NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
-        dockMode = (dockMode + 1) % modes.count;
-        [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPU.DockMode"];
-        [[NSUserDefaults standardUserDefaults] synchronize];
-        [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
-        return;
-    }
-
-    if(indexPath.row == 1)
-    {
-
-        SBCPUValuePickerController *vc =
-        [[SBCPUValuePickerController alloc]
-         initWithStyle:
-         UITableViewStyleInsetGrouped];
-
-
-        [self.navigationController
-         pushViewController:
-         vc
-         animated:YES];
-
-    }
-
-
-    if(indexPath.row == 2)
-    {
-
-        SBCPUTimePickerController *vc =
-        [[SBCPUTimePickerController alloc]
-         initWithStyle:
-         UITableViewStyleInsetGrouped];
-
-
-        [self.navigationController
-         pushViewController:
-         vc
-         animated:YES];
-
-    }
-
-
-    if(indexPath.row == 21)
-    {
-        SBCPUSmartChargeDiagnosticsController *vc =
-        [[SBCPUSmartChargeDiagnosticsController alloc]
-         initWithStyle:UITableViewStyleInsetGrouped];
-
-        [self.navigationController
-         pushViewController:vc
-         animated:YES];
-
-        return;
-    }
-
-
-    if(indexPath.row == 4)
-    {
-
-        UIAlertController *alert =
-        [UIAlertController
-         alertControllerWithTitle:
-         @"透明度"
-         message:
-         @"选择悬浮窗透明度"
-         preferredStyle:
-         UIAlertControllerStyleActionSheet];
-
-
-        NSArray *titles =
-        @[
-          @"20%",
-          @"40%",
-          @"60%",
-          @"70%",
-          @"80%",
-          @"100%"
-        ];
-
-
-        NSArray *values =
-        @[
-          @0.2,
-          @0.4,
-          @0.6,
-          @0.7,
-          @0.8,
-          @1.0
-        ];
-
-
-        for(NSInteger i = 0;
-            i < titles.count;
-            i++)
-        {
-
-            [alert addAction:
-             [UIAlertAction
-              actionWithTitle:
-              titles[i]
-              style:
-              UIAlertActionStyleDefault
-              handler:
-              ^(UIAlertAction *action)
-              {
-
-                  floatingAlpha =
-                  [values[i] floatValue];
-
-
-                  [[NSUserDefaults standardUserDefaults]
-                   setFloat:
-                   floatingAlpha
-                   forKey:
-                   @"SBCPU.FloatingAlpha"];
-
-
-                  [[NSUserDefaults standardUserDefaults]
-                   synchronize];
-
-
-                  applyFloatingAlpha();
-
-
-                  [self.tableView reloadData];
-
-              }]];
-
-        }
-
-
-        [alert addAction:
-         [UIAlertAction
-          actionWithTitle:
-          @"取消"
-          style:
-          UIAlertActionStyleCancel
-          handler:nil]];
-
-
-        [self presentViewController:
-         alert
-         animated:YES
-         completion:nil];
-
-    }
-
-    // SmartCharge Test8: 独立温度编辑页面
-    if(indexPath.row >= 17 && indexPath.row <= 20)
-    {
-        NSInteger type = indexPath.row - 17;
-
-        NSInteger current = 35;
-        NSString *title = @"温度";
-
-        if(type == 0){ current = sbcpuChargeTempFast; title = @"保持快充温度"; }
-        if(type == 1){ current = sbcpuChargeTempReduce; title = @"降低功率温度"; }
-        if(type == 2){ current = sbcpuChargeTempPause; title = @"暂停充电温度"; }
-        if(type == 3){ current = sbcpuChargeTempStop; title = @"断充保护温度"; }
-
-        SBChargeTempEditController *vc = [SBChargeTempEditController new];
-        vc.tempValue = current;
-        vc.tempTitle = title;
-
-        vc.finishBlock = ^(NSInteger value){
-            if(type == 0) sbcpuChargeTempFast = value;
-            if(type == 1) sbcpuChargeTempReduce = value;
-            if(type == 2) sbcpuChargeTempPause = value;
-            if(type == 3) sbcpuChargeTempStop = value;
-            [self saveSmartChargeTemps];
-        };
-
-        [self.navigationController pushViewController:vc animated:YES];
-        return;
-    }
-
-
-
-
-    [tableView deselectRowAtIndexPath:
-     indexPath
-     animated:YES];
-
-}
 
 
 - (void)saveSmartChargeTemps
