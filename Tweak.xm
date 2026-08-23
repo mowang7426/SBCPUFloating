@@ -3357,6 +3357,9 @@ static NSInteger SBCPUChargingAdjust(NSInteger value, NSInteger step, NSInteger 
         return;
     }
 
+    // Test10m: 启动 SmartCharge 属性探测，避免 unused function 编译错误
+    sbcpuSmartChargeControlPropertyProbe();
+
 
     NSUserDefaults *def =
     NSUserDefaults.standardUserDefaults;
