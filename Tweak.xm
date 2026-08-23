@@ -23,6 +23,14 @@ static CGFloat landscapeFontSize = 12.0;
 static SBCPUDragView *cpuDragView;
 
 
+
+// SmartCharge UI V1.8.3
+static BOOL sbcpuSmartChargeEnable = YES;
+static NSInteger sbcpuChargeTempFast = 35;
+static NSInteger sbcpuChargeTempReduce = 38;
+static NSInteger sbcpuChargeTempPause = 40;
+static NSInteger sbcpuChargeTempStop = 42;
+
 /*
  设置页面是否正在显示
  */
@@ -853,6 +861,13 @@ static void createCPUWindow()
 
 
 #pragma mark -
+- (void)changeSmartCharge:(UISwitch *)sw
+{
+    sbcpuSmartChargeEnable = sw.isOn;
+    [[NSUserDefaults standardUserDefaults] setBool:sbcpuSmartChargeEnable forKey:@"SBCPU.SmartCharge"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
 #pragma mark 自动注销
 #pragma mark -
 
@@ -1694,7 +1709,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 16;
+    return 21;
 
 }
 
@@ -1997,6 +2012,25 @@ cellForRowAtIndexPath:
         cell.accessoryView = sw;
     }
 
+    if(indexPath.row == 16)
+    {
+        cell.textLabel.text = @"智能温控";
+        UISwitch *sw = [[UISwitch alloc] init];
+        sw.on = sbcpuSmartChargeEnable;
+        [sw addTarget:self action:@selector(changeSmartCharge:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = sw;
+    }
+
+    NSArray *chargeTitles = @[@"保持快充温度",@"降低功率温度",@"暂停充电温度",@"断充保护温度"];
+    NSArray *chargeValues = @[@(sbcpuChargeTempFast),@(sbcpuChargeTempReduce),@(sbcpuChargeTempPause),@(sbcpuChargeTempStop)];
+
+    if(indexPath.row >= 17 && indexPath.row <= 20)
+    {
+        NSInteger i = indexPath.row - 17;
+        cell.textLabel.text = chargeTitles[i];
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld℃", (long)[chargeValues[i] integerValue]];
+    }
+
     return cell;
 
 }
@@ -2055,6 +2089,27 @@ cellForRowAtIndexPath:
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
+
+- (void)changeSmartCharge:(UISwitch *)sw
+{
+    sbcpuSmartChargeEnable = sw.isOn;
+    [[NSUserDefaults standardUserDefaults] setBool:sbcpuSmartChargeEnable forKey:@"SBCPU.SmartCharge"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    if(indexPath.row >= 17 && indexPath.row <= 20)
+    {
+        NSInteger *ptrs[] = {&sbcpuChargeTempFast,&sbcpuChargeTempReduce,&sbcpuChargeTempPause,&sbcpuChargeTempStop};
+        NSInteger *v = ptrs[indexPath.row-17];
+        *v += 1;
+        if(*v > 60) *v = 20;
+        [[NSUserDefaults standardUserDefaults] setInteger:*v forKey:[NSString stringWithFormat:@"SBCPU.ChargeTemp.%ld",(long)(indexPath.row-17)]];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+    }
+}
 
 #pragma mark 自动注销
 
