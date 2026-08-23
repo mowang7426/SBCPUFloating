@@ -125,14 +125,16 @@ static void checkHighCPU(double cpu);
 static void applySmartLayout(void);
 static void registerV160Observers(void);
 
-// V1.9.0 SmartRotation Test2.1
-// Runtime 调用私有方向锁接口，避免 Theos 编译阶段找不到 selector
+// V1.9.0 SmartRotation Test2.6
+// 使用 SBOrientationLockManager lock/unlock 控制方向锁
+
 static id getOrientationLockManager()
 {
     Class cls = NSClassFromString(@"SBOrientationLockManager");
     if(!cls) return nil;
 
     SEL sharedSel = NSSelectorFromString(@"sharedInstance");
+
     if([cls respondsToSelector:sharedSel])
     {
         return ((id (*)(id, SEL))objc_msgSend)(cls, sharedSel);
@@ -144,21 +146,26 @@ static id getOrientationLockManager()
 static void setSmartRotationLock(BOOL enabled)
 {
     id manager = getOrientationLockManager();
-    if(!manager) return;
+    if(!manager)
+    {
+        NSLog(@"SBCPU SmartRotation: manager not found");
+        return;
+    }
 
-    SEL sel = NSSelectorFromString(@"setOrientationLockEnabled:");
+    SEL sel = enabled ? NSSelectorFromString(@"lock")
+                      : NSSelectorFromString(@"unlock");
+
     if([manager respondsToSelector:sel])
     {
-        NSMethodSignature *sig = [manager methodSignatureForSelector:sel];
-        if(!sig) return;
+        ((void (*)(id, SEL))objc_msgSend)(manager, sel);
 
-        NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
-        BOOL value = enabled;
-
-        [inv setTarget:manager];
-        [inv setSelector:sel];
-        [inv setArgument:&value atIndex:2];
-        [inv invoke];
+        NSLog(@"SBCPU SmartRotation: %@ called",
+              enabled ? @"lock" : @"unlock");
+    }
+    else
+    {
+        NSLog(@"SBCPU SmartRotation: selector missing %@",
+              enabled ? @"lock" : @"unlock");
     }
 }
 
@@ -172,7 +179,7 @@ static void handleSmartRotationLockChange(BOOL landscape)
         if(landscape)
         {
             id manager = getOrientationLockManager();
-            if(manager && [manager respondsToSelector:@selector(setOrientationLockEnabled:)])
+            if(manager)
             {
                 userHadRotationLock = YES;
                 changedRotationLockByPlugin = YES;
