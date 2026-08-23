@@ -2010,6 +2010,19 @@ cellForRowAtIndexPath:
 }
 
 
+
+- (NSString *)smartChargeEditText:(NSInteger)type
+{
+    NSInteger value = 0;
+    switch(type){
+        case 0: value = sbcpuEditChargeTempFast; break;
+        case 1: value = sbcpuEditChargeTempReduce; break;
+        case 2: value = sbcpuEditChargeTempPause; break;
+        case 3: value = sbcpuEditChargeTempStop; break;
+    }
+    return [NSString stringWithFormat:@"临时值：%ld℃\n点击完成后才保存",(long)value];
+}
+
 - (void)changeSmartCharge:(UISwitch *)sw
 {
     sbcpuSmartChargeEnable = sw.isOn;
@@ -2212,14 +2225,11 @@ didSelectRowAtIndexPath:
          completion:nil];
 
     }
-
-
-    // SmartCharge 温度 +- 调节（临时编辑，完成后生效）
+    // SmartCharge Test6: 临时编辑模式
     if(indexPath.row >= 17 && indexPath.row <= 20)
     {
         NSInteger type = indexPath.row - 17;
 
-        // 复制当前值到临时变量，不立即修改正式参数
         sbcpuEditChargeTempFast = sbcpuChargeTempFast;
         sbcpuEditChargeTempReduce = sbcpuChargeTempReduce;
         sbcpuEditChargeTempPause = sbcpuChargeTempPause;
@@ -2234,40 +2244,56 @@ didSelectRowAtIndexPath:
 
         UIAlertController *alert =
         [UIAlertController alertControllerWithTitle:title
-                                            message:@"调整后点击完成才会保存"
+                                            message:@"当前编辑值"
                                      preferredStyle:UIAlertControllerStyleAlert];
 
-        UIAlertAction *minus = [UIAlertAction actionWithTitle:@"-1℃"
-                                                        style:UIAlertActionStyleDefault
-                                                      handler:^(UIAlertAction *a){
+        __block UIAlertAction *valueAction =
+        [UIAlertAction actionWithTitle:@""
+                                 style:UIAlertActionStyleDefault
+                               handler:nil];
+
+        [alert addAction:valueAction];
+
+        UIAlertAction *minus =
+        [UIAlertAction actionWithTitle:@"-1℃"
+                                 style:UIAlertActionStyleDefault
+                               handler:^(UIAlertAction *a){
+
             switch(type){
                 case 0: sbcpuEditChargeTempFast = MAX(30, sbcpuEditChargeTempFast-1); break;
                 case 1: sbcpuEditChargeTempReduce = MAX(35, sbcpuEditChargeTempReduce-1); break;
                 case 2: sbcpuEditChargeTempPause = MAX(38, sbcpuEditChargeTempPause-1); break;
                 case 3: sbcpuEditChargeTempStop = MAX(40, sbcpuEditChargeTempStop-1); break;
             }
-            [weakSelf tableView:weakSelf.tableView didSelectRowAtIndexPath:indexPath];
+
+            alert.message = [weakSelf smartChargeEditText:type];
         }];
 
-        UIAlertAction *plus = [UIAlertAction actionWithTitle:@"+1℃"
-                                                       style:UIAlertActionStyleDefault
-                                                     handler:^(UIAlertAction *a){
+        UIAlertAction *plus =
+        [UIAlertAction actionWithTitle:@"+1℃"
+                                 style:UIAlertActionStyleDefault
+                               handler:^(UIAlertAction *a){
+
             switch(type){
                 case 0: sbcpuEditChargeTempFast = MIN(45, sbcpuEditChargeTempFast+1); break;
                 case 1: sbcpuEditChargeTempReduce = MIN(50, sbcpuEditChargeTempReduce+1); break;
                 case 2: sbcpuEditChargeTempPause = MIN(55, sbcpuEditChargeTempPause+1); break;
                 case 3: sbcpuEditChargeTempStop = MIN(60, sbcpuEditChargeTempStop+1); break;
             }
-            [weakSelf tableView:weakSelf.tableView didSelectRowAtIndexPath:indexPath];
+
+            alert.message = [weakSelf smartChargeEditText:type];
         }];
 
-        UIAlertAction *done = [UIAlertAction actionWithTitle:@"完成"
-                                                        style:UIAlertActionStyleCancel
-                                                      handler:^(UIAlertAction *a){
+        UIAlertAction *done =
+        [UIAlertAction actionWithTitle:@"完成"
+                                 style:UIAlertActionStyleCancel
+                               handler:^(UIAlertAction *a){
+
             sbcpuChargeTempFast = sbcpuEditChargeTempFast;
             sbcpuChargeTempReduce = sbcpuEditChargeTempReduce;
             sbcpuChargeTempPause = sbcpuEditChargeTempPause;
             sbcpuChargeTempStop = sbcpuEditChargeTempStop;
+
             [weakSelf saveSmartChargeTemps];
             [weakSelf.tableView reloadData];
         }];
@@ -2276,8 +2302,11 @@ didSelectRowAtIndexPath:
         [alert addAction:plus];
         [alert addAction:done];
 
+        alert.message = [self smartChargeEditText:type];
+
         [self presentViewController:alert animated:YES completion:nil];
     }
+
 
 
 
