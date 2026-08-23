@@ -2188,13 +2188,6 @@ cellForRowAtIndexPath:
         cell.accessoryView = sw;
     }
 
-    if(indexPath.row == 21)
-    {
-        SBCPUSmartChargeDiagnosticsController *vc = [SBCPUSmartChargeDiagnosticsController new];
-        [self.navigationController pushViewController:vc animated:YES];
-        return;
-    }
-
     if(indexPath.row == 10)
     {
         cell.textLabel.text = @"吸附模式";
