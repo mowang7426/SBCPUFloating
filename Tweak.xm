@@ -2759,6 +2759,122 @@ static void registerV160Observers()
     });
 }
 
+
+
+// ==============================
+// ChargingManager Test1
+// 智能温控充电管理框架
+// ==============================
+
+static BOOL SBCPUChargingEnabled = YES;
+static double SBCPUChargeTempFast = 35.0;
+static double SBCPUChargeTempLowPower = 38.0;
+static double SBCPUChargeTempPause = 40.0;
+static double SBCPUChargeTempStop = 42.0;
+
+static float SBCPUGetBatteryTemperature()
+{
+    // iOS 电池温度读取基础接口
+    // Test1 只读取，不修改充电策略
+    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault,
+                                                       IOServiceMatching("IOPMPowerSource"));
+    if (!service) return 0;
+
+    CFTypeRef value = IORegistryEntryCreateCFProperty(service,
+                                                      CFSTR("Temperature"),
+                                                      kCFAllocatorDefault,
+                                                      0);
+    IOObjectRelease(service);
+
+    if (value) {
+        float temp = 0;
+        if (CFGetTypeID(value) == CFNumberGetTypeID()) {
+            CFNumberGetValue((CFNumberRef)value,
+                             kCFNumberFloatType,
+                             &temp);
+        }
+        CFRelease(value);
+
+        // Apple 返回通常为 0.1K
+        if (temp > 100) temp = temp / 100.0;
+        return temp;
+    }
+
+    return 0;
+}
+
+static void SBCPUChargingCheck()
+{
+    if (!SBCPUChargingEnabled) return;
+
+    float temp = SBCPUGetBatteryTemperature();
+
+    NSString *action = @"NORMAL";
+
+    if (temp >= SBCPUChargeTempStop) {
+        action = @"STOP_REQUEST";
+    }
+    else if (temp >= SBCPUChargeTempPause) {
+        action = @"PAUSE_REQUEST";
+    }
+    else if (temp >= SBCPUChargeTempLowPower) {
+        action = @"LOW_POWER";
+    }
+    else {
+        action = @"FAST_CHARGE";
+    }
+
+    NSLog(@"[SBCPU Charging] Temp %.1f Action %@", temp, action);
+}
+
+
+
+// ==============================
+// ChargingManager Test2
+// 自定义温度阈值（方案A）
+// 无键盘输入，使用数字步进选择器
+// ==============================
+
+static void SBCPUChargingSaveTempValues(double fast,
+                                        double lowPower,
+                                        double pause,
+                                        double stop)
+{
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+
+    [d setDouble:fast forKey:@"SBCPUCharging.FastTemp"];
+    [d setDouble:lowPower forKey:@"SBCPUCharging.LowPowerTemp"];
+    [d setDouble:pause forKey:@"SBCPUCharging.PauseTemp"];
+    [d setDouble:stop forKey:@"SBCPUCharging.StopTemp"];
+
+    [d synchronize];
+}
+
+static double SBCPUChargingReadTemp(NSString *key, double def)
+{
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+
+    double v = [d doubleForKey:key];
+    if (v <= 0) return def;
+
+    return v;
+}
+
+// 点击温度项目后使用步进选择：
+// -1 / +1 调整温度
+// 范围限制 30℃ - 50℃
+// 保存后重新加载策略
+
+static BOOL SBCPUChargingValidate(double low,
+                                  double pause,
+                                  double stop)
+{
+    if (pause <= low) return NO;
+    if (stop <= pause) return NO;
+
+    return YES;
+}
+
 %ctor
 {
     SBCPUScanRotationClasses();
