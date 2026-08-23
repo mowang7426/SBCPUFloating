@@ -158,31 +158,45 @@ static void setSmartRotationLock(BOOL enabled)
     if(!controller)
         return;
 
+    NSArray *selectors = @[
+        @"setOrientationLockEnabled:",
+        @"setOrientationLocked:",
+        @"setLockEnabled:"
+    ];
 
-    SEL sel = NSSelectorFromString(@"setOrientationLockEnabled:");
+    BOOL called = NO;
 
-    if([controller respondsToSelector:sel])
+    for(NSString *name in selectors)
     {
-        ((void (*)(id, SEL, BOOL))objc_msgSend)
-        (controller, sel, enabled);
+        SEL sel = NSSelectorFromString(name);
 
-        NSLog(@"[SBCPU] Orientation lock %@",
-              enabled ? @"ENABLED" : @"DISABLED");
+        if([controller respondsToSelector:sel])
+        {
+            ((void (*)(id, SEL, BOOL))objc_msgSend)
+            (controller, sel, enabled);
 
+            NSLog(@"[SBCPU] Orientation selector %@ called state:%d",
+                  name, enabled);
 
-        CFNotificationCenterPostNotification(
-            CFNotificationCenterGetDarwinNotifyCenter(),
-            CFSTR("com.apple.springboard.orientationlockchanged"),
-            NULL,
-            NULL,
-            YES);
-
+            called = YES;
+            break;
+        }
     }
-    else
+
+    if(!called)
     {
-        NSLog(@"[SBCPU] setOrientationLockEnabled missing");
+        NSLog(@"[SBCPU] No orientation lock selector found");
     }
+
+
+    CFNotificationCenterPostNotification(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        CFSTR("com.apple.springboard.orientationlockchanged"),
+        NULL,
+        NULL,
+        YES);
 }
+
 
 
 static void handleSmartRotationLockChange(BOOL landscape)
