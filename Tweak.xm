@@ -25,8 +25,6 @@
 
 
 
-static void handleSmartRotationLockChange(BOOL landscape);
-
 #pragma mark -
 #pragma mark V1.5.8 Global
 #pragma mark -
@@ -165,15 +163,13 @@ static void handleSmartRotationLockChange(BOOL landscape)
     if(!smartRotationEnable)
         return;
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
-                                  (int64_t)(rotationDelay * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
+    // Test2.3: 不等待，检测到横屏立即解除方向锁
+    dispatch_async(dispatch_get_main_queue(), ^{
         if(landscape)
         {
             id manager = getOrientationLockManager();
             if(manager && [manager respondsToSelector:@selector(setOrientationLockEnabled:)])
             {
-                // Test2: 横屏临时解除锁定
                 userHadRotationLock = YES;
                 changedRotationLockByPlugin = YES;
                 setSmartRotationLock(NO);
@@ -183,7 +179,6 @@ static void handleSmartRotationLockChange(BOOL landscape)
         {
             if(changedRotationLockByPlugin)
             {
-                // Test2: 恢复锁定
                 setSmartRotationLock(YES);
                 changedRotationLockByPlugin = NO;
             }
