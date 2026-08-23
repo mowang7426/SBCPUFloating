@@ -2225,7 +2225,11 @@ didSelectRowAtIndexPath:
          completion:nil];
 
     }
-    // SmartCharge Test6: 临时编辑模式
+
+    // SmartCharge Test7: Inline Expand Edit
+    // 展开式编辑逻辑占位，避免弹窗。
+    // 具体展开 Cell 由下一步 UI 数据源接入。
+
     if(indexPath.row >= 17 && indexPath.row <= 20)
     {
         NSInteger type = indexPath.row - 17;
@@ -2235,76 +2239,7 @@ didSelectRowAtIndexPath:
         sbcpuEditChargeTempPause = sbcpuChargeTempPause;
         sbcpuEditChargeTempStop = sbcpuChargeTempStop;
 
-        NSString *title = @[@"保持快充温度",
-                            @"降低功率温度",
-                            @"暂停充电温度",
-                            @"断充保护温度"][type];
-
-        __weak typeof(self) weakSelf = self;
-
-        UIAlertController *alert =
-        [UIAlertController alertControllerWithTitle:title
-                                            message:@"当前编辑值"
-                                     preferredStyle:UIAlertControllerStyleAlert];
-
-        __block UIAlertAction *valueAction =
-        [UIAlertAction actionWithTitle:@""
-                                 style:UIAlertActionStyleDefault
-                               handler:nil];
-
-        [alert addAction:valueAction];
-
-        UIAlertAction *minus =
-        [UIAlertAction actionWithTitle:@"-1℃"
-                                 style:UIAlertActionStyleDefault
-                               handler:^(UIAlertAction *a){
-
-            switch(type){
-                case 0: sbcpuEditChargeTempFast = MAX(30, sbcpuEditChargeTempFast-1); break;
-                case 1: sbcpuEditChargeTempReduce = MAX(35, sbcpuEditChargeTempReduce-1); break;
-                case 2: sbcpuEditChargeTempPause = MAX(38, sbcpuEditChargeTempPause-1); break;
-                case 3: sbcpuEditChargeTempStop = MAX(40, sbcpuEditChargeTempStop-1); break;
-            }
-
-            alert.message = [weakSelf smartChargeEditText:type];
-        }];
-
-        UIAlertAction *plus =
-        [UIAlertAction actionWithTitle:@"+1℃"
-                                 style:UIAlertActionStyleDefault
-                               handler:^(UIAlertAction *a){
-
-            switch(type){
-                case 0: sbcpuEditChargeTempFast = MIN(45, sbcpuEditChargeTempFast+1); break;
-                case 1: sbcpuEditChargeTempReduce = MIN(50, sbcpuEditChargeTempReduce+1); break;
-                case 2: sbcpuEditChargeTempPause = MIN(55, sbcpuEditChargeTempPause+1); break;
-                case 3: sbcpuEditChargeTempStop = MIN(60, sbcpuEditChargeTempStop+1); break;
-            }
-
-            alert.message = [weakSelf smartChargeEditText:type];
-        }];
-
-        UIAlertAction *done =
-        [UIAlertAction actionWithTitle:@"完成"
-                                 style:UIAlertActionStyleCancel
-                               handler:^(UIAlertAction *a){
-
-            sbcpuChargeTempFast = sbcpuEditChargeTempFast;
-            sbcpuChargeTempReduce = sbcpuEditChargeTempReduce;
-            sbcpuChargeTempPause = sbcpuEditChargeTempPause;
-            sbcpuChargeTempStop = sbcpuEditChargeTempStop;
-
-            [weakSelf saveSmartChargeTemps];
-            [weakSelf.tableView reloadData];
-        }];
-
-        [alert addAction:minus];
-        [alert addAction:plus];
-        [alert addAction:done];
-
-        alert.message = [self smartChargeEditText:type];
-
-        [self presentViewController:alert animated:YES completion:nil];
+        NSLog(@"SmartCharge Inline Edit type:%ld",(long)type);
     }
 
 
