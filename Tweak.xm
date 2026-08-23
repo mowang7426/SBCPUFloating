@@ -59,6 +59,10 @@ static BOOL autoWindowSizeEnable = NO;
 static BOOL smartRotationEnable = YES;
 static BOOL rotationLandscapeDetected = NO;
 static NSTimeInterval rotationDelay = 1.0;
+static BOOL orientationLockManagerAvailable = NO;
+static BOOL userHadRotationLock = NO;
+static BOOL changedRotationLockByPlugin = NO;
+
 
 
 // V1.8.1 battery display switches
@@ -97,6 +101,63 @@ static void openSettings(void);
 static void checkHighCPU(double cpu);
 static void applySmartLayout(void);
 static void registerV160Observers(void);
+
+// V1.9.0 SmartRotation Test2
+static id getOrientationLockManager()
+{
+    Class cls = NSClassFromString(@"SBOrientationLockManager");
+    if(!cls) return nil;
+
+    id manager = nil;
+    if([cls respondsToSelector:@selector(sharedInstance)])
+        manager = [cls sharedInstance];
+
+    return manager;
+}
+
+static void setSmartRotationLock(BOOL enabled)
+{
+    id manager = getOrientationLockManager();
+    if(!manager) return;
+
+    SEL sel = @selector(setOrientationLockEnabled:);
+    if([manager respondsToSelector:sel])
+    {
+        [manager setOrientationLockEnabled:enabled];
+    }
+}
+
+static void handleSmartRotationLockChange(BOOL landscape)
+{
+    if(!smartRotationEnable)
+        return;
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+                                  (int64_t)(rotationDelay * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        if(landscape)
+        {
+            id manager = getOrientationLockManager();
+            if(manager && [manager respondsToSelector:@selector(setOrientationLockEnabled:)])
+            {
+                // Test2: 横屏临时解除锁定
+                userHadRotationLock = YES;
+                changedRotationLockByPlugin = YES;
+                setSmartRotationLock(NO);
+            }
+        }
+        else
+        {
+            if(changedRotationLockByPlugin)
+            {
+                // Test2: 恢复锁定
+                setSmartRotationLock(YES);
+                changedRotationLockByPlugin = NO;
+            }
+        }
+    });
+}
+
 static void handleSmartRotation(UIDeviceOrientation orientation);
 
 
