@@ -9,7 +9,11 @@ TWEAK_NAME = SBCPUFloating
 SBCPUFloating_FILES = Tweak.xm
 
 SBCPUFloating_CFLAGS = -fobjc-arc
-SBCPUFloating_FRAMEWORKS = UIKit Foundation IOKit
+SBCPUFloating_CFLAGS += -Wno-unused-function -Wno-unused-variable
+
+SBCPUFloating_FRAMEWORKS = UIKit Foundation
+
+SBCPUFloating_PRIVATE_FRAMEWORKS = IOKit
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
