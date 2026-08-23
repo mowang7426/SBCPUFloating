@@ -2274,6 +2274,8 @@ static void sbcpuSmartChargeControlPropertyProbe()
 
     // 进入页面自动扫描
     sbcpuSmartChargeControlPropertyProbe();
+    // Test11: 探测充电控制通道（只读，不修改）
+    sbcpuSmartChargeControlProbe();
 
     [self.tableView reloadData];
 }
@@ -3385,6 +3387,68 @@ static NSInteger SBCPUChargingAdjust(NSInteger value, NSInteger step, NSInteger 
     if (value > max) value = max;
 
     return value;
+}
+
+
+// =====================================================
+// Test11 SmartCharge ControlProbe
+// 仅探测 AppleCharger / BatteryManager 控制通道
+// 不写入任何充电参数
+// =====================================================
+
+static NSString *sbcpuSmartChargeControlProbeStatus = @"未检测";
+static NSInteger sbcpuSmartChargeControlOpenCount = 0;
+
+static void sbcpuSmartChargeControlProbe()
+{
+    NSArray *targets = @[
+        @"AppleCharger",
+        @"AppleSmartBatteryManager",
+        @"IOPMPowerSource"
+    ];
+
+    NSMutableString *result = [NSMutableString string];
+
+    for (NSString *name in targets)
+    {
+        io_service_t service =
+        IOServiceGetMatchingService(kIOMainPortDefault,
+                                    IOServiceMatching(name.UTF8String));
+
+        if (!service)
+        {
+            [result appendFormat:@"%@: 未找到\n", name];
+            continue;
+        }
+
+        [result appendFormat:@"%@: FOUND\n", name];
+
+        io_connect_t connect = MACH_PORT_NULL;
+
+        kern_return_t kr =
+        IOServiceOpen(service,
+                      mach_task_self(),
+                      0,
+                      &connect);
+
+        if (kr == KERN_SUCCESS)
+        {
+            sbcpuSmartChargeControlOpenCount++;
+            [result appendFormat:@"  IOServiceOpen: SUCCESS\n"];
+
+            IOServiceClose(connect);
+        }
+        else
+        {
+            [result appendFormat:@"  IOServiceOpen: FAILED (%d)\n", kr];
+        }
+
+        IOObjectRelease(service);
+    }
+
+    sbcpuSmartChargeControlProbeStatus = [result copy];
+
+    NSLog(@"[SBCPU SmartCharge Test11]\n%@", sbcpuSmartChargeControlProbeStatus);
 }
 
 %ctor
