@@ -763,8 +763,8 @@ static void createCPUWindow()
      CGRectMake(
         30,
         200,
-        100,
-        50
+        150,
+        85
      )];
 
 
@@ -778,7 +778,7 @@ static void createCPUWindow()
 
 
     label.numberOfLines =
-    3;
+    0;
 
 
     label.layer.cornerRadius =
@@ -1400,11 +1400,11 @@ static void updateCPU()
         if(batteryLine.count)
             [displayLines addObject:[batteryLine componentsJoinedByString:@" "]];
 
-        if(sbcpuSmartChargeEnable && charging)
-            [displayLines addObject:smartChargeStateText()];
-
         if(showBatteryCurrent && currentText.length)
             [displayLines addObject:[NSString stringWithFormat:@"%@%@", chargeText, currentText]];
+
+        if(sbcpuSmartChargeEnable && charging)
+            [displayLines addObject:smartChargeStateText()];
 
         label.text = [displayLines componentsJoinedByString:@"\n"];
 
