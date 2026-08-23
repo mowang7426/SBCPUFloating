@@ -1,4 +1,4 @@
-#import <objc/message.h>
+// SmartCharge V0.1 base fix: IOKit port compatibility\n#import <objc/message.h>
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 #import <mach/mach.h>
@@ -2776,7 +2776,7 @@ static float SBCPUGetBatteryTemperature()
 {
     // iOS 电池温度读取基础接口
     // Test1 只读取，不修改充电策略
-    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault,
+    io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault,
                                                        IOServiceMatching("IOPMPowerSource"));
     if (!service) return 0;
 
