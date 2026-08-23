@@ -2299,10 +2299,73 @@ didSelectRowAtIndexPath:
     }
 
 
+    // SmartCharge 温度 +- 调节
+    if(indexPath.row >= 17 && indexPath.row <= 20)
+    {
+        NSInteger type = indexPath.row - 17;
+
+        NSString *title = @[@"保持快充温度",
+                            @"降低功率温度",
+                            @"暂停充电温度",
+                            @"断充保护温度"][type];
+
+        __weak typeof(self) weakSelf = self;
+
+        UIAlertController *alert =
+        [UIAlertController alertControllerWithTitle:title
+                                            message:@"使用 + / - 调节温度"
+                                     preferredStyle:UIAlertControllerStyleAlert];
+
+        [alert addAction:[UIAlertAction actionWithTitle:@"-1℃"
+                                                  style:UIAlertActionStyleDefault
+                                                handler:^(UIAlertAction *a){
+            switch(type)
+            {
+                case 0: sbcpuChargeTempFast = MAX(30, sbcpuChargeTempFast - 1); break;
+                case 1: sbcpuChargeTempReduce = MAX(35, sbcpuChargeTempReduce - 1); break;
+                case 2: sbcpuChargeTempPause = MAX(38, sbcpuChargeTempPause - 1); break;
+                case 3: sbcpuChargeTempStop = MAX(40, sbcpuChargeTempStop - 1); break;
+            }
+            [weakSelf saveSmartChargeTemps];
+        }]];
+
+        [alert addAction:[UIAlertAction actionWithTitle:@"+1℃"
+                                                  style:UIAlertActionStyleDefault
+                                                handler:^(UIAlertAction *a){
+            switch(type)
+            {
+                case 0: sbcpuChargeTempFast = MIN(45, sbcpuChargeTempFast + 1); break;
+                case 1: sbcpuChargeTempReduce = MIN(50, sbcpuChargeTempReduce + 1); break;
+                case 2: sbcpuChargeTempPause = MIN(55, sbcpuChargeTempPause + 1); break;
+                case 3: sbcpuChargeTempStop = MIN(60, sbcpuChargeTempStop + 1); break;
+            }
+            [weakSelf saveSmartChargeTemps];
+        }]];
+
+        [alert addAction:[UIAlertAction actionWithTitle:@"完成"
+                                                  style:UIAlertActionStyleCancel
+                                                handler:nil]];
+
+        [self presentViewController:alert animated:YES completion:nil];
+    }
+
+
+
     [tableView deselectRowAtIndexPath:
      indexPath
      animated:YES];
 
+}
+
+
+- (void)saveSmartChargeTemps
+{
+    [[NSUserDefaults standardUserDefaults] setInteger:sbcpuChargeTempFast forKey:@"SBCPU.ChargeFastTemp"];
+    [[NSUserDefaults standardUserDefaults] setInteger:sbcpuChargeTempReduce forKey:@"SBCPU.ChargeReduceTemp"];
+    [[NSUserDefaults standardUserDefaults] setInteger:sbcpuChargeTempPause forKey:@"SBCPU.ChargePauseTemp"];
+    [[NSUserDefaults standardUserDefaults] setInteger:sbcpuChargeTempStop forKey:@"SBCPU.ChargeStopTemp"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    [self.tableView reloadData];
 }
 
 
