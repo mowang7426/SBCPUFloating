@@ -2385,6 +2385,21 @@ titleForHeaderInSection:
 
 
 
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    if(indexPath.row == 13)
+    {
+        SBCPUSmartChargeControlPropertyDetailController *vc =
+        [[SBCPUSmartChargeControlPropertyDetailController alloc]
+         initWithStyle:UITableViewStyleInsetGrouped];
+
+        [self.navigationController pushViewController:vc animated:YES];
+    }
+
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+}
+
+
 #pragma mark 滑动调整
 
 - (void)changeScaleSlider:(UISlider *)slider
@@ -2631,11 +2646,10 @@ cellForRowAtIndexPath:
 
     if(indexPath.row == 13)
     {
-        SBCPUSmartChargeControlPropertyDetailController *vc =
-        [[SBCPUSmartChargeControlPropertyDetailController alloc]
-         initWithStyle:UITableViewStyleInsetGrouped];
-        [self.navigationController pushViewController:vc animated:YES];
-        return cell;
+        cell.textLabel.text = @"控制属性探测";
+        cell.detailTextLabel.text = @"手动进入扫描";
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    };
     }
 
     if(indexPath.row == 12)
