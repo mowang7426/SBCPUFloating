@@ -2568,12 +2568,14 @@ static void SBCPUChargingLoadSettings()
     [d integerForKey:@"SBCPUCharging.CutTemp"] : 42;
 }
 
+__attribute__((unused))
 static void SBCPUChargingSaveValue(NSString *key, NSInteger value)
 {
     [[NSUserDefaults standardUserDefaults] setInteger:value forKey:key];
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
+__attribute__((unused))
 static NSInteger SBCPUChargingAdjust(NSInteger value, NSInteger step, NSInteger min, NSInteger max)
 {
     value += step;
