@@ -1323,7 +1323,7 @@ static void updateCPU()
          powerText,
          chargeText];
 
-pu >= 80.0)
+if (cpu >= 80.0)
             label.textColor = UIColor.redColor;
         else
             label.textColor = UIColor.whiteColor;
