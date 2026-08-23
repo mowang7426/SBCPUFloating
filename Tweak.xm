@@ -1447,59 +1447,7 @@ cellForRowAtIndexPath:
 }
 
 
-- (void)tableView:
-(UITableView *)tableView
-didSelectRowAtIndexPath:
-(NSIndexPath *)indexPath
-{
 
-    // 智能温控 +- 调节
-    if(indexPath.row >= 17 && indexPath.row <= 20)
-    {
-        NSInteger *ptrs[] = {&sbcpuChargeTempFast,&sbcpuChargeTempReduce,&sbcpuChargeTempPause,&sbcpuChargeTempStop};
-        NSInteger *v = ptrs[indexPath.row-17];
-        *v += 1;
-        if(*v > 60) *v = 20;
-        [[NSUserDefaults standardUserDefaults] setInteger:*v forKey:[NSString stringWithFormat:@"SBCPU.ChargeTemp.%ld",(long)(indexPath.row-17)]];
-        [[NSUserDefaults standardUserDefaults] synchronize];
-        [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
-        return;
-    }
-
-    NSArray *values =
-    @[
-      @80,
-      @100,
-      @120,
-      @140,
-      @160,
-      @180,
-      @200
-    ];
-
-
-    logoutCPUThreshold =
-    [values[indexPath.row] doubleValue];
-
-
-    [[NSUserDefaults standardUserDefaults]
-     setDouble:
-     logoutCPUThreshold
-     forKey:
-     @"SBCPU.CPUThreshold"];
-
-
-    [[NSUserDefaults standardUserDefaults]
-     synchronize];
-
-
-    [self.tableView reloadData];
-
-
-    [self.navigationController
-     popViewControllerAnimated:YES];
-
-}
 
 
 @end
@@ -1600,46 +1548,7 @@ cellForRowAtIndexPath:
 }
 
 
-- (void)tableView:
-(UITableView *)tableView
-didSelectRowAtIndexPath:
-(NSIndexPath *)indexPath
-{
 
-    NSArray *values =
-    @[
-      @10,
-      @30,
-      @60,
-      @120,
-      @180,
-      @300,
-      @600
-    ];
-
-
-    logoutDuration =
-    [values[indexPath.row] integerValue];
-
-
-    [[NSUserDefaults standardUserDefaults]
-     setInteger:
-     logoutDuration
-     forKey:
-     @"SBCPU.LogoutTime"];
-
-
-    [[NSUserDefaults standardUserDefaults]
-     synchronize];
-
-
-    [self.tableView reloadData];
-
-
-    [self.navigationController
-     popViewControllerAnimated:YES];
-
-}
 
 
 @end
