@@ -166,28 +166,6 @@ static void registerV160Observers(void);
 
 // V1.9.0 Smart Rotation Test2.6
 // iOS 17 Smart Orientation Lock controller
-static id getSBUIController()
-{
-    Class cls = NSClassFromString(@"SBUIController");
-
-    if(!cls)
-    {
-        NSLog(@"[SBCPU] SBUIController not found");
-        return nil;
-    }
-
-    SEL sel = NSSelectorFromString(@"sharedInstance");
-
-    if([cls respondsToSelector:sel])
-    {
-        return ((id (*)(id, SEL))objc_msgSend)(cls, sel);
-    }
-
-    NSLog(@"[SBCPU] SBUIController sharedInstance missing");
-    return nil;
-}
-
-
 static void setSmartRotationLock(BOOL enabled)
 {
     SBCPURotationLog([NSString stringWithFormat:@"[SBCPU] try set rotation lock:%d", enabled]);
