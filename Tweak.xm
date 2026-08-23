@@ -1316,9 +1316,7 @@ static void updateCPU()
 
         label.text =
         [NSString stringWithFormat:
-         @"SB CPU %.1f%%
-%@ %@
-%@ %@",
+         @"SB CPU %.1f%%\\n\\U0001F50B%@ \\U0001F321%@\\n\\U000026A1%@ %@",
          cpu,
          batteryText,
          tempText,
