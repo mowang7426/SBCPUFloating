@@ -1934,6 +1934,53 @@ static void sbcpuSmartChargeServiceScan()
     sbcpuSmartChargeServiceScanStatus = result;
 }
 
+
+@interface SBCPUSmartChargeServiceDetailController : UITableViewController
+@end
+
+@implementation SBCPUSmartChargeServiceDetailController
+
+- (void)viewDidLoad
+{
+    [super viewDidLoad];
+    self.title = @"服务扫描详情";
+}
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
+{
+    return 4;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    UITableViewCell *cell =
+    [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+
+    NSArray *names = @[
+        @"AppleSmartBattery",
+        @"IOPMPowerSource",
+        @"AppleCharger",
+        @"AppleSMC"
+    ];
+
+    NSString *result = sbcpuSmartChargeServiceScanStatus ?: @"未知";
+
+    cell.textLabel.text = names[indexPath.row];
+
+    if([result containsString:names[indexPath.row]])
+    {
+        cell.detailTextLabel.text = @"已检测";
+    }
+    else
+    {
+        cell.detailTextLabel.text = @"未发现";
+    }
+
+    return cell;
+}
+
+@end
+
 @interface SBCPUSmartChargeDiagnosticsController : UITableViewController
 @end
 
@@ -2008,9 +2055,23 @@ static void sbcpuSmartChargeServiceScan()
     }
     if(indexPath.row == 11){
         cell.textLabel.text = @"服务扫描";
-        cell.detailTextLabel.text = sbcpuSmartChargeServiceScanStatus;
+        cell.detailTextLabel.text = @"点击查看详情";
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     }
     return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    if(indexPath.row == 11)
+    {
+        SBCPUSmartChargeServiceDetailController *vc =
+        [[SBCPUSmartChargeServiceDetailController alloc]
+         initWithStyle:UITableViewStyleInsetGrouped];
+
+        [self.navigationController pushViewController:vc animated:YES];
+        return;
+    }
 }
 
 @end
