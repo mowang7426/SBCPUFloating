@@ -1899,6 +1899,41 @@ static void sbcpuSmartChargeDeepProbe()
     }
 }
 
+
+static NSString *sbcpuSmartChargeServiceScanStatus = @"未扫描";
+
+static void sbcpuSmartChargeServiceScan()
+{
+    NSMutableString *result = [NSMutableString string];
+
+    NSArray *services = @[
+        @"AppleSmartBattery",
+        @"IOPMPowerSource",
+        @"AppleCharger",
+        @"AppleSMC"
+    ];
+
+    for(NSString *name in services)
+    {
+        io_service_t service = IOServiceGetMatchingService(
+            kIOMasterPortDefault,
+            IOServiceMatching([name UTF8String])
+        );
+
+        if(service)
+        {
+            [result appendFormat:@"%@:YES  ", name];
+            IOObjectRelease(service);
+        }
+        else
+        {
+            [result appendFormat:@"%@:NO  ", name];
+        }
+    }
+
+    sbcpuSmartChargeServiceScanStatus = result;
+}
+
 @interface SBCPUSmartChargeDiagnosticsController : UITableViewController
 @end
 
@@ -1910,11 +1945,12 @@ static void sbcpuSmartChargeDeepProbe()
     self.title = @"SmartCharge 诊断";
     sbcpuSmartChargeDeepProbe();
     sbcpuSmartChargeDeepPropertyScan();
+    sbcpuSmartChargeServiceScan();
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    return 11;
+    return 12;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
@@ -1969,6 +2005,10 @@ static void sbcpuSmartChargeDeepProbe()
     if(indexPath.row == 10){
         cell.textLabel.text = @"写入测试";
         cell.detailTextLabel.text = @"Test10E 只读模式";
+    }
+    if(indexPath.row == 11){
+        cell.textLabel.text = @"服务扫描";
+        cell.detailTextLabel.text = sbcpuSmartChargeServiceScanStatus;
     }
     return cell;
 }
