@@ -860,14 +860,6 @@ static void createCPUWindow()
 
 
 
-#pragma mark -
-- (void)changeSmartCharge:(UISwitch *)sw
-{
-    sbcpuSmartChargeEnable = sw.isOn;
-    [[NSUserDefaults standardUserDefaults] setBool:sbcpuSmartChargeEnable forKey:@"SBCPU.SmartCharge"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-}
-
 #pragma mark 自动注销
 #pragma mark -
 
