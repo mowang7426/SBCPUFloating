@@ -2073,7 +2073,7 @@ static void sbcpuSmartChargeControlServiceProbe()
     sbcpuSmartChargeDeepPropertyScan();
     sbcpuSmartChargeServiceScan();
     sbcpuSmartChargeControlServiceProbe();
-    sbcpuSmartChargeControlPropertyProbe();
+    sbcpuSmartChargeControlServiceProbe();
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
@@ -2165,8 +2165,8 @@ static void sbcpuSmartChargeControlServiceProbe()
 
     if(indexPath.row == 13)
     {
-        SBCPUSmartChargeControlPropertyDetailController *vc =
-        [[SBCPUSmartChargeControlPropertyDetailController alloc]
+        SBCPUSmartChargeControlServiceDetailController *vc =
+        [[SBCPUSmartChargeControlServiceDetailController alloc]
          initWithStyle:UITableViewStyleInsetGrouped];
         [self.navigationController pushViewController:vc animated:YES];
         return;
@@ -2219,7 +2219,7 @@ static NSString *sbcpuScanPropertyKeys(io_service_t service)
     return result;
 }
 
-static void sbcpuSmartChargeControlPropertyProbe()
+static void sbcpuSmartChargeControlServiceProbe()
 {
     NSMutableString *result=[NSMutableString string];
 
@@ -2247,10 +2247,10 @@ static void sbcpuSmartChargeControlPropertyProbe()
 }
 
 
-@interface SBCPUSmartChargeControlPropertyDetailController : UITableViewController
+@interface SBCPUSmartChargeControlServiceDetailController : UITableViewController
 @end
 
-@implementation SBCPUSmartChargeControlPropertyDetailController
+@implementation SBCPUSmartChargeControlServiceDetailController
 
 - (void)viewDidLoad
 {
@@ -2603,8 +2603,8 @@ cellForRowAtIndexPath:
 
     if(indexPath.row == 13)
     {
-        SBCPUSmartChargeControlPropertyDetailController *vc =
-        [[SBCPUSmartChargeControlPropertyDetailController alloc]
+        SBCPUSmartChargeControlServiceDetailController *vc =
+        [[SBCPUSmartChargeControlServiceDetailController alloc]
          initWithStyle:UITableViewStyleInsetGrouped];
         [self.navigationController pushViewController:vc animated:YES];
         return;
