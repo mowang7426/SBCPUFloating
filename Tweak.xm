@@ -60,7 +60,6 @@ static BOOL autoWindowSizeEnable = NO;
 static BOOL smartRotationEnable = YES;
 static BOOL rotationLandscapeDetected = NO;
 static NSTimeInterval rotationDelay = 1.0;
-static BOOL orientationLockManagerAvailable = NO;
 static BOOL userHadRotationLock = NO;
 static BOOL changedRotationLockByPlugin = NO;
 
@@ -2490,6 +2489,9 @@ static void handleSmartRotation(UIDeviceOrientation orientation)
     if(landscape != rotationLandscapeDetected)
     {
         rotationLandscapeDetected = landscape;
+
+        // V1.9.0 Test2.2: 自动临时处理方向锁
+        handleSmartRotationLockChange(landscape);
 
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
                                       (int64_t)(rotationDelay * NSEC_PER_SEC)),
