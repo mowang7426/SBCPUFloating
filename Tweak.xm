@@ -1340,10 +1340,14 @@ static void updateSmartChargeState(double temperature)
  降低功率 / 暂停充电 / 恢复充电
 */
 
-static BOOL sbcpuSmartChargeControlReady = NO;
+static BOOL sbcpuSmartChargeControlReady = YES;
 
 static void smartChargeControlEngine()
 {
+    if (!sbcpuSmartChargeControlReady) {
+        return;
+    }
+
     switch(smartChargeState)
     {
         case SBCPUSmartChargeReduce:
