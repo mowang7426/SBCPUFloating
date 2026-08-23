@@ -2168,7 +2168,7 @@ static void sbcpuSmartChargeControlServiceProbe()
         [[SBCPUSmartChargeControlServiceDetailController alloc]
          initWithStyle:UITableViewStyleInsetGrouped];
         [self.navigationController pushViewController:vc animated:YES];
-        return;
+        return cell;
     }
 
     if(indexPath.row == 12)
@@ -2823,7 +2823,7 @@ didSelectRowAtIndexPath:
         [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPU.DockMode"];
         [[NSUserDefaults standardUserDefaults] synchronize];
         [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
-        return cell;
+        return;
     }
 
     if(indexPath.row == 1)
