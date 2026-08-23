@@ -2468,8 +2468,6 @@ static void registerV160Observers()
     });
 }
 
-static void loadAutoWindowSize(){ autoWindowSizeEnable = [[NSUserDefaults standardUserDefaults] boolForKey:@"SBCPU.AutoWindowSize"]; }
-
 %ctor
 {
     autoWindowSizeEnable = [[NSUserDefaults standardUserDefaults] boolForKey:@"SBCPU.AutoWindowSize"];
