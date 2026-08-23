@@ -1333,6 +1333,39 @@ static void updateSmartChargeState(double temperature)
 static BOOL sbcpuSmartChargeProbeDone = NO;
 static NSString *sbcpuSmartChargeHardwareStatus = @"Unknown";
 
+// Test10E Deep Property Scan
+// 仅扫描 AppleSmartBattery 属性，不修改任何充电参数
+static NSString *sbcpuSmartChargePropertyScanStatus = @"未扫描";
+static NSInteger sbcpuSmartChargePropertyCount = 0;
+static NSInteger sbcpuSmartChargeWritableCount = 0;
+
+static void sbcpuSmartChargeDeepPropertyScan()
+{
+    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault,
+                                                       IOServiceMatching("AppleSmartBattery"));
+    if (!service)
+    {
+        sbcpuSmartChargePropertyScanStatus = @"AppleSmartBattery 不可用";
+        return;
+    }
+
+    CFMutableDictionaryRef properties = NULL;
+    if (IORegistryEntryCreateCFProperties(service, &properties, kCFAllocatorDefault, kNilOptions) == KERN_SUCCESS && properties)
+    {
+        sbcpuSmartChargePropertyCount = (NSInteger)CFDictionaryGetCount(properties);
+        sbcpuSmartChargeWritableCount = 0;
+        sbcpuSmartChargePropertyScanStatus = [NSString stringWithFormat:@"发现属性:%ld 可写:%ld", (long)sbcpuSmartChargePropertyCount, (long)sbcpuSmartChargeWritableCount];
+        CFRelease(properties);
+    }
+    else
+    {
+        sbcpuSmartChargePropertyScanStatus = @"属性读取失败";
+    }
+
+    IOObjectRelease(service);
+}
+
+
 static void smartChargeHardwareProbe()
 {
     if (sbcpuSmartChargeProbeDone) return;
@@ -1876,11 +1909,12 @@ static void sbcpuSmartChargeDeepProbe()
     [super viewDidLoad];
     self.title = @"SmartCharge 诊断";
     sbcpuSmartChargeDeepProbe();
+    sbcpuSmartChargeDeepPropertyScan();
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    return 9;
+    return 11;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
@@ -1927,6 +1961,14 @@ static void sbcpuSmartChargeDeepProbe()
     if(indexPath.row == 8){
         cell.textLabel.text = @"控制写入";
         cell.detailTextLabel.text = @"仅探测 未修改";
+    }
+    if(indexPath.row == 9){
+        cell.textLabel.text = @"属性扫描";
+        cell.detailTextLabel.text = sbcpuSmartChargePropertyScanStatus;
+    }
+    if(indexPath.row == 10){
+        cell.textLabel.text = @"写入测试";
+        cell.detailTextLabel.text = @"Test10E 只读模式";
     }
     return cell;
 }
