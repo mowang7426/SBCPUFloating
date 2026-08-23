@@ -1269,6 +1269,59 @@ static void updateFloatingSize()
 }
 
 
+
+// SmartCharge Engine Test9
+typedef NS_ENUM(NSInteger, SBCPUSmartChargeState)
+{
+    SBCPUSmartChargeNormal = 0,
+    SBCPUSmartChargeReduce,
+    SBCPUSmartChargePause,
+    SBCPUSmartChargeStop
+};
+
+static SBCPUSmartChargeState smartChargeState = SBCPUSmartChargeNormal;
+
+static NSString *smartChargeStateText()
+{
+    switch(smartChargeState)
+    {
+        case SBCPUSmartChargeReduce:
+            return @"🟡 降低功率";
+        case SBCPUSmartChargePause:
+            return @"🟠 暂停充电";
+        case SBCPUSmartChargeStop:
+            return @"🔴 保护断充";
+        default:
+            return @"🟢 正常充电";
+    }
+}
+
+static void updateSmartChargeState(double temperature)
+{
+    if(!sbcpuSmartChargeEnable || temperature < 0)
+    {
+        smartChargeState = SBCPUSmartChargeNormal;
+        return;
+    }
+
+    if(temperature >= sbcpuChargeTempStop)
+    {
+        smartChargeState = SBCPUSmartChargeStop;
+    }
+    else if(temperature >= sbcpuChargeTempPause)
+    {
+        smartChargeState = SBCPUSmartChargePause;
+    }
+    else if(temperature >= sbcpuChargeTempReduce)
+    {
+        smartChargeState = SBCPUSmartChargeReduce;
+    }
+    else
+    {
+        smartChargeState = SBCPUSmartChargeNormal;
+    }
+}
+
 #pragma mark -
 #pragma mark CPU刷新
 #pragma mark -
@@ -1296,6 +1349,8 @@ static void updateCPU()
         double temp = getBatteryTemperature();
         double current = getBatteryCurrent();
         BOOL charging = isCharging();
+
+        updateSmartChargeState(temp);
 
 
         NSString *batteryText = @"";
@@ -1344,6 +1399,9 @@ static void updateCPU()
 
         if(batteryLine.count)
             [displayLines addObject:[batteryLine componentsJoinedByString:@" "]];
+
+        if(sbcpuSmartChargeEnable && charging)
+            [displayLines addObject:smartChargeStateText()];
 
         if(showBatteryCurrent && currentText.length)
             [displayLines addObject:[NSString stringWithFormat:@"%@%@", chargeText, currentText]];
