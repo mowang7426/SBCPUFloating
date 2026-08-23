@@ -1981,6 +1981,85 @@ static void sbcpuSmartChargeServiceScan()
 
 @end
 
+
+
+// ==============================
+// Test10G 控制服务探测
+// ==============================
+
+static NSString *sbcpuSmartChargeControlServiceStatus = @"未检测";
+
+static void sbcpuSmartChargeControlServiceProbe()
+{
+    NSMutableString *result = [NSMutableString string];
+
+    NSArray *services = @[
+        @"AppleCharger",
+        @"IOPMPowerSource",
+        @"AppleSMC"
+    ];
+
+    for(NSString *name in services)
+    {
+        io_service_t service = IOServiceGetMatchingService(
+            kIOMasterPortDefault,
+            IOServiceMatching([name UTF8String])
+        );
+
+        if(service)
+        {
+            [result appendFormat:@"%@:YES  ", name];
+            IOObjectRelease(service);
+        }
+        else
+        {
+            [result appendFormat:@"%@:NO  ", name];
+        }
+    }
+
+    sbcpuSmartChargeControlServiceStatus = result;
+}
+
+
+@interface SBCPUSmartChargeControlServiceDetailController : UITableViewController
+@end
+
+@implementation SBCPUSmartChargeControlServiceDetailController
+
+- (void)viewDidLoad
+{
+    [super viewDidLoad];
+    self.title = @"控制服务探测";
+}
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
+{
+    return 3;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    UITableViewCell *cell =
+    [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+
+    NSArray *names = @[
+        @"AppleCharger",
+        @"IOPMPowerSource",
+        @"AppleSMC"
+    ];
+
+    NSString *result = sbcpuSmartChargeControlServiceStatus ?: @"未知";
+
+    cell.textLabel.text = names[indexPath.row];
+    cell.detailTextLabel.text =
+    [result containsString:names[indexPath.row]] ? @"已检测" : @"未发现";
+
+    return cell;
+}
+
+@end
+
+
 @interface SBCPUSmartChargeDiagnosticsController : UITableViewController
 @end
 
@@ -1993,11 +2072,12 @@ static void sbcpuSmartChargeServiceScan()
     sbcpuSmartChargeDeepProbe();
     sbcpuSmartChargeDeepPropertyScan();
     sbcpuSmartChargeServiceScan();
+    sbcpuSmartChargeControlServiceProbe();
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    return 12;
+    return 13;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
@@ -2058,6 +2138,11 @@ static void sbcpuSmartChargeServiceScan()
         cell.detailTextLabel.text = @"点击查看详情";
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     }
+    if(indexPath.row == 12){
+        cell.textLabel.text = @"控制服务探测";
+        cell.detailTextLabel.text = @"点击查看详情";
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    }
     return cell;
 }
 
@@ -2070,7 +2155,16 @@ static void sbcpuSmartChargeServiceScan()
          initWithStyle:UITableViewStyleInsetGrouped];
 
         [self.navigationController pushViewController:vc animated:YES];
-        return;
+     }
+
+    if(indexPath.row == 12)
+    {
+        SBCPUSmartChargeControlServiceDetailController *vc =
+        [[SBCPUSmartChargeControlServiceDetailController alloc]
+         initWithStyle:UITableViewStyleInsetGrouped];
+
+        [self.navigationController pushViewController:vc animated:YES];
+       return;
     }
 }
 
