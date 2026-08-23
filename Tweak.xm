@@ -2073,7 +2073,6 @@ static void sbcpuSmartChargeControlServiceProbe()
     sbcpuSmartChargeDeepPropertyScan();
     sbcpuSmartChargeServiceScan();
     sbcpuSmartChargeControlServiceProbe();
-    sbcpuSmartChargeControlServiceProbe();
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
@@ -2219,7 +2218,7 @@ static NSString *sbcpuScanPropertyKeys(io_service_t service)
     return result;
 }
 
-static void sbcpuSmartChargeControlServiceProbe()
+static void sbcpuSmartChargeControlPropertyProbe()
 {
     NSMutableString *result=[NSMutableString string];
 
@@ -2247,10 +2246,10 @@ static void sbcpuSmartChargeControlServiceProbe()
 }
 
 
-@interface SBCPUSmartChargeControlServiceDetailController : UITableViewController
+@interface SBCPUSmartChargeControlPropertyDetailController : UITableViewController
 @end
 
-@implementation SBCPUSmartChargeControlServiceDetailController
+@implementation SBCPUSmartChargeControlPropertyDetailController
 
 - (void)viewDidLoad
 {
@@ -2603,11 +2602,11 @@ cellForRowAtIndexPath:
 
     if(indexPath.row == 13)
     {
-        SBCPUSmartChargeControlServiceDetailController *vc =
-        [[SBCPUSmartChargeControlServiceDetailController alloc]
+        SBCPUSmartChargeControlPropertyDetailController *vc =
+        [[SBCPUSmartChargeControlPropertyDetailController alloc]
          initWithStyle:UITableViewStyleInsetGrouped];
         [self.navigationController pushViewController:vc animated:YES];
-        return;
+        return cell;
     }
 
     if(indexPath.row == 12)
@@ -2824,7 +2823,7 @@ didSelectRowAtIndexPath:
         [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPU.DockMode"];
         [[NSUserDefaults standardUserDefaults] synchronize];
         [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
-        return;
+        return cell;
     }
 
     if(indexPath.row == 1)
@@ -2871,7 +2870,7 @@ didSelectRowAtIndexPath:
          pushViewController:vc
          animated:YES];
 
-        return;
+        return cell;
     }
 
 
@@ -2992,7 +2991,7 @@ didSelectRowAtIndexPath:
         };
 
         [self.navigationController pushViewController:vc animated:YES];
-        return;
+        return cell;
     }
 
 
@@ -3030,13 +3029,13 @@ static void openSettings()
 
     if(settingsShowing)
     {
-        return;
+        return cell;
     }
 
 
     if(!cpuWindow)
     {
-        return;
+        return cell;
     }
 
 
@@ -3046,7 +3045,7 @@ static void openSettings()
 
     if(!root)
     {
-        return;
+        return cell;
     }
 
 
@@ -3056,7 +3055,7 @@ static void openSettings()
 
     if(root.presentedViewController)
     {
-        return;
+        return cell;
     }
 
 
@@ -3108,13 +3107,13 @@ static void openSettings()
 static void applySmartLayout()
 {
     if(!cpuWindow || !label || !smartLayoutEnable || settingsShowing)
-        return;
+        return cell;
 
     dispatch_async(dispatch_get_main_queue(), ^{
 
         UIWindowScene *scene = cpuWindow.windowScene;
         if(!scene)
-            return;
+            return cell;
 
         CGRect area = scene.coordinateSpace.bounds;
         UIEdgeInsets safe = scene.windows.firstObject.safeAreaInsets;
@@ -3196,7 +3195,7 @@ static void registerV160Observers()
              usingBlock:^(NSNotification *n){
 
                  if(settingsShowing)
-                    return;
+                    return cell;
 
                  keyboardShowing = YES;
 
@@ -3212,7 +3211,7 @@ static void registerV160Observers()
 
                      if(centerY < limitY)
                      {
-                         return;
+                         return cell;
                      }
 
                      // 只临时移动位置，不重新布局，不修改尺寸/透明度/圆角
@@ -3355,7 +3354,7 @@ static NSInteger SBCPUChargingAdjust(NSInteger value, NSInteger step, NSInteger 
     if(![process
          isEqualToString:@"SpringBoard"])
     {
-        return;
+        return cell;
     }
 
 
