@@ -2456,6 +2456,20 @@ didSelectRowAtIndexPath:
     }
 
 
+    if(indexPath.row == 21)
+    {
+        SBCPUSmartChargeDiagnosticsController *vc =
+        [[SBCPUSmartChargeDiagnosticsController alloc]
+         initWithStyle:UITableViewStyleInsetGrouped];
+
+        [self.navigationController
+         pushViewController:vc
+         animated:YES];
+
+        return;
+    }
+
+
     if(indexPath.row == 4)
     {
 
