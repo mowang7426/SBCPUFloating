@@ -2200,19 +2200,29 @@ static NSString *sbcpuScanPropertyKeys(io_service_t service)
     if(IORegistryEntryCreateCFProperties(service,&props,kCFAllocatorDefault,0)==KERN_SUCCESS && props)
     {
         CFIndex count = CFDictionaryGetCount(props);
-        [result appendFormat:@"属性:%ld ",(long)count];
+        [result appendFormat:@"属性数量: %ld\n",(long)count];
 
-        NSArray *keys = @[@"Current",@"Limit",@"Power",@"Charge",@"Enable",@"Voltage"];
+        NSArray *keys = @[@"Current",@"Limit",@"Power",@"Charge",@"Enable",@"Voltage",
+                          @"ChargingCurrent",@"ChargingVoltage",@"BatteryPercent"];
 
         for(NSString *key in keys)
         {
             if(CFDictionaryContainsKey(props,(__bridge CFStringRef)key))
             {
-                [result appendFormat:@"%@:YES ",key];
+                [result appendFormat:@"  %@ : 支持\n",key];
             }
         }
 
+        if(result.length == [[NSString stringWithFormat:@"属性数量: %ld\n",(long)count] length])
+        {
+            [result appendString:@"  未发现常用控制字段\n"];
+        }
+
         CFRelease(props);
+    }
+    else
+    {
+        [result appendString:@"读取失败\n"];
     }
 
     return result;
@@ -2231,14 +2241,16 @@ static void sbcpuSmartChargeControlPropertyProbe()
             IOServiceMatching([name UTF8String])
         );
 
+        [result appendFormat:@"\n[%@]\n",name];
+
         if(service)
         {
-            [result appendFormat:@"%@:%@  ",name,sbcpuScanPropertyKeys(service)];
+            [result appendString:sbcpuScanPropertyKeys(service)];
             IOObjectRelease(service);
         }
         else
         {
-            [result appendFormat:@"%@:NO  ",name];
+            [result appendString:@"未找到服务\n"];
         }
     }
 
@@ -2254,7 +2266,13 @@ static void sbcpuSmartChargeControlPropertyProbe()
 - (void)viewDidLoad
 {
     [super viewDidLoad];
+
     self.title=@"控制属性探测";
+
+    // 进入页面自动扫描
+    sbcpuSmartChargeControlPropertyProbe();
+
+    [self.tableView reloadData];
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
@@ -2262,12 +2280,20 @@ static void sbcpuSmartChargeControlPropertyProbe()
     return 1;
 }
 
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    return 260;
+}
+
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    UITableViewCell *cell=[[UITableViewCell alloc]initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+    UITableViewCell *cell=[[UITableViewCell alloc]initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
 
     cell.textLabel.text=@"扫描结果";
+    cell.textLabel.numberOfLines=1;
+
     cell.detailTextLabel.text=sbcpuSmartChargeControlPropertyStatus;
+    cell.detailTextLabel.numberOfLines=0;
 
     return cell;
 }
