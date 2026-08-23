@@ -4,6 +4,10 @@
 #import <signal.h>
 #import <IOKit/IOKitLib.h>
 
+#ifndef kIOMainPortDefault
+#define kIOMainPortDefault kIOMasterPortDefault
+#endif
+
 
 #pragma mark -
 #pragma mark V1.5.8 Global
