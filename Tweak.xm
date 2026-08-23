@@ -2168,7 +2168,7 @@ static void sbcpuSmartChargeControlServiceProbe()
         [[SBCPUSmartChargeControlServiceDetailController alloc]
          initWithStyle:UITableViewStyleInsetGrouped];
         [self.navigationController pushViewController:vc animated:YES];
-        return;
+        return cell;
     }
 
     if(indexPath.row == 12)
