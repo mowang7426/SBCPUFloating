@@ -1822,6 +1822,50 @@ cellForRowAtIndexPath:
 @end
 
 
+
+static NSString *sbcpuSmartChargeDeepProbeStatus = @"未检测";
+
+static void sbcpuSmartChargeDeepProbe()
+{
+    io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault,
+        IOServiceMatching("AppleSmartBattery"));
+
+    if(service)
+    {
+        CFMutableDictionaryRef props = NULL;
+
+        kern_return_t kr = IORegistryEntryCreateCFProperties(
+            service,
+            &props,
+            kCFAllocatorDefault,
+            0);
+
+        if(kr == KERN_SUCCESS && props)
+        {
+            BOOL hasCurrentLimit =
+            CFDictionaryContainsKey(props, CFSTR("ChargeCurrentLimit")) ||
+            CFDictionaryContainsKey(props, CFSTR("CurrentLimit"));
+
+            BOOL hasCharging =
+            CFDictionaryContainsKey(props, CFSTR("ChargingEnabled")) ||
+            CFDictionaryContainsKey(props, CFSTR("BatteryCharging"));
+
+            sbcpuSmartChargeDeepProbeStatus =
+            [NSString stringWithFormat:@"CurrentLimit:%@  Charge:%@",
+             hasCurrentLimit ? @"YES" : @"NO",
+             hasCharging ? @"YES" : @"NO"];
+
+            CFRelease(props);
+        }
+
+        IOObjectRelease(service);
+    }
+    else
+    {
+        sbcpuSmartChargeDeepProbeStatus = @"未找到 AppleSmartBattery";
+    }
+}
+
 @interface SBCPUSmartChargeDiagnosticsController : UITableViewController
 @end
 
@@ -1831,11 +1875,12 @@ cellForRowAtIndexPath:
 {
     [super viewDidLoad];
     self.title = @"SmartCharge 诊断";
+    sbcpuSmartChargeDeepProbe();
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    return 7;
+    return 9;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
@@ -1874,6 +1919,14 @@ cellForRowAtIndexPath:
     if(indexPath.row == 6){
         cell.textLabel.text = @"SmartCharge 状态";
         cell.detailTextLabel.text = smartChargeStateText();
+    }
+    if(indexPath.row == 7){
+        cell.textLabel.text = @"CurrentLimit 探测";
+        cell.detailTextLabel.text = sbcpuSmartChargeDeepProbeStatus;
+    }
+    if(indexPath.row == 8){
+        cell.textLabel.text = @"控制写入";
+        cell.detailTextLabel.text = @"仅探测 未修改";
     }
     return cell;
 }
