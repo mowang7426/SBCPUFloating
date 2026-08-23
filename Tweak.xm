@@ -5,6 +5,43 @@
 #import <signal.h>
 #import <IOKit/IOKitLib.h>
 
+
+// V1.9.0 SmartRotation Test2.8 Debug
+// File logger for Relaxin/iOS environment
+static void SBCPURotationLog(NSString *msg)
+{
+    NSString *path = @"/var/mobile/SBCPUFloating.log";
+    NSString *old = [NSString stringWithContentsOfFile:path
+                                               encoding:NSUTF8StringEncoding
+                                                  error:nil];
+    NSString *line = [NSString stringWithFormat:@"%@\n%@",
+                      old ?: @"",
+                      msg];
+    [line writeToFile:path
+           atomically:YES
+             encoding:NSUTF8StringEncoding
+                error:nil];
+}
+
+static void SBCPUScanRotationClasses(void)
+{
+    NSArray *classes = @[
+        @"SBOrientationLockManager",
+        @"SBOrientationManager",
+        @"SBScreenOrientationController",
+        @"SBUIController"
+    ];
+
+    for (NSString *name in classes)
+    {
+        if (NSClassFromString(name))
+        {
+            SBCPURotationLog([NSString stringWithFormat:@"[SBCPU] Found class %@", name]);
+        }
+    }
+}
+
+
 // V1.9.0 Smart Rotation Test2.5
 // Forward declaration: must appear before SBOrientationManager hook
 static void handleSmartRotationLockChange(BOOL landscape);
@@ -153,18 +190,43 @@ static id getSBUIController()
 
 static void setSmartRotationLock(BOOL enabled)
 {
-    id controller = getSBUIController();
+    SBCPURotationLog([NSString stringWithFormat:@"[SBCPU] try set rotation lock:%d", enabled]);
+
+    Class cls = NSClassFromString(@"SBOrientationLockManager");
+
+    if(!cls)
+    {
+        cls = NSClassFromString(@"SBScreenOrientationController");
+    }
+
+    if(!cls)
+    {
+        cls = NSClassFromString(@"SBUIController");
+    }
+
+    if(!cls)
+    {
+        SBCPURotationLog(@"[SBCPU] no rotation controller found");
+        return;
+    }
+
+    id controller = nil;
+
+    SEL shared = NSSelectorFromString(@"sharedInstance");
+
+    if([cls respondsToSelector:shared])
+    {
+        controller = ((id (*)(id, SEL))objc_msgSend)(cls, shared);
+    }
 
     if(!controller)
-        return;
+    {
+        controller = [cls new];
+    }
 
-    NSArray *selectors = @[
-        @"setOrientationLockEnabled:",
-        @"setOrientationLocked:",
-        @"setLockEnabled:"
-    ];
-
-    BOOL called = NO;
+    NSArray *selectors = enabled ?
+    @[@"lock", @"setOrientationLockEnabled:", @"setOrientationLocked:", @"setLockEnabled:"] :
+    @[@"unlock", @"setOrientationLockEnabled:", @"setOrientationLocked:", @"setLockEnabled:"];
 
     for(NSString *name in selectors)
     {
@@ -172,29 +234,23 @@ static void setSmartRotationLock(BOOL enabled)
 
         if([controller respondsToSelector:sel])
         {
-            ((void (*)(id, SEL, BOOL))objc_msgSend)
-            (controller, sel, enabled);
+            if([name hasSuffix:@":"])
+            {
+                ((void (*)(id, SEL, BOOL))objc_msgSend)(controller, sel, enabled);
+            }
+            else
+            {
+                ((void (*)(id, SEL))objc_msgSend)(controller, sel);
+            }
 
-            NSLog(@"[SBCPU] Orientation selector %@ called state:%d",
-                  name, enabled);
-
-            called = YES;
-            break;
+            NSString *log = [NSString stringWithFormat:@"[SBCPU] selector %@ called state:%d", name, enabled];
+            NSLog(@"%@", log);
+            SBCPURotationLog(log);
+            return;
         }
     }
 
-    if(!called)
-    {
-        NSLog(@"[SBCPU] No orientation lock selector found");
-    }
-
-
-    CFNotificationCenterPostNotification(
-        CFNotificationCenterGetDarwinNotifyCenter(),
-        CFSTR("com.apple.springboard.orientationlockchanged"),
-        NULL,
-        NULL,
-        YES);
+    SBCPURotationLog(@"[SBCPU] no selector matched");
 }
 
 
@@ -2727,6 +2783,8 @@ static void registerV160Observers()
 
 %ctor
 {
+    SBCPUScanRotationClasses();
+    SBCPURotationLog(@"[SBCPU] SmartRotation Test2.8 loaded");
     autoWindowSizeEnable = [[NSUserDefaults standardUserDefaults] boolForKey:@"SBCPU.AutoWindowSize"];
 
     NSString *process =
