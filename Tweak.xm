@@ -128,74 +128,95 @@ static void registerV160Observers(void);
 // V1.9.0 SmartRotation Test2.6
 // 使用 SBOrientationLockManager lock/unlock 控制方向锁
 
-static id getOrientationLockManager()
+// V1.9.0 Smart Rotation Test2.6
+// iOS 17 Smart Orientation Lock controller
+static id getSBUIController()
 {
-    Class cls = NSClassFromString(@"SBOrientationLockManager");
-    if(!cls) return nil;
+    Class cls = NSClassFromString(@"SBUIController");
 
-    SEL sharedSel = NSSelectorFromString(@"sharedInstance");
-
-    if([cls respondsToSelector:sharedSel])
+    if(!cls)
     {
-        return ((id (*)(id, SEL))objc_msgSend)(cls, sharedSel);
+        NSLog(@"[SBCPU] SBUIController not found");
+        return nil;
     }
 
+    SEL sel = NSSelectorFromString(@"sharedInstance");
+
+    if([cls respondsToSelector:sel])
+    {
+        return ((id (*)(id, SEL))objc_msgSend)(cls, sel);
+    }
+
+    NSLog(@"[SBCPU] SBUIController sharedInstance missing");
     return nil;
 }
 
+
 static void setSmartRotationLock(BOOL enabled)
 {
-    id manager = getOrientationLockManager();
-    if(!manager)
-    {
-        NSLog(@"SBCPU SmartRotation: manager not found");
+    id controller = getSBUIController();
+
+    if(!controller)
         return;
-    }
 
-    SEL sel = enabled ? NSSelectorFromString(@"lock")
-                      : NSSelectorFromString(@"unlock");
 
-    if([manager respondsToSelector:sel])
+    SEL sel = NSSelectorFromString(@"setOrientationLockEnabled:");
+
+    if([controller respondsToSelector:sel])
     {
-        ((void (*)(id, SEL))objc_msgSend)(manager, sel);
+        ((void (*)(id, SEL, BOOL))objc_msgSend)
+        (controller, sel, enabled);
 
-        NSLog(@"SBCPU SmartRotation: %@ called",
-              enabled ? @"lock" : @"unlock");
+        NSLog(@"[SBCPU] Orientation lock %@",
+              enabled ? @"ENABLED" : @"DISABLED");
+
+
+        CFNotificationCenterPostNotification(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            CFSTR("com.apple.springboard.orientationlockchanged"),
+            NULL,
+            NULL,
+            YES);
+
     }
     else
     {
-        NSLog(@"SBCPU SmartRotation: selector missing %@",
-              enabled ? @"lock" : @"unlock");
+        NSLog(@"[SBCPU] setOrientationLockEnabled missing");
     }
 }
+
 
 static void handleSmartRotationLockChange(BOOL landscape)
 {
     if(!smartRotationEnable)
         return;
 
-    // Test2.3: 不等待，检测到横屏立即解除方向锁
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if(landscape)
+
+    static BOOL currentLockState = YES;
+
+
+    if(landscape)
+    {
+        if(currentLockState)
         {
-            id manager = getOrientationLockManager();
-            if(manager)
-            {
-                userHadRotationLock = YES;
-                changedRotationLockByPlugin = YES;
-                setSmartRotationLock(NO);
-            }
+            currentLockState = NO;
+            changedRotationLockByPlugin = YES;
+
+            setSmartRotationLock(NO);
         }
-        else
+    }
+    else
+    {
+        if(changedRotationLockByPlugin)
         {
-            if(changedRotationLockByPlugin)
-            {
-                setSmartRotationLock(YES);
-                changedRotationLockByPlugin = NO;
-            }
+            currentLockState = YES;
+            changedRotationLockByPlugin = NO;
+
+            setSmartRotationLock(YES);
         }
-    });
+    }
 }
+
 
 static void handleSmartRotation(UIDeviceOrientation orientation);
 
