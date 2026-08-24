@@ -3923,7 +3923,16 @@ static NSString *sbcpuChargeControlResult = @"待测试";
 static void sbcpuSmartChargeShowTestResult(NSString *msg)
 {
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = UIApplication.sharedApplication.keyWindow;
+        UIWindow *window = nil;
+        for (UIWindow *w in UIApplication.sharedApplication.windows) {
+            if (w.isKeyWindow) {
+                window = w;
+                break;
+            }
+        }
+        if (!window) {
+            window = UIApplication.sharedApplication.windows.firstObject;
+        }
         UIViewController *vc = window.rootViewController;
 
         UIAlertController *alert =
