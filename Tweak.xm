@@ -3652,10 +3652,10 @@ static void sbcpuSmartChargeDumpObject(CFTypeRef obj, NSMutableString *out, int 
         CFDictionaryRef dict = (CFDictionaryRef)obj;
         CFIndex count = CFDictionaryGetCount(dict);
 
-        void **keys = (void **)malloc(sizeof(void *) * count);
-        void **vals = (void **)malloc(sizeof(void *) * count);
+        const void **keys = (const void **)malloc(sizeof(void *) * count);
+        const void **vals = (const void **)malloc(sizeof(void *) * count);
 
-        CFDictionaryGetKeysAndValues(dict, (const void **)keys, (const void **)vals);
+        CFDictionaryGetKeysAndValues(dict, keys, vals);
 
         for(CFIndex i=0;i<count;i++)
         {
@@ -3763,8 +3763,8 @@ static void sbcpuThermalDumpService(NSString *name, NSMutableString *out)
                 CFIndex count = CFDictionaryGetCount(props);
                 [out appendFormat:@"Property Count: %ld\n", (long)count];
 
-                void **keys = malloc(sizeof(void *) * count);
-                void **vals = malloc(sizeof(void *) * count);
+                const void **keys = (const void **)malloc(sizeof(void *) * count);
+                const void **vals = (const void **)malloc(sizeof(void *) * count);
 
                 if (keys && vals) {
                     CFDictionaryGetKeysAndValues(props, keys, vals);
