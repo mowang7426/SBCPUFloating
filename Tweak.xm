@@ -13,6 +13,54 @@
 #endif
 
 
+
+@interface SBCPUInputController : UIViewController
+@property(nonatomic,strong) UITextField *field;
+@end
+
+@implementation SBCPUInputController
+
+- (void)viewDidLoad
+{
+    [super viewDidLoad];
+
+    self.view.backgroundColor = [UIColor systemBackgroundColor];
+
+    self.field = [[UITextField alloc] initWithFrame:CGRectMake(30, 120, self.view.bounds.size.width-60, 50)];
+    self.field.borderStyle = UITextBorderStyleRoundedRect;
+    self.field.keyboardType = UIKeyboardTypeNumberPad;
+    self.field.placeholder = @"输入 mA";
+    [self.view addSubview:self.field];
+
+    UIButton *ok = [UIButton buttonWithType:UIButtonTypeSystem];
+    ok.frame = CGRectMake(30, 200, 120, 45);
+    [ok setTitle:@"确定" forState:UIControlStateNormal];
+
+    [ok addTarget:self action:@selector(confirm) forControlEvents:UIControlEventTouchUpInside];
+
+    [self.view addSubview:ok];
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        [self.field becomeFirstResponder];
+    });
+}
+
+- (void)confirm
+{
+    int mA = [self.field.text intValue];
+
+    if(mA > 0)
+    {
+        [SmartChargeController setCurrentLimit:mA];
+    }
+
+    [self dismissViewControllerAnimated:YES completion:nil];
+}
+
+@end
+
+
 #pragma mark -
 #pragma mark V1.5.8 Global
 #pragma mark -
@@ -2677,34 +2725,10 @@ titleForHeaderInSection:
 
     if(indexPath.row == 24)
     {
-        UIAlertController *a =
-        [UIAlertController alertControllerWithTitle:@"限制充电电流"
-                                            message:@"输入 mA"
-                                     preferredStyle:UIAlertControllerStyleAlert];
+        SBCPUInputController *vc = [[SBCPUInputController alloc] init];
 
-        [a addTextFieldWithConfigurationHandler:^(UITextField *tf){
-            tf.keyboardType = UIKeyboardTypeNumberPad;
-            tf.placeholder = @"例如 2000";
-        }];
+        [self presentViewController:vc animated:YES completion:nil];
 
-        [a addAction:[UIAlertAction actionWithTitle:@"确定"
-                                              style:UIAlertActionStyleDefault
-                                            handler:^(UIAlertAction *action){
-
-            int mA = [a.textFields.firstObject.text intValue];
-
-            if(mA > 0)
-            {
-                SBCPUSetCurrentLimit(mA);
-            }
-
-        }]];
-
-        [a addAction:[UIAlertAction actionWithTitle:@"取消"
-                                              style:UIAlertActionStyleCancel
-                                            handler:nil]];
-
-        [self presentViewController:a animated:YES completion:nil];
         return;
     }
 
