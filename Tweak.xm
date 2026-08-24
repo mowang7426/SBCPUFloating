@@ -2662,24 +2662,6 @@ titleForHeaderInSection:
 }
 
 
-    if(indexPath.row == 22)
-    {
-        cell.textLabel.text = @"限制充电 2000mA";
-        cell.detailTextLabel.text = sbcpuChargeControlResult;
-    }
-
-    if(indexPath.row == 23)
-    {
-        cell.textLabel.text = @"停止充电";
-        cell.detailTextLabel.text = sbcpuChargeControlResult;
-    }
-
-    if(indexPath.row == 24)
-    {
-        cell.textLabel.text = @"恢复充电";
-        cell.detailTextLabel.text = sbcpuChargeControlResult;
-    }
-
 #pragma mark 滑动调整
 
 - (void)changeScaleSlider:(UISlider *)slider
