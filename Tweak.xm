@@ -2315,6 +2315,7 @@ static void sbcpuSmartChargeControlPropertyProbe()
 
     // 进入页面自动扫描
     sbcpuSmartChargeControlPropertyProbe();
+    sbcpuThermalProbe();
        sbcpuSmartChargeDeepIOProbe();
     // Test11: 探测充电控制通道（只读，不修改）
     sbcpuSmartChargeControlProbe();
@@ -3728,6 +3729,87 @@ static void sbcpuSmartChargeDeepIOProbe()
     sbcpuSmartChargeDeepIOProbeStatus=[result copy];
 
     NSLog(@"[SBCPU SmartCharge Test16]\n%@",sbcpuSmartChargeDeepIOProbeStatus);
+}
+
+
+
+#pragma mark - V1.8.9 Thermal Power Probe
+
+static NSString *sbcpuThermalProbeStatus = @"未检测";
+
+static void sbcpuThermalDumpService(NSString *name, NSMutableString *out)
+{
+    io_iterator_t iter = 0;
+    kern_return_t kr = IOServiceGetMatchingServices(kIOMasterPortDefault,
+                                                    IOServiceMatching([name UTF8String]),
+                                                    &iter);
+    if (kr != KERN_SUCCESS) {
+        return;
+    }
+
+    io_service_t service = 0;
+    while ((service = IOIteratorNext(iter))) {
+        CFMutableDictionaryRef props = NULL;
+        if (IORegistryEntryCreateCFProperties(service,
+                                              &props,
+                                              kCFAllocatorDefault,
+                                              kNilOptions) == KERN_SUCCESS)
+        {
+            [out appendFormat:@"\n%@:\n", name];
+
+            if (props) {
+                CFIndex count = CFDictionaryGetCount(props);
+                [out appendFormat:@"Property Count: %ld\n", (long)count];
+
+                const void **keys = malloc(sizeof(void *) * count);
+                const void **vals = malloc(sizeof(void *) * count);
+
+                if (keys && vals) {
+                    CFDictionaryGetKeysAndValues(props, keys, vals);
+
+                    for (CFIndex i = 0; i < count; i++) {
+                        NSString *key = (__bridge NSString *)keys[i];
+
+                        if ([key rangeOfString:@"Thermal|Power|Limit|Charge|Current|Temperature"
+                                        options:NSRegularExpressionSearch].location != NSNotFound)
+                        {
+                            NSString *value = [(__bridge id)vals[i] description];
+                            [out appendFormat:@"%@ = %@\n", key, value];
+                        }
+                    }
+                }
+
+                if(keys) free(keys);
+                if(vals) free(vals);
+                CFRelease(props);
+            }
+        }
+
+        IOObjectRelease(service);
+    }
+
+    IOObjectRelease(iter);
+}
+
+static void sbcpuThermalProbe()
+{
+    NSMutableString *result = [NSMutableString string];
+
+    [result appendString:@"Thermal/Power Probe\n"];
+
+    sbcpuThermalDumpService(@"IOPMrootDomain", result);
+    sbcpuThermalDumpService(@"AppleThermalManager", result);
+    sbcpuThermalDumpService(@"AppleThermalManagerService", result);
+    sbcpuThermalDumpService(@"IOPMPowerSource", result);
+
+    if(result.length < 30)
+    {
+        [result appendString:@"No thermal service data found"];
+    }
+
+    sbcpuThermalProbeStatus = [result copy];
+
+    NSLog(@"[SBCPU ThermalProbe]\n%@", sbcpuThermalProbeStatus);
 }
 
 
