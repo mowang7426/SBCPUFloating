@@ -8,8 +8,6 @@
 
 #pragma mark - SmartCharge Battman Control (Scheme A)
 
-typedef uint32_t IOReturn;
-
 extern io_service_t IOAccessoryManagerGetServiceWithPrimaryPort(SInt32 port);
 extern IOReturn IOAccessoryManagerSetUSBCurrentLimitBase(io_service_t service, uint64_t input);
 extern IOReturn IOAccessoryManagerRestoreUSBCurrentLimitBase(io_service_t service);
@@ -28,7 +26,7 @@ static BOOL SBCPUStopCharging(void)
 
     IOReturn ret = IOAccessoryManagerSetUSBCurrentLimitBase(service, 0);
     IOObjectRelease(service);
-    return ret == 0;
+    return ret == KERN_SUCCESS;
 }
 
 static BOOL SBCPURestoreCharging(void)
@@ -38,7 +36,7 @@ static BOOL SBCPURestoreCharging(void)
 
     IOReturn ret = IOAccessoryManagerRestoreUSBCurrentLimitBase(service);
     IOObjectRelease(service);
-    return ret == 0;
+    return ret == KERN_SUCCESS;
 }
 
 static BOOL SBCPUSetCurrentLimit(int mA)
@@ -48,7 +46,7 @@ static BOOL SBCPUSetCurrentLimit(int mA)
 
     IOReturn ret = IOAccessoryManagerSetUSBCurrentLimitMaximum(service, (uint64_t)mA);
     IOObjectRelease(service);
-    return ret == 0;
+    return ret == KERN_SUCCESS;
 }
 
 
