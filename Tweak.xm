@@ -4,6 +4,54 @@
 #import <signal.h>
 #import <IOKit/IOKitLib.h>
 
+
+
+#pragma mark - SmartCharge Battman Control (Scheme A)
+
+typedef uint32_t IOReturn;
+
+extern io_service_t IOAccessoryManagerGetServiceWithPrimaryPort(SInt32 port);
+extern IOReturn IOAccessoryManagerSetUSBCurrentLimitBase(io_service_t service, uint64_t input);
+extern IOReturn IOAccessoryManagerRestoreUSBCurrentLimitBase(io_service_t service);
+extern IOReturn IOAccessoryManagerSetUSBCurrentLimitMaximum(io_service_t service, uint64_t ilimMax);
+extern IOReturn IOAccessoryManagerClearUSBCurrentLimitMaximum(io_service_t service);
+
+static io_service_t SBCPUGetAccessoryService(void)
+{
+    return IOAccessoryManagerGetServiceWithPrimaryPort(2);
+}
+
+static BOOL SBCPUStopCharging(void)
+{
+    io_service_t service = SBCPUGetAccessoryService();
+    if (!service) return NO;
+
+    IOReturn ret = IOAccessoryManagerSetUSBCurrentLimitBase(service, 0);
+    IOObjectRelease(service);
+    return ret == 0;
+}
+
+static BOOL SBCPURestoreCharging(void)
+{
+    io_service_t service = SBCPUGetAccessoryService();
+    if (!service) return NO;
+
+    IOReturn ret = IOAccessoryManagerRestoreUSBCurrentLimitBase(service);
+    IOObjectRelease(service);
+    return ret == 0;
+}
+
+static BOOL SBCPUSetCurrentLimit(int mA)
+{
+    io_service_t service = SBCPUGetAccessoryService();
+    if (!service) return NO;
+
+    IOReturn ret = IOAccessoryManagerSetUSBCurrentLimitMaximum(service, (uint64_t)mA);
+    IOObjectRelease(service);
+    return ret == 0;
+}
+
+
 #ifndef kIOMainPortDefault
 #define kIOMainPortDefault kIOMasterPortDefault
 #endif
