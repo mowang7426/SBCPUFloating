@@ -1,18 +1,17 @@
-ARCHS = arm64
-TARGET = iphone:clang:latest:15.0
+ARCHS = arm64e
+
+TARGET = iphone:clang:16.5:16.5
 
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = SBCPUFloating
 
-SBCPUFloating_FILES = Tweak.xm SmartChargeController.mm
+SBCPUFloating_FILES = Tweak.xm
 
 SBCPUFloating_CFLAGS = -fobjc-arc
-SBCPUFloating_CFLAGS += -Wno-deprecated-declarations
-SBCPUFloating_CFLAGS += -Wno-module-import-in-extern-c
-
-SBCPUFloating_FRAMEWORKS = UIKit Foundation
-
-SBCPUFloating_LDFLAGS += -framework IOKit
+SBCPUFloating_FRAMEWORKS = UIKit Foundation IOKit
 
 include $(THEOS_MAKE_PATH)/tweak.mk
+
+INSTALL_TARGET_PROCESSES = SpringBoard
+
