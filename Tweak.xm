@@ -3924,14 +3924,32 @@ static void sbcpuSmartChargeShowTestResult(NSString *msg)
 {
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *window = nil;
-        for (UIWindow *w in UIApplication.sharedApplication.windows) {
-            if (w.isKeyWindow) {
-                window = w;
+
+        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+            if ([scene isKindOfClass:[UIWindowScene class]]) {
+                UIWindowScene *ws = (UIWindowScene *)scene;
+
+                for (UIWindow *w in ws.windows) {
+                    if (w.isKeyWindow) {
+                        window = w;
+                        break;
+                    }
+                }
+            }
+
+            if (window) {
                 break;
             }
         }
+
         if (!window) {
-            window = UIApplication.sharedApplication.windows.firstObject;
+            for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+                if ([scene isKindOfClass:[UIWindowScene class]]) {
+                    UIWindowScene *ws = (UIWindowScene *)scene;
+                    window = ws.windows.firstObject;
+                    break;
+                }
+            }
         }
         UIViewController *vc = window.rootViewController;
 
