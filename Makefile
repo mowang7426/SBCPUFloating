@@ -8,8 +8,8 @@ TWEAK_NAME = SBCPUFloating
 SBCPUFloating_FILES = Tweak.xm SmartChargeController.mm
 
 SBCPUFloating_CFLAGS = -fobjc-arc
-SBCPUFloating_CFLAGS += -fno-modules
 SBCPUFloating_CFLAGS += -Wno-deprecated-declarations
+SBCPUFloating_CFLAGS += -Wno-module-import-in-extern-c
 
 SBCPUFloating_FRAMEWORKS = UIKit Foundation
 
