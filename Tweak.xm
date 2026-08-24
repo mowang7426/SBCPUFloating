@@ -2086,7 +2086,7 @@ static void sbcpuSmartChargeControlServiceProbe()
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    return 3;
+    return 6;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
@@ -2100,14 +2100,51 @@ static void sbcpuSmartChargeControlServiceProbe()
         @"AppleSMC"
     ];
 
-    NSString *result = sbcpuSmartChargeControlServiceStatus ?: @"未知";
-
-    cell.textLabel.text = names[indexPath.row];
-    cell.detailTextLabel.text =
-    [result containsString:names[indexPath.row]] ? result : @"未发现";
-    cell.detailTextLabel.numberOfLines = 4;
+    if(indexPath.row < 3)
+    {
+        NSString *result = sbcpuSmartChargeControlServiceStatus ?: @"未知";
+        cell.textLabel.text = names[indexPath.row];
+        cell.detailTextLabel.text =
+        [result containsString:names[indexPath.row]] ? result : @"未发现";
+    }
+    else if(indexPath.row == 3)
+    {
+        cell.textLabel.text = @"降低充电电流";
+        cell.detailTextLabel.text = @"测试目标 2000mA";
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    }
+    else if(indexPath.row == 4)
+    {
+        cell.textLabel.text = @"停止充电";
+        cell.detailTextLabel.text = @"SmartCharge Stop";
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    }
+    else if(indexPath.row == 5)
+    {
+        cell.textLabel.text = @"恢复充电";
+        cell.detailTextLabel.text = @"SmartCharge Restore";
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    }
 
     return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    if(indexPath.row == 3)
+    {
+        sbcpuSmartChargeSetCurrentLimitTest(2000);
+    }
+    else if(indexPath.row == 4)
+    {
+        sbcpuSmartChargeStopTest();
+    }
+    else if(indexPath.row == 5)
+    {
+        sbcpuSmartChargeRestoreTest();
+    }
+
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
 }
 
 @end
