@@ -1981,9 +1981,8 @@ static void sbcpuSmartChargeServiceScan()
 
     if([result containsString:names[indexPath.row]])
     {
-        // Test18.1 不再只显示已检测，显示扫描摘要
-        cell.detailTextLabel.text = [NSString stringWithFormat:@"发现 | %@", result];
-        cell.detailTextLabel.numberOfLines = 3;
+        cell.detailTextLabel.text = result;
+        cell.detailTextLabel.numberOfLines = 4;
     }
     else
     {
@@ -2065,17 +2064,9 @@ static void sbcpuSmartChargeControlServiceProbe()
     NSString *result = sbcpuSmartChargeControlServiceStatus ?: @"未知";
 
     cell.textLabel.text = names[indexPath.row];
-
-    if([result containsString:names[indexPath.row]])
-    {
-        cell.detailTextLabel.text =
-        [NSString stringWithFormat:@"发现\n%@", result];
-        cell.detailTextLabel.numberOfLines = 4;
-    }
-    else
-    {
-        cell.detailTextLabel.text = @"未发现";
-    }
+    cell.detailTextLabel.text =
+    [result containsString:names[indexPath.row]] ? result : @"未发现";
+    cell.detailTextLabel.numberOfLines = 4;
 
     return cell;
 }
@@ -3658,8 +3649,8 @@ static void sbcpuSmartChargeDumpObject(CFTypeRef obj, NSMutableString *out, int 
         CFDictionaryRef dict = (CFDictionaryRef)obj;
         CFIndex count = CFDictionaryGetCount(dict);
 
-        void **keys = (void **)malloc(sizeof(void *) * count);
-        void **vals = (void **)malloc(sizeof(void *) * count);
+        const void **keys = (const void **)malloc(sizeof(void *) * count);
+        const void **vals = (const void **)malloc(sizeof(void *) * count);
 
         CFDictionaryGetKeysAndValues(dict, keys, vals);
 
@@ -3669,14 +3660,6 @@ static void sbcpuSmartChargeDumpObject(CFTypeRef obj, NSMutableString *out, int 
             [out appendFormat:@"\n%@%@",
              [@"" stringByPaddingToLength:level*2 withString:@" " startingAtIndex:0],
              key];
-
-            id value = (__bridge id)vals[i];
-            if(value && [value respondsToSelector:@selector(description)])
-            {
-                NSString *desc = [value description];
-                if(desc.length > 120) desc = [desc substringToIndex:120];
-                [out appendFormat:@" = %@", desc];
-            }
 
             if([key rangeOfString:@"Current" options:NSCaseInsensitiveSearch].location != NSNotFound ||
                [key rangeOfString:@"Charge" options:NSCaseInsensitiveSearch].location != NSNotFound ||
