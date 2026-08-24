@@ -1981,7 +1981,9 @@ static void sbcpuSmartChargeServiceScan()
 
     if([result containsString:names[indexPath.row]])
     {
-        cell.detailTextLabel.text = @"已检测";
+        // Test18.1 不再只显示已检测，显示扫描摘要
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"发现 | %@", result];
+        cell.detailTextLabel.numberOfLines = 3;
     }
     else
     {
@@ -2063,8 +2065,17 @@ static void sbcpuSmartChargeControlServiceProbe()
     NSString *result = sbcpuSmartChargeControlServiceStatus ?: @"未知";
 
     cell.textLabel.text = names[indexPath.row];
-    cell.detailTextLabel.text =
-    [result containsString:names[indexPath.row]] ? @"已检测" : @"未发现";
+
+    if([result containsString:names[indexPath.row]])
+    {
+        cell.detailTextLabel.text =
+        [NSString stringWithFormat:@"发现\n%@", result];
+        cell.detailTextLabel.numberOfLines = 4;
+    }
+    else
+    {
+        cell.detailTextLabel.text = @"未发现";
+    }
 
     return cell;
 }
