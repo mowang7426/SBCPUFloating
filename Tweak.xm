@@ -19,7 +19,7 @@ static io_service_t SBCPUGetAccessoryService(void)
     return IOAccessoryManagerGetServiceWithPrimaryPort(2);
 }
 
-static BOOL __attribute__((unused)) SBCPUStopCharging(void)
+static BOOL SBCPUStopCharging(void)
 {
     io_service_t service = SBCPUGetAccessoryService();
     if (!service) return NO;
@@ -29,7 +29,7 @@ static BOOL __attribute__((unused)) SBCPUStopCharging(void)
     return ret == KERN_SUCCESS;
 }
 
-static BOOL __attribute__((unused)) SBCPURestoreCharging(void)
+static BOOL SBCPURestoreCharging(void)
 {
     io_service_t service = SBCPUGetAccessoryService();
     if (!service) return NO;
@@ -39,7 +39,7 @@ static BOOL __attribute__((unused)) SBCPURestoreCharging(void)
     return ret == KERN_SUCCESS;
 }
 
-static BOOL __attribute__((unused)) SBCPUSetCurrentLimit(int mA)
+static BOOL SBCPUSetCurrentLimit(int mA)
 {
     io_service_t service = SBCPUGetAccessoryService();
     if (!service) return NO;
@@ -124,9 +124,9 @@ static BOOL autoWindowSizeEnable = NO;
 static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
-static BOOL autoMoveEnable __attribute__((unused)) = YES;
-static BOOL keyboardAvoidEnable __attribute__((unused)) = YES;
-static BOOL hideControlCenterEnable __attribute__((unused)) = YES;
+static BOOL autoMoveEnable = YES;
+static BOOL keyboardAvoidEnable = YES;
+static BOOL hideControlCenterEnable = YES;
 
 static CGRect lastFloatingFrame;
 static CGRect lastUserFrame;
@@ -2413,7 +2413,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 22;
+    return 25;
 
 }
 
@@ -2953,6 +2953,25 @@ cellForRowAtIndexPath:
         cell.detailTextLabel.text = @"查看硬件接口状态";
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     }
+
+    if(indexPath.row == 22)
+    {
+        cell.textLabel.text = @"停止充电";
+        cell.detailTextLabel.text = @"调用 Battman 接口";
+    }
+
+    if(indexPath.row == 23)
+    {
+        cell.textLabel.text = @"恢复充电";
+        cell.detailTextLabel.text = @"恢复默认充电";
+    }
+
+    if(indexPath.row == 24)
+    {
+        cell.textLabel.text = @"限制充电电流";
+        cell.detailTextLabel.text = @"点击输入 mA";
+    }
+
     return cell;
 
 }
