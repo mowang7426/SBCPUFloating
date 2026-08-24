@@ -2092,6 +2092,9 @@ static void sbcpuSmartChargeControlServiceProbe()
     sbcpuSmartChargeDeepPropertyScan();
     sbcpuSmartChargeServiceScan();
     sbcpuSmartChargeControlServiceProbe();
+
+    // Test3: 强制刷新诊断列表，避免进入页面后数据源未显示
+    [self.tableView reloadData];
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
