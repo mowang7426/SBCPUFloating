@@ -14,11 +14,10 @@
 
 
 
-@interface SBCPUInputController : UIViewController
-@property(nonatomic,strong) UITextField *field;
+@interface SBCPUCurrentPresetController : UIViewController
 @end
 
-@implementation SBCPUInputController
+@implementation SBCPUCurrentPresetController
 
 - (void)viewDidLoad
 {
@@ -26,34 +25,39 @@
 
     self.view.backgroundColor = [UIColor systemBackgroundColor];
 
-    self.field = [[UITextField alloc] initWithFrame:CGRectMake(30, 120, self.view.bounds.size.width-60, 50)];
-    self.field.borderStyle = UITextBorderStyleRoundedRect;
-    self.field.keyboardType = UIKeyboardTypeNumberPad;
-    self.field.placeholder = @"输入 mA";
-    [self.view addSubview:self.field];
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(20, 70, self.view.bounds.size.width-40, 40)];
+    title.text = @"选择充电电流";
+    title.textAlignment = NSTextAlignmentCenter;
+    title.font = [UIFont boldSystemFontOfSize:18];
+    [self.view addSubview:title];
 
-    UIButton *ok = [UIButton buttonWithType:UIButtonTypeSystem];
-    ok.frame = CGRectMake(30, 200, 120, 45);
-    [ok setTitle:@"确定" forState:UIControlStateNormal];
+    NSArray *values = @[@500,@1000,@1500,@2000,@2500,@3000];
 
-    [ok addTarget:self action:@selector(confirm) forControlEvents:UIControlEventTouchUpInside];
+    CGFloat y = 130;
 
-    [self.view addSubview:ok];
+    for (NSNumber *num in values)
+    {
+        UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
+        btn.frame = CGRectMake(40, y, self.view.bounds.size.width-80, 45);
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        [self.field becomeFirstResponder];
-    });
+        NSString *text = [NSString stringWithFormat:@"%@ mA", num];
+        [btn setTitle:text forState:UIControlStateNormal];
+
+        btn.tag = num.integerValue;
+
+        [btn addTarget:self
+                action:@selector(selectCurrent:)
+      forControlEvents:UIControlEventTouchUpInside];
+
+        [self.view addSubview:btn];
+
+        y += 55;
+    }
 }
 
-- (void)confirm
+- (void)selectCurrent:(UIButton *)sender
 {
-    int mA = [self.field.text intValue];
-
-    if(mA > 0)
-    {
-        [SmartChargeController setCurrentLimit:mA];
-    }
+    [SmartChargeController setCurrentLimit:sender.tag];
 
     [self dismissViewControllerAnimated:YES completion:nil];
 }
@@ -2725,7 +2729,7 @@ titleForHeaderInSection:
 
     if(indexPath.row == 24)
     {
-        SBCPUInputController *vc = [[SBCPUInputController alloc] init];
+        SBCPUCurrentPresetController *vc = [[SBCPUCurrentPresetController alloc] init];
 
         [self presentViewController:vc animated:YES completion:nil];
 
