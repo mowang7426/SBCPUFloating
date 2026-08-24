@@ -3920,21 +3920,53 @@ static void sbcpuThermalProbe()
 static NSInteger sbcpuTestCurrentLimit = 0;
 static NSString *sbcpuChargeControlResult = @"待测试";
 
+static void sbcpuSmartChargeShowTestResult(NSString *msg)
+{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *window = UIApplication.sharedApplication.keyWindow;
+        UIViewController *vc = window.rootViewController;
+
+        UIAlertController *alert =
+        [UIAlertController alertControllerWithTitle:@"SmartCharge Test"
+                                            message:msg
+                                     preferredStyle:UIAlertControllerStyleAlert];
+
+        [alert addAction:[UIAlertAction actionWithTitle:@"确定"
+                                                  style:UIAlertActionStyleDefault
+                                                handler:nil]];
+
+        while(vc.presentedViewController)
+            vc = vc.presentedViewController;
+
+        [vc presentViewController:alert animated:YES completion:nil];
+    });
+}
+
 static void sbcpuSmartChargeSetCurrentLimitTest(NSInteger ma)
 {
     sbcpuTestCurrentLimit = ma;
-    sbcpuChargeControlResult = [NSString stringWithFormat:@"请求限制 %ldmA", (long)ma];
+    sbcpuChargeControlResult =
+    [NSString stringWithFormat:@"请求限制 %ldmA", (long)ma];
+
+    NSLog(@"[SBCPU SmartCharge] Set Current Limit %ldmA",(long)ma);
+    sbcpuSmartChargeShowTestResult(sbcpuChargeControlResult);
 }
 
 static void sbcpuSmartChargeStopTest(void)
 {
     sbcpuChargeControlResult = @"请求停止充电";
+
+    NSLog(@"[SBCPU SmartCharge] Stop Charge");
+    sbcpuSmartChargeShowTestResult(sbcpuChargeControlResult);
 }
 
 static void sbcpuSmartChargeRestoreTest(void)
 {
     sbcpuTestCurrentLimit = 0;
     sbcpuChargeControlResult = @"请求恢复充电";
+
+    NSLog(@"[SBCPU SmartCharge] Restore Charge");
+    sbcpuSmartChargeShowTestResult(sbcpuChargeControlResult);
 }
 
 %ctor
