@@ -2416,7 +2416,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 22;
+    return 25;
 
 }
 
@@ -2634,9 +2634,48 @@ titleForHeaderInSection:
 
 
 
+    if(indexPath.row == 22)
+    {
+        sbcpuSmartChargeSetCurrentLimitTest(2000);
+        [tableView reloadData];
+        return;
+    }
+
+    if(indexPath.row == 23)
+    {
+        sbcpuSmartChargeStopTest();
+        [tableView reloadData];
+        return;
+    }
+
+    if(indexPath.row == 24)
+    {
+        sbcpuSmartChargeRestoreTest();
+        [tableView reloadData];
+        return;
+    }
+
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 }
 
+
+    if(indexPath.row == 22)
+    {
+        cell.textLabel.text = @"限制充电 2000mA";
+        cell.detailTextLabel.text = sbcpuChargeControlResult;
+    }
+
+    if(indexPath.row == 23)
+    {
+        cell.textLabel.text = @"停止充电";
+        cell.detailTextLabel.text = sbcpuChargeControlResult;
+    }
+
+    if(indexPath.row == 24)
+    {
+        cell.textLabel.text = @"恢复充电";
+        cell.detailTextLabel.text = sbcpuChargeControlResult;
+    }
 
 #pragma mark 滑动调整
 
@@ -3953,5 +3992,29 @@ static void sbcpuThermalProbe()
 
         }
     );
+
+
+#pragma mark - SmartCharge Control Test1
+static NSInteger sbcpuTestCurrentLimit = 0;
+static NSString *sbcpuChargeControlResult = @"待测试";
+
+static void sbcpuSmartChargeSetCurrentLimitTest(NSInteger ma)
+{
+    // Test1 placeholder: Battman IOAccessoryManager bridge entry.
+    // Waiting for final daemon/helper bridge if SpringBoard permission is insufficient.
+    sbcpuTestCurrentLimit = ma;
+    sbcpuChargeControlResult = [NSString stringWithFormat:@"请求限制 %ldmA", (long)ma];
+}
+
+static void sbcpuSmartChargeStopTest(void)
+{
+    sbcpuChargeControlResult = @"请求停止充电";
+}
+
+static void sbcpuSmartChargeRestoreTest(void)
+{
+    sbcpuTestCurrentLimit = 0;
+    sbcpuChargeControlResult = @"请求恢复充电";
+}
 
 }
