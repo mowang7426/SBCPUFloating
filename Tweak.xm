@@ -9,6 +9,8 @@
 #endif
 
 
+static void sbCpuThermalProbe(void);
+
 #pragma mark -
 #pragma mark V1.5.8 Global
 #pragma mark -
@@ -3761,8 +3763,8 @@ static void sbcpuThermalDumpService(NSString *name, NSMutableString *out)
                 CFIndex count = CFDictionaryGetCount(props);
                 [out appendFormat:@"Property Count: %ld\n", (long)count];
 
-                const void **keys = malloc(sizeof(void *) * count);
-                const void **vals = malloc(sizeof(void *) * count);
+                void **keys = malloc(sizeof(void *) * count);
+                void **vals = malloc(sizeof(void *) * count);
 
                 if (keys && vals) {
                     CFDictionaryGetKeysAndValues(props, keys, vals);
