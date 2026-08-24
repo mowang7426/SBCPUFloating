@@ -1,10 +1,8 @@
 #import <UIKit/UIKit.h>
-#import <Foundation/Foundation.h>
 #import <QuartzCore/QuartzCore.h>
-#include <mach/mach.h>
-#include <signal.h>
-#include <IOKit/IOKitLib.h>
-
+#import <mach/mach.h>
+#import <signal.h>
+#import <IOKit/IOKitLib.h>
 #import "SmartChargeController.h"
 
 #ifndef kIOMainPortDefault
