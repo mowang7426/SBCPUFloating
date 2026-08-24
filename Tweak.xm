@@ -2107,24 +2107,7 @@ static void sbcpuSmartChargeControlServiceProbe()
         cell.detailTextLabel.text =
         [result containsString:names[indexPath.row]] ? result : @"未发现";
     }
-    else if(indexPath.row == 3)
-    {
-        cell.textLabel.text = @"降低充电电流";
-        cell.detailTextLabel.text = @"测试目标 2000mA";
-        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-    }
-    else if(indexPath.row == 4)
-    {
-        cell.textLabel.text = @"停止充电";
-        cell.detailTextLabel.text = @"SmartCharge Stop";
-        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-    }
-    else if(indexPath.row == 5)
-    {
-        cell.textLabel.text = @"恢复充电";
-        cell.detailTextLabel.text = @"SmartCharge Restore";
-        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-    }
+
 
     return cell;
 }
@@ -3053,6 +3036,28 @@ cellForRowAtIndexPath:
     {
         cell.textLabel.text = @"SmartCharge 诊断";
         cell.detailTextLabel.text = @"查看硬件接口状态";
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    }
+
+
+    if(indexPath.row == 22)
+    {
+        cell.textLabel.text = @"降低充电电流";
+        cell.detailTextLabel.text = @"测试目标 2000mA";
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    }
+
+    if(indexPath.row == 23)
+    {
+        cell.textLabel.text = @"停止充电";
+        cell.detailTextLabel.text = @"SmartCharge Stop";
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    }
+
+    if(indexPath.row == 24)
+    {
+        cell.textLabel.text = @"恢复充电";
+        cell.detailTextLabel.text = @"SmartCharge Restore";
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     }
     return cell;
