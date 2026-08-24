@@ -2,7 +2,10 @@
 #import <QuartzCore/QuartzCore.h>
 #import <mach/mach.h>
 #import <signal.h>
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmodule-import-in-extern-c"
 #import <IOKit/IOKitLib.h>
+#pragma clang diagnostic pop
 #import "SmartChargeController.h"
 
 #ifndef kIOMainPortDefault
