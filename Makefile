@@ -6,7 +6,7 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = SBCPUFloating
 
-SBCPUFloating_FILES = Tweak.xm SmartChargeController.mm libsmc/libsmc.c
+SBCPUFloating_FILES = Tweak.xm SmartChargeController.mm
 
 SBCPUFloating_CFLAGS = -fobjc-arc
 
