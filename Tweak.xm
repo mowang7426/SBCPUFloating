@@ -2643,7 +2643,7 @@ titleForHeaderInSection:
     // SmartCharge 控制按钮
     if(indexPath.row == 22)
     {
-        BOOL ok = SBCPUStopCharging();
+        BOOL ok = [SmartChargeController stopCharging];
 
         UIAlertController *a =
         [UIAlertController alertControllerWithTitle:@"SmartCharge"
@@ -2660,7 +2660,7 @@ titleForHeaderInSection:
 
     if(indexPath.row == 23)
     {
-        BOOL ok = SBCPURestoreCharging();
+        BOOL ok = [SmartChargeController restoreCharging];
 
         UIAlertController *a =
         [UIAlertController alertControllerWithTitle:@"SmartCharge"
