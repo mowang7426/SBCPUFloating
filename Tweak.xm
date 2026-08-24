@@ -14,10 +14,12 @@
 
 
 
-@interface SBCPUCurrentPresetController : UIViewController
+@interface SBCPUCurrentSliderController : UIViewController
+@property(nonatomic,strong) UISlider *slider;
+@property(nonatomic,strong) UILabel *valueLabel;
 @end
 
-@implementation SBCPUCurrentPresetController
+@implementation SBCPUCurrentSliderController
 
 - (void)viewDidLoad
 {
@@ -25,39 +27,59 @@
 
     self.view.backgroundColor = [UIColor systemBackgroundColor];
 
-    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(20, 70, self.view.bounds.size.width-40, 40)];
-    title.text = @"选择充电电流";
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(20,70,self.view.bounds.size.width-40,40)];
+    title.text = @"限制充电电流";
     title.textAlignment = NSTextAlignmentCenter;
     title.font = [UIFont boldSystemFontOfSize:18];
     [self.view addSubview:title];
 
-    NSArray *values = @[@500,@1000,@1500,@2000,@2500,@3000];
+    self.valueLabel = [[UILabel alloc] initWithFrame:CGRectMake(20,130,self.view.bounds.size.width-40,40)];
+    self.valueLabel.textAlignment = NSTextAlignmentCenter;
+    self.valueLabel.font = [UIFont systemFontOfSize:22];
+    [self.view addSubview:self.valueLabel];
 
-    CGFloat y = 130;
+    self.slider = [[UISlider alloc] initWithFrame:CGRectMake(40,210,self.view.bounds.size.width-80,40)];
+    self.slider.minimumValue = 500;
+    self.slider.maximumValue = 3000;
+    self.slider.value = 2000;
 
-    for (NSNumber *num in values)
-    {
-        UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
-        btn.frame = CGRectMake(40, y, self.view.bounds.size.width-80, 45);
+    [self.slider addTarget:self
+                    action:@selector(sliderChanged:)
+          forControlEvents:UIControlEventValueChanged];
 
-        NSString *text = [NSString stringWithFormat:@"%@ mA", num];
-        [btn setTitle:text forState:UIControlStateNormal];
+    [self.view addSubview:self.slider];
 
-        btn.tag = num.integerValue;
+    [self updateValue];
 
-        [btn addTarget:self
-                action:@selector(selectCurrent:)
+    UIButton *confirm = [UIButton buttonWithType:UIButtonTypeSystem];
+    confirm.frame = CGRectMake(50,300,self.view.bounds.size.width-100,45);
+    [confirm setTitle:@"确定" forState:UIControlStateNormal];
+
+    [confirm addTarget:self
+                action:@selector(confirmAction)
       forControlEvents:UIControlEventTouchUpInside];
 
-        [self.view addSubview:btn];
-
-        y += 55;
-    }
+    [self.view addSubview:confirm];
 }
 
-- (void)selectCurrent:(UIButton *)sender
+- (void)sliderChanged:(UISlider *)sender
 {
-    [SmartChargeController setCurrentLimit:sender.tag];
+    int value = ((int)sender.value / 100) * 100;
+    sender.value = value;
+    [self updateValue];
+}
+
+- (void)updateValue
+{
+    int value = ((int)self.slider.value / 100) * 100;
+    self.valueLabel.text = [NSString stringWithFormat:@"%d mA", value];
+}
+
+- (void)confirmAction
+{
+    int value = ((int)self.slider.value / 100) * 100;
+
+    [SmartChargeController setCurrentLimit:value];
 
     [self dismissViewControllerAnimated:YES completion:nil];
 }
@@ -2729,7 +2751,7 @@ titleForHeaderInSection:
 
     if(indexPath.row == 24)
     {
-        SBCPUCurrentPresetController *vc = [[SBCPUCurrentPresetController alloc] init];
+        SBCPUCurrentSliderController *vc = [[SBCPUCurrentSliderController alloc] init];
 
         [self presentViewController:vc animated:YES completion:nil];
 
