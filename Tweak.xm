@@ -124,7 +124,6 @@ static BOOL autoWindowSizeEnable = NO;
 static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
-static BOOL autoMoveEnable = YES;
 static BOOL keyboardAvoidEnable = YES;
 static BOOL hideControlCenterEnable = YES;
 
@@ -2079,6 +2078,16 @@ static void sbcpuSmartChargeControlServiceProbe()
 {
     [super viewDidLoad];
     self.title = @"控制服务探测";
+
+    // 保留接口引用，避免开启 -Wunused-function 导致编译失败。
+    // 后续按钮接入后将由实际 UI 调用替换。
+    BOOL (*stopFunc)(void) = SBCPUStopCharging;
+    BOOL (*restoreFunc)(void) = SBCPURestoreCharging;
+    BOOL (*limitFunc)(int) = SBCPUSetCurrentLimit;
+
+    (void)stopFunc;
+    (void)restoreFunc;
+    (void)limitFunc;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
