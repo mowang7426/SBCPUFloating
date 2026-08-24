@@ -10,6 +10,9 @@
 
 
 static void sbcpuThermalProbe(void);
+static void sbcpuSmartChargeSetCurrentLimitTest(NSInteger ma);
+static void sbcpuSmartChargeStopTest(void);
+static void sbcpuSmartChargeRestoreTest(void);
 
 #pragma mark -
 #pragma mark V1.5.8 Global
@@ -3992,7 +3995,6 @@ static void sbcpuThermalProbe()
 
         }
     );
-
 
 #pragma mark - SmartCharge Control Test1
 static NSInteger sbcpuTestCurrentLimit = 0;
