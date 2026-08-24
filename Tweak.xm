@@ -3,88 +3,10 @@
 #import <mach/mach.h>
 #import <signal.h>
 #import <IOKit/IOKitLib.h>
-#include <dlfcn.h>
-#import "SmartChargeController.h"
-
-
 
 #ifndef kIOMainPortDefault
 #define kIOMainPortDefault kIOMasterPortDefault
 #endif
-
-
-
-@interface SBCPUCurrentSliderController : UIViewController
-@property(nonatomic,strong) UISlider *slider;
-@property(nonatomic,strong) UILabel *valueLabel;
-@end
-
-@implementation SBCPUCurrentSliderController
-
-- (void)viewDidLoad
-{
-    [super viewDidLoad];
-
-    self.view.backgroundColor = [UIColor systemBackgroundColor];
-
-    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(20,70,self.view.bounds.size.width-40,40)];
-    title.text = @"限制充电电流";
-    title.textAlignment = NSTextAlignmentCenter;
-    title.font = [UIFont boldSystemFontOfSize:18];
-    [self.view addSubview:title];
-
-    self.valueLabel = [[UILabel alloc] initWithFrame:CGRectMake(20,130,self.view.bounds.size.width-40,40)];
-    self.valueLabel.textAlignment = NSTextAlignmentCenter;
-    self.valueLabel.font = [UIFont systemFontOfSize:22];
-    [self.view addSubview:self.valueLabel];
-
-    self.slider = [[UISlider alloc] initWithFrame:CGRectMake(40,210,self.view.bounds.size.width-80,40)];
-    self.slider.minimumValue = 500;
-    self.slider.maximumValue = 3000;
-    self.slider.value = 2000;
-
-    [self.slider addTarget:self
-                    action:@selector(sliderChanged:)
-          forControlEvents:UIControlEventValueChanged];
-
-    [self.view addSubview:self.slider];
-
-    [self updateValue];
-
-    UIButton *confirm = [UIButton buttonWithType:UIButtonTypeSystem];
-    confirm.frame = CGRectMake(50,300,self.view.bounds.size.width-100,45);
-    [confirm setTitle:@"确定" forState:UIControlStateNormal];
-
-    [confirm addTarget:self
-                action:@selector(confirmAction)
-      forControlEvents:UIControlEventTouchUpInside];
-
-    [self.view addSubview:confirm];
-}
-
-- (void)sliderChanged:(UISlider *)sender
-{
-    int value = ((int)sender.value / 100) * 100;
-    sender.value = value;
-    [self updateValue];
-}
-
-- (void)updateValue
-{
-    int value = ((int)self.slider.value / 100) * 100;
-    self.valueLabel.text = [NSString stringWithFormat:@"%d mA", value];
-}
-
-- (void)confirmAction
-{
-    int value = ((int)self.slider.value / 100) * 100;
-
-    [SmartChargeController setCurrentLimit:value];
-
-    [self dismissViewControllerAnimated:YES completion:nil];
-}
-
-@end
 
 
 #pragma mark -
@@ -156,8 +78,9 @@ static BOOL autoWindowSizeEnable = NO;
 static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
-static BOOL keyboardAvoidEnable = YES;
-static BOOL hideControlCenterEnable = YES;
+static BOOL autoMoveEnable __attribute__((unused)) = YES;
+static BOOL keyboardAvoidEnable __attribute__((unused)) = YES;
+static BOOL hideControlCenterEnable __attribute__((unused)) = YES;
 
 static CGRect lastFloatingFrame;
 static CGRect lastUserFrame;
@@ -2063,86 +1986,6 @@ static void sbcpuSmartChargeServiceScan()
 
 
 
-
-// ==============================
-// SmartCharge Scheme A - DLSYM runtime loader
-// ==============================
-
-typedef io_service_t (*IOAccessoryManagerGetServiceWithPrimaryPort_t)(SInt32);
-typedef IOReturn (*IOAccessoryManagerSetUSBCurrentLimitBase_t)(io_service_t, uint64_t);
-typedef IOReturn (*IOAccessoryManagerRestoreUSBCurrentLimitBase_t)(io_service_t);
-typedef IOReturn (*IOAccessoryManagerSetUSBCurrentLimitMaximum_t)(uint32_t, uint64_t);
-
-static void *SBCPULoadAccessoryFramework(void)
-{
-    static void *handle = NULL;
-
-    if(handle)
-        return handle;
-
-    handle = dlopen("/System/Library/PrivateFrameworks/AppleEmbeddedAccessory.framework/AppleEmbeddedAccessory", RTLD_NOW);
-
-    return handle;
-}
-
-static BOOL SBCPUStopCharging(void)
-{
-    void *h = SBCPULoadAccessoryFramework();
-    if(!h) return NO;
-
-    IOAccessoryManagerGetServiceWithPrimaryPort_t getService =
-    (IOAccessoryManagerGetServiceWithPrimaryPort_t)dlsym(h, "IOAccessoryManagerGetServiceWithPrimaryPort");
-
-    IOAccessoryManagerSetUSBCurrentLimitBase_t setLimit =
-    (IOAccessoryManagerSetUSBCurrentLimitBase_t)dlsym(h, "IOAccessoryManagerSetUSBCurrentLimitBase");
-
-    if(!getService || !setLimit)
-        return NO;
-
-    io_service_t service = getService(0);
-
-    if(!service)
-        return NO;
-
-    return setLimit(service, 0) == KERN_SUCCESS;
-}
-
-static BOOL SBCPURestoreCharging(void)
-{
-    void *h = SBCPULoadAccessoryFramework();
-    if(!h) return NO;
-
-    IOAccessoryManagerGetServiceWithPrimaryPort_t getService =
-    (IOAccessoryManagerGetServiceWithPrimaryPort_t)dlsym(h, "IOAccessoryManagerGetServiceWithPrimaryPort");
-
-    IOAccessoryManagerRestoreUSBCurrentLimitBase_t restore =
-    (IOAccessoryManagerRestoreUSBCurrentLimitBase_t)dlsym(h, "IOAccessoryManagerRestoreUSBCurrentLimitBase");
-
-    if(!getService || !restore)
-        return NO;
-
-    io_service_t service = getService(0);
-
-    if(!service)
-        return NO;
-
-    return restore(service) == KERN_SUCCESS;
-}
-
-static BOOL SBCPUSetCurrentLimit(int mA)
-{
-    void *h = SBCPULoadAccessoryFramework();
-    if(!h) return NO;
-
-    IOAccessoryManagerSetUSBCurrentLimitMaximum_t setMaximum =
-    (IOAccessoryManagerSetUSBCurrentLimitMaximum_t)dlsym(h, "IOAccessoryManagerSetUSBCurrentLimitMaximum");
-
-    if(!setMaximum)
-        return NO;
-
-    return setMaximum(0, (uint64_t)mA) == KERN_SUCCESS;
-}
-
 // ==============================
 // Test10G 控制服务探测
 // ==============================
@@ -2190,16 +2033,6 @@ static void sbcpuSmartChargeControlServiceProbe()
 {
     [super viewDidLoad];
     self.title = @"控制服务探测";
-
-    // 保留接口引用，避免开启 -Wunused-function 导致编译失败。
-    // 后续按钮接入后将由实际 UI 调用替换。
-    BOOL (*stopFunc)(void) = SBCPUStopCharging;
-    BOOL (*restoreFunc)(void) = SBCPURestoreCharging;
-    BOOL (*limitFunc)(int) = SBCPUSetCurrentLimit;
-
-    (void)stopFunc;
-    (void)restoreFunc;
-    (void)limitFunc;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
@@ -2534,7 +2367,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 25;
+    return 22;
 
 }
 
@@ -2713,51 +2546,6 @@ titleForHeaderInSection:
          completion:nil];
 
     }
-
-    // SmartCharge 控制按钮
-    if(indexPath.row == 22)
-    {
-        BOOL ok = [SmartChargeController stopCharging];
-
-        UIAlertController *a =
-        [UIAlertController alertControllerWithTitle:@"SmartCharge"
-                                            message:(ok ? @"停止充电指令已发送" : @"停止充电失败")
-                                     preferredStyle:UIAlertControllerStyleAlert];
-
-        [a addAction:[UIAlertAction actionWithTitle:@"确定"
-                                              style:UIAlertActionStyleDefault
-                                            handler:nil]];
-
-        [self presentViewController:a animated:YES completion:nil];
-        return;
-    }
-
-    if(indexPath.row == 23)
-    {
-        BOOL ok = [SmartChargeController restoreCharging];
-
-        UIAlertController *a =
-        [UIAlertController alertControllerWithTitle:@"SmartCharge"
-                                            message:(ok ? @"恢复充电指令已发送" : @"恢复充电失败")
-                                     preferredStyle:UIAlertControllerStyleAlert];
-
-        [a addAction:[UIAlertAction actionWithTitle:@"确定"
-                                              style:UIAlertActionStyleDefault
-                                            handler:nil]];
-
-        [self presentViewController:a animated:YES completion:nil];
-        return;
-    }
-
-    if(indexPath.row == 24)
-    {
-        SBCPUCurrentSliderController *vc = [[SBCPUCurrentSliderController alloc] init];
-
-        [self presentViewController:vc animated:YES completion:nil];
-
-        return;
-    }
-
 
     // SmartCharge Test8: 独立温度编辑页面
     if(indexPath.row >= 17 && indexPath.row <= 20)
@@ -3119,25 +2907,6 @@ cellForRowAtIndexPath:
         cell.detailTextLabel.text = @"查看硬件接口状态";
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     }
-
-    if(indexPath.row == 22)
-    {
-        cell.textLabel.text = @"停止充电";
-        cell.detailTextLabel.text = @"调用 Battman 接口";
-    }
-
-    if(indexPath.row == 23)
-    {
-        cell.textLabel.text = @"恢复充电";
-        cell.detailTextLabel.text = @"恢复默认充电";
-    }
-
-    if(indexPath.row == 24)
-    {
-        cell.textLabel.text = @"限制充电电流";
-        cell.detailTextLabel.text = @"点击输入 mA";
-    }
-
     return cell;
 
 }
