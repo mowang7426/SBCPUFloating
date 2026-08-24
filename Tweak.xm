@@ -9,7 +9,7 @@
 #endif
 
 
-static void sbCpuThermalProbe(void);
+static void sbcpuThermalProbe(void);
 
 #pragma mark -
 #pragma mark V1.5.8 Global
