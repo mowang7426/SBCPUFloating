@@ -3,14 +3,11 @@
 #import <mach/mach.h>
 #import <signal.h>
 #import <IOKit/IOKitLib.h>
-#import "SmartChargeController.h"
 
 #ifndef kIOMainPortDefault
 #define kIOMainPortDefault kIOMasterPortDefault
 #endif
 
-
-static void sbcpuThermalProbe(void);
 
 #pragma mark -
 #pragma mark V1.5.8 Global
@@ -28,18 +25,6 @@ static CGFloat landscapeScale = 0.75;
 static CGFloat batteryFontSize = 12.0;
 static CGFloat landscapeFontSize = 12.0;
 static SBCPUDragView *cpuDragView;
-
-// Test11-Test17 SmartCharge Probe forward declaration
-static void sbcpuSmartChargeControlProbe(void);
-static void sbcpuSmartChargeExternalMethodProbe(void);
-static void sbcpuSmartChargeDeepProbe(void);
-static void sbcpuSmartChargeControlServiceProbe(void);
-static void sbcpuSmartChargeControlPropertyProbe(void);
-static void sbcpuSmartChargeSetCurrentLimitTest(NSInteger ma);
-static void sbcpuSmartChargeStopTest(void);
-static void sbcpuSmartChargeRestoreTest(void);
-static void sbcpuSmartChargeDeepIOProbe(void);
-static void sbcpuAppleChargerUserClientProbe(void);
 
 
 
@@ -1966,7 +1951,7 @@ static void sbcpuSmartChargeServiceScan()
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    return 7;
+    return 4;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
@@ -1985,51 +1970,16 @@ static void sbcpuSmartChargeServiceScan()
 
     cell.textLabel.text = names[indexPath.row];
 
-    if(indexPath.row < 4)
+    if([result containsString:names[indexPath.row]])
     {
-        if([result containsString:names[indexPath.row]])
-        {
-            cell.detailTextLabel.text = result;
-            cell.detailTextLabel.numberOfLines = 4;
-        }
-        else
-        {
-            cell.detailTextLabel.text = @"未发现";
-        }
+        cell.detailTextLabel.text = @"已检测";
     }
-    else if(indexPath.row == 4)
+    else
     {
-        cell.textLabel.text = @"SmartCharge 控制测试";
-        cell.detailTextLabel.text = @"进入控制";
-        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-    }
-    else if(indexPath.row == 5)
-    {
-        cell.textLabel.text = @"降低充电电流";
-        cell.detailTextLabel.text = @"2000mA";
-    }
-    else if(indexPath.row == 6)
-    {
-        cell.textLabel.text = @"停止/恢复充电";
-        cell.detailTextLabel.text = @"点击测试";
+        cell.detailTextLabel.text = @"未发现";
     }
 
     return cell;
-}
-
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
-{
-    if(indexPath.row == 5)
-    {
-        sbcpuSmartChargeSetCurrentLimitTest(2000);
-        return;
-    }
-
-    if(indexPath.row == 6)
-    {
-        sbcpuSmartChargeStopTest();
-        return;
-    }
 }
 
 @end
@@ -2087,7 +2037,7 @@ static void sbcpuSmartChargeControlServiceProbe()
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    return 6;
+    return 3;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
@@ -2101,34 +2051,13 @@ static void sbcpuSmartChargeControlServiceProbe()
         @"AppleSMC"
     ];
 
-    if(indexPath.row < 3)
-    {
-        NSString *result = sbcpuSmartChargeControlServiceStatus ?: @"未知";
-        cell.textLabel.text = names[indexPath.row];
-        cell.detailTextLabel.text =
-        [result containsString:names[indexPath.row]] ? result : @"未发现";
-    }
+    NSString *result = sbcpuSmartChargeControlServiceStatus ?: @"未知";
 
+    cell.textLabel.text = names[indexPath.row];
+    cell.detailTextLabel.text =
+    [result containsString:names[indexPath.row]] ? @"已检测" : @"未发现";
 
     return cell;
-}
-
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
-{
-    if(indexPath.row == 3)
-    {
-        sbcpuSmartChargeSetCurrentLimitTest(2000);
-    }
-    else if(indexPath.row == 4)
-    {
-        sbcpuSmartChargeStopTest();
-    }
-    else if(indexPath.row == 5)
-    {
-        sbcpuSmartChargeRestoreTest();
-    }
-
-    [tableView deselectRowAtIndexPath:indexPath animated:YES];
 }
 
 @end
@@ -2147,9 +2076,6 @@ static void sbcpuSmartChargeControlServiceProbe()
     sbcpuSmartChargeDeepPropertyScan();
     sbcpuSmartChargeServiceScan();
     sbcpuSmartChargeControlServiceProbe();
-
-    // Test3: 强制刷新诊断列表，避免进入页面后数据源未显示
-    [self.tableView reloadData];
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
@@ -2257,7 +2183,6 @@ static void sbcpuSmartChargeControlServiceProbe()
         [self.navigationController pushViewController:vc animated:YES];
        return;
     }
-
 }
 
 @end
@@ -2280,51 +2205,21 @@ static NSString *sbcpuScanPropertyKeys(io_service_t service)
         CFIndex count = CFDictionaryGetCount(props);
         [result appendFormat:@"属性数量: %ld\n",(long)count];
 
-        NSArray *keys = @[@"Current",
-                          @"CurrentLimit",
-                          @"ChargeCurrent",
-                          @"InputCurrent",
-                          @"MaxCurrent",
-                          @"ChargingCurrent",
-                          @"Voltage",
-                          @"ChargingVoltage",
-                          @"Power",
-                          @"Charge",
-                          @"Enable",
-                          @"BatteryPercent"];
+        NSArray *keys = @[@"Current",@"Limit",@"Power",@"Charge",@"Enable",@"Voltage",
+                          @"ChargingCurrent",@"ChargingVoltage",@"BatteryPercent"];
 
         for(NSString *key in keys)
         {
-            CFTypeRef value = CFDictionaryGetValue(props,(__bridge CFStringRef)key);
-
-            if(value)
+            if(CFDictionaryContainsKey(props,(__bridge CFStringRef)key))
             {
-                [result appendFormat:@"\n⚡发现字段:\n%@\n",key];
-
-                if(CFGetTypeID(value)==CFNumberGetTypeID())
-                {
-                    long long v=0;
-                    if(CFGetTypeID(value)==CFNumberGetTypeID())
-                    {
-                        CFNumberGetValue((CFNumberRef)value,
-                                         kCFNumberLongLongType,
-                                         &v);
-                    }
-                    [result appendFormat:@"值: %lld\n",v];
-                }
-                else if(CFGetTypeID(value)==CFStringGetTypeID())
-                {
-                    [result appendFormat:@"值: %@\n",(__bridge NSString *)value];
-                }
-                else
-                {
-                    [result appendFormat:@"类型: %@\n",
-                     (__bridge NSString *)CFCopyTypeIDDescription(CFGetTypeID(value))];
-                }
+                [result appendFormat:@"  %@ : 支持\n",key];
             }
         }
 
-        [result appendString:@"\n全部关键字扫描完成\n"];
+        if(result.length == [[NSString stringWithFormat:@"属性数量: %ld\n",(long)count] length])
+        {
+            [result appendString:@"  未发现常用控制字段\n"];
+        }
 
         CFRelease(props);
     }
@@ -2379,12 +2274,6 @@ static void sbcpuSmartChargeControlPropertyProbe()
 
     // 进入页面自动扫描
     sbcpuSmartChargeControlPropertyProbe();
-    sbcpuThermalProbe();
-       sbcpuSmartChargeDeepIOProbe();
-    // Test11: 探测充电控制通道（只读，不修改）
-    sbcpuSmartChargeControlProbe();
-    sbcpuSmartChargeExternalMethodProbe();
-    sbcpuAppleChargerUserClientProbe();
 
     [self.tableView reloadData];
 }
@@ -2478,7 +2367,7 @@ numberOfRowsInSection:
 (NSInteger)section
 {
 
-    return 25;
+    return 22;
 
 }
 
@@ -2695,27 +2584,6 @@ titleForHeaderInSection:
      animated:YES];
 
 
-
-    if(indexPath.row == 22)
-    {
-        sbcpuSmartChargeSetCurrentLimitTest(2000);
-        [tableView reloadData];
-        return;
-    }
-
-    if(indexPath.row == 23)
-    {
-        sbcpuSmartChargeStopTest();
-        [tableView reloadData];
-        return;
-    }
-
-    if(indexPath.row == 24)
-    {
-        sbcpuSmartChargeRestoreTest();
-        [tableView reloadData];
-        return;
-    }
 
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 }
@@ -3037,28 +2905,6 @@ cellForRowAtIndexPath:
     {
         cell.textLabel.text = @"SmartCharge 诊断";
         cell.detailTextLabel.text = @"查看硬件接口状态";
-        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-    }
-
-
-    if(indexPath.row == 22)
-    {
-        cell.textLabel.text = @"降低充电电流";
-        cell.detailTextLabel.text = @"测试目标 2000mA";
-        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-    }
-
-    if(indexPath.row == 23)
-    {
-        cell.textLabel.text = @"停止充电";
-        cell.detailTextLabel.text = @"SmartCharge Stop";
-        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-    }
-
-    if(indexPath.row == 24)
-    {
-        cell.textLabel.text = @"恢复充电";
-        cell.detailTextLabel.text = @"SmartCharge Restore";
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     }
     return cell;
@@ -3541,467 +3387,6 @@ static NSInteger SBCPUChargingAdjust(NSInteger value, NSInteger step, NSInteger 
     return value;
 }
 
-
-
-// =====================================================
-// Test11.5 SmartCharge External Method Probe
-// 只探测 user client / external method 入口
-// 不执行任何写入
-// =====================================================
-
-static NSString *sbcpuSmartChargeMethodProbeStatus = @"未检测";
-
-static void sbcpuSmartChargeExternalMethodProbe()
-{
-    NSArray *targets = @[
-        @"AppleCharger",
-        @"AppleSmartBatteryManager",
-        @"AppleSmartBattery",
-        @"IOPMPowerSource"
-    ];
-
-    NSMutableString *result = [NSMutableString string];
-
-    for (NSString *name in targets)
-    {
-        io_service_t service =
-        IOServiceGetMatchingService(kIOMainPortDefault,
-                                    IOServiceMatching(name.UTF8String));
-
-        if (!service)
-        {
-            [result appendFormat:@"%@: 未找到\n", name];
-            continue;
-        }
-
-        [result appendFormat:@"%@: FOUND\n", name];
-
-        for (uint32_t type = 0; type <= 4; type++)
-        {
-            io_connect_t connect = MACH_PORT_NULL;
-
-            kern_return_t open =
-            IOServiceOpen(service,
-                          mach_task_self(),
-                          type,
-                          &connect);
-
-            if (open == KERN_SUCCESS)
-            {
-                [result appendFormat:@"  type %u: OPEN SUCCESS\n", type];
-                [result appendString:@"  UserClient入口存在\n"];
-
-                IOServiceClose(connect);
-            }
-            else
-            {
-                [result appendFormat:@"  type %u: failed (%d)\n", type, open];
-            }
-        }
-
-        [result appendString:@"  ExternalMethod: 未调用(安全模式)\n"];
-
-        IOObjectRelease(service);
-    }
-
-    sbcpuSmartChargeMethodProbeStatus = [result copy];
-
-    NSLog(@"[SBCPU SmartCharge UserClientProbe]\n%@", sbcpuSmartChargeMethodProbeStatus);
-}
-
-// =====================================================
-// Test11 SmartCharge ControlProbe
-// 仅探测 AppleCharger / BatteryManager 控制通道
-// 不写入任何充电参数
-// =====================================================
-
-static NSString *sbcpuSmartChargeControlProbeStatus = @"未检测";
-static NSInteger sbcpuSmartChargeControlOpenCount = 0;
-
-static void sbcpuSmartChargeControlProbe()
-{
-    NSArray *targets = @[
-        @"AppleCharger",
-        @"AppleSmartBatteryManager",
-        @"IOPMPowerSource"
-    ];
-
-    NSMutableString *result = [NSMutableString string];
-
-    for (NSString *name in targets)
-    {
-        io_service_t service =
-        IOServiceGetMatchingService(kIOMainPortDefault,
-                                    IOServiceMatching(name.UTF8String));
-
-        if (!service)
-        {
-            [result appendFormat:@"%@: 未找到\n", name];
-            continue;
-        }
-
-        [result appendFormat:@"%@: FOUND\n", name];
-
-        io_connect_t connect = MACH_PORT_NULL;
-
-        kern_return_t kr =
-        IOServiceOpen(service,
-                      mach_task_self(),
-                      0,
-                      &connect);
-
-        if (kr == KERN_SUCCESS)
-        {
-            sbcpuSmartChargeControlOpenCount++;
-            [result appendFormat:@"  IOServiceOpen: SUCCESS\n"];
-
-            IOServiceClose(connect);
-        }
-        else
-        {
-            [result appendFormat:@"  IOServiceOpen: FAILED (%d)\n", kr];
-        }
-
-        IOObjectRelease(service);
-    }
-
-    sbcpuSmartChargeControlProbeStatus = [result copy];
-
-    NSLog(@"[SBCPU SmartCharge Test11]\n%@", sbcpuSmartChargeControlProbeStatus);
-}
-
-
-
-// =====================================================
-
-// =====================================================
-// Test17 AppleCharger UserClient Probe
-// 只探测 AppleCharger / BatteryManager 控制通道
-// 不调用 ExternalMethod，不修改充电参数
-// =====================================================
-
-static NSString *sbcpuAppleChargerProbeStatus = @"未检测";
-
-static void sbcpuAppleChargerUserClientProbe(void)
-{
-    NSMutableString *result = [NSMutableString string];
-
-    NSArray *targets = @[
-        @"AppleCharger",
-        @"AppleSmartBatteryManager",
-        @"AppleSmartBattery",
-        @"IOPMPowerSource"
-    ];
-
-    for (NSString *name in targets)
-    {
-        io_service_t service =
-        IOServiceGetMatchingService(kIOMasterPortDefault,
-                                    IOServiceMatching(name.UTF8String));
-
-        if (!service)
-        {
-            [result appendFormat:@"%@: 未找到\n", name];
-            continue;
-        }
-
-        [result appendFormat:@"\n[%@]\n", name];
-
-        for (uint32_t type = 0; type <= 4; type++)
-        {
-            io_connect_t connect = MACH_PORT_NULL;
-
-            kern_return_t kr =
-            IOServiceOpen(service,
-                          mach_task_self(),
-                          type,
-                          &connect);
-
-            if (kr == KERN_SUCCESS)
-            {
-                [result appendFormat:@"type %u: UserClient OPEN SUCCESS\n", type];
-
-                IOServiceClose(connect);
-            }
-            else
-            {
-                [result appendFormat:@"type %u: failed (%d)\n", type, kr];
-            }
-        }
-
-        IOObjectRelease(service);
-    }
-
-    if (result.length == 0)
-        [result appendString:@"没有发现 AppleCharger 控制入口"];
-
-    sbcpuAppleChargerProbeStatus = [result copy];
-
-    NSLog(@"[SBCPU SmartCharge Test17 AppleChargerProbe]\n%@", sbcpuAppleChargerProbeStatus);
-}
-
-
-// Test16 SmartCharge Deep IO Probe
-// 深层属性递归探测（只读）
-// 不执行写入，不改变充电参数
-// =====================================================
-
-static NSString *sbcpuSmartChargeDeepIOProbeStatus = @"未检测";
-
-static void sbcpuSmartChargeDumpObject(CFTypeRef obj, NSMutableString *out, int level)
-{
-    if(!obj || level > 5) return;
-
-    if(CFGetTypeID(obj) == CFDictionaryGetTypeID())
-    {
-        CFDictionaryRef dict = (CFDictionaryRef)obj;
-        CFIndex count = CFDictionaryGetCount(dict);
-
-        const void **keys = (const void **)malloc(sizeof(void *) * count);
-        const void **vals = (const void **)malloc(sizeof(void *) * count);
-
-        CFDictionaryGetKeysAndValues(dict, keys, vals);
-
-        for(CFIndex i=0;i<count;i++)
-        {
-            NSString *key = [(__bridge id)keys[i] description];
-            [out appendFormat:@"\n%@%@",
-             [@"" stringByPaddingToLength:level*2 withString:@" " startingAtIndex:0],
-             key];
-
-            if([key rangeOfString:@"Current" options:NSCaseInsensitiveSearch].location != NSNotFound ||
-               [key rangeOfString:@"Charge" options:NSCaseInsensitiveSearch].location != NSNotFound ||
-               [key rangeOfString:@"Limit" options:NSCaseInsensitiveSearch].location != NSNotFound ||
-               [key rangeOfString:@"Power" options:NSCaseInsensitiveSearch].location != NSNotFound ||
-               [key rangeOfString:@"Voltage" options:NSCaseInsensitiveSearch].location != NSNotFound)
-            {
-                [out appendString:@"  <-- 可能控制字段"];
-            }
-
-            sbcpuSmartChargeDumpObject(vals[i], out, level+1);
-        }
-
-        free(keys);
-        free(vals);
-    }
-}
-
-static void sbcpuSmartChargeDeepIOProbe()
-{
-    NSMutableString *result=[NSMutableString string];
-
-    NSArray *targets=@[
-        @"AppleCharger",
-        @"AppleSmartBatteryManager",
-        @"AppleSmartBattery",
-        @"IOPMPowerSource"
-    ];
-
-    for(NSString *name in targets)
-    {
-        io_service_t service =
-        IOServiceGetMatchingService(kIOMasterPortDefault,
-                                    IOServiceMatching(name.UTF8String));
-
-        if(service)
-        {
-            [result appendFormat:@"\n\n[%@]\n",name];
-
-            CFMutableDictionaryRef props=NULL;
-
-            if(IORegistryEntryCreateCFProperties(service,
-                                                  &props,
-                                                  kCFAllocatorDefault,
-                                                  0)==KERN_SUCCESS && props)
-            {
-                sbcpuSmartChargeDumpObject(props,result,1);
-                CFRelease(props);
-            }
-            else
-            {
-                [result appendString:@"读取失败"];
-            }
-
-            IOObjectRelease(service);
-        }
-        else
-        {
-            [result appendFormat:@"\n[%@] 未找到",name];
-        }
-    }
-
-    if(result.length==0)
-        [result appendString:@"没有发现深层属性"];
-
-    sbcpuSmartChargeDeepIOProbeStatus=[result copy];
-
-    NSLog(@"[SBCPU SmartCharge Test16]\n%@",sbcpuSmartChargeDeepIOProbeStatus);
-}
-
-
-
-#pragma mark - V1.8.9 Thermal Power Probe
-
-static NSString *sbcpuThermalProbeStatus = @"未检测";
-
-static void sbcpuThermalDumpService(NSString *name, NSMutableString *out)
-{
-    io_iterator_t iter = 0;
-    kern_return_t kr = IOServiceGetMatchingServices(kIOMasterPortDefault,
-                                                    IOServiceMatching([name UTF8String]),
-                                                    &iter);
-    if (kr != KERN_SUCCESS) {
-        return;
-    }
-
-    io_service_t service = 0;
-    while ((service = IOIteratorNext(iter))) {
-        CFMutableDictionaryRef props = NULL;
-        if (IORegistryEntryCreateCFProperties(service,
-                                              &props,
-                                              kCFAllocatorDefault,
-                                              kNilOptions) == KERN_SUCCESS)
-        {
-            [out appendFormat:@"\n%@:\n", name];
-
-            if (props) {
-                CFIndex count = CFDictionaryGetCount(props);
-                [out appendFormat:@"Property Count: %ld\n", (long)count];
-
-                const void **keys = (const void **)malloc(sizeof(void *) * count);
-                const void **vals = (const void **)malloc(sizeof(void *) * count);
-
-                if (keys && vals) {
-                    CFDictionaryGetKeysAndValues(props, keys, vals);
-
-                    for (CFIndex i = 0; i < count; i++) {
-                        NSString *key = (__bridge NSString *)keys[i];
-
-                        if ([key rangeOfString:@"Thermal|Power|Limit|Charge|Current|Temperature"
-                                        options:NSRegularExpressionSearch].location != NSNotFound)
-                        {
-                            NSString *value = [(__bridge id)vals[i] description];
-                            [out appendFormat:@"%@ = %@\n", key, value];
-                        }
-                    }
-                }
-
-                if(keys) free(keys);
-                if(vals) free(vals);
-                CFRelease(props);
-            }
-        }
-
-        IOObjectRelease(service);
-    }
-
-    IOObjectRelease(iter);
-}
-
-static void sbcpuThermalProbe()
-{
-    NSMutableString *result = [NSMutableString string];
-
-    [result appendString:@"Thermal/Power Probe\n"];
-
-    sbcpuThermalDumpService(@"IOPMrootDomain", result);
-    sbcpuThermalDumpService(@"AppleThermalManager", result);
-    sbcpuThermalDumpService(@"AppleThermalManagerService", result);
-    sbcpuThermalDumpService(@"IOPMPowerSource", result);
-
-    if(result.length < 30)
-    {
-        [result appendString:@"No thermal service data found"];
-    }
-
-    sbcpuThermalProbeStatus = [result copy];
-
-    NSLog(@"[SBCPU ThermalProbe]\n%@", sbcpuThermalProbeStatus);
-}
-
-
-
-
-#pragma mark - SmartCharge Control Test1
-static NSInteger sbcpuTestCurrentLimit = 0;
-static NSString *sbcpuChargeControlResult = @"待测试";
-
-static void sbcpuSmartChargeShowTestResult(NSString *msg)
-{
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = nil;
-
-        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-            if ([scene isKindOfClass:[UIWindowScene class]]) {
-                UIWindowScene *ws = (UIWindowScene *)scene;
-
-                for (UIWindow *w in ws.windows) {
-                    if (w.isKeyWindow) {
-                        window = w;
-                        break;
-                    }
-                }
-            }
-
-            if (window) {
-                break;
-            }
-        }
-
-        if (!window) {
-            for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-                if ([scene isKindOfClass:[UIWindowScene class]]) {
-                    UIWindowScene *ws = (UIWindowScene *)scene;
-                    window = ws.windows.firstObject;
-                    break;
-                }
-            }
-        }
-        UIViewController *vc = window.rootViewController;
-
-        UIAlertController *alert =
-        [UIAlertController alertControllerWithTitle:@"SmartCharge Test"
-                                            message:msg
-                                     preferredStyle:UIAlertControllerStyleAlert];
-
-        [alert addAction:[UIAlertAction actionWithTitle:@"确定"
-                                                  style:UIAlertActionStyleDefault
-                                                handler:nil]];
-
-        while(vc.presentedViewController)
-            vc = vc.presentedViewController;
-
-        [vc presentViewController:alert animated:YES completion:nil];
-    });
-}
-
-static void sbcpuSmartChargeSetCurrentLimitTest(NSInteger ma)
-{
-    sbcpuTestCurrentLimit = ma;
-    sbcpuChargeControlResult =
-    [NSString stringWithFormat:@"请求限制 %ldmA", (long)ma];
-
-    NSLog(@"[SBCPU SmartCharge] Set Current Limit %ldmA",(long)ma);
-    sbcpuSmartChargeShowTestResult(sbcpuChargeControlResult);
-}
-
-static void sbcpuSmartChargeStopTest(void)
-{
-    sbcpuChargeControlResult = @"请求停止充电";
-
-    NSLog(@"[SBCPU SmartCharge] Stop Charge");
-    sbcpuSmartChargeShowTestResult(sbcpuChargeControlResult);
-}
-
-static void sbcpuSmartChargeRestoreTest(void)
-{
-    sbcpuTestCurrentLimit = 0;
-    sbcpuChargeControlResult = @"请求恢复充电";
-
-    NSLog(@"[SBCPU SmartCharge] Restore Charge");
-    sbcpuSmartChargeShowTestResult(sbcpuChargeControlResult);
-}
-
 %ctor
 {
     autoWindowSizeEnable = [[NSUserDefaults standardUserDefaults] boolForKey:@"SBCPU.AutoWindowSize"];
@@ -4140,6 +3525,5 @@ static void sbcpuSmartChargeRestoreTest(void)
 
         }
     );
-
 
 }
