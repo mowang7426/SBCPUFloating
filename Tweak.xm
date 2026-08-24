@@ -4143,4 +4143,3 @@ static void sbcpuSmartChargeRestoreTest(void)
 
 
 }
-// Test10 placeholder update applied
