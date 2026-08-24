@@ -2096,7 +2096,7 @@ static void sbcpuSmartChargeControlServiceProbe()
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    return 14;
+    return 17;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
@@ -2167,6 +2167,18 @@ static void sbcpuSmartChargeControlServiceProbe()
         cell.detailTextLabel.text = @"点击查看详情";
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     }
+    if(indexPath.row == 14){
+        cell.textLabel.text = @"SmartCharge 控制测试";
+        cell.detailTextLabel.text = @"Test1";
+    }
+    if(indexPath.row == 15){
+        cell.textLabel.text = @"限制充电电流";
+        cell.detailTextLabel.text = @"2000mA";
+    }
+    if(indexPath.row == 16){
+        cell.textLabel.text = @"停止/恢复充电";
+        cell.detailTextLabel.text = @"点击测试";
+    }
     return cell;
 }
 
@@ -2198,6 +2210,18 @@ static void sbcpuSmartChargeControlServiceProbe()
 
         [self.navigationController pushViewController:vc animated:YES];
        return;
+    }
+
+    if(indexPath.row == 15)
+    {
+        sbcpuSmartChargeSetCurrentLimitTest(2000);
+        return;
+    }
+
+    if(indexPath.row == 16)
+    {
+        sbcpuSmartChargeStopTest();
+        return;
     }
 }
 
