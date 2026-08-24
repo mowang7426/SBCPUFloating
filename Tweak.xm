@@ -4,6 +4,7 @@
 #import <signal.h>
 #import <IOKit/IOKitLib.h>
 #include <dlfcn.h>
+#import "SmartChargeController.h"
 
 
 
