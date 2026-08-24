@@ -19,7 +19,7 @@ static io_service_t SBCPUGetAccessoryService(void)
     return IOAccessoryManagerGetServiceWithPrimaryPort(2);
 }
 
-static BOOL SBCPUStopCharging(void)
+static BOOL __attribute__((unused)) SBCPUStopCharging(void)
 {
     io_service_t service = SBCPUGetAccessoryService();
     if (!service) return NO;
@@ -29,7 +29,7 @@ static BOOL SBCPUStopCharging(void)
     return ret == KERN_SUCCESS;
 }
 
-static BOOL SBCPURestoreCharging(void)
+static BOOL __attribute__((unused)) SBCPURestoreCharging(void)
 {
     io_service_t service = SBCPUGetAccessoryService();
     if (!service) return NO;
@@ -39,7 +39,7 @@ static BOOL SBCPURestoreCharging(void)
     return ret == KERN_SUCCESS;
 }
 
-static BOOL SBCPUSetCurrentLimit(int mA)
+static BOOL __attribute__((unused)) SBCPUSetCurrentLimit(int mA)
 {
     io_service_t service = SBCPUGetAccessoryService();
     if (!service) return NO;
