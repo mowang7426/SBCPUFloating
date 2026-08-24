@@ -2602,6 +2602,75 @@ titleForHeaderInSection:
 
     }
 
+    // SmartCharge 控制按钮
+    if(indexPath.row == 22)
+    {
+        BOOL ok = SBCPUStopCharging();
+
+        UIAlertController *a =
+        [UIAlertController alertControllerWithTitle:@"SmartCharge"
+                                            message:(ok ? @"停止充电指令已发送" : @"停止充电失败")
+                                     preferredStyle:UIAlertControllerStyleAlert];
+
+        [a addAction:[UIAlertAction actionWithTitle:@"确定"
+                                              style:UIAlertActionStyleDefault
+                                            handler:nil]];
+
+        [self presentViewController:a animated:YES completion:nil];
+        return;
+    }
+
+    if(indexPath.row == 23)
+    {
+        BOOL ok = SBCPURestoreCharging();
+
+        UIAlertController *a =
+        [UIAlertController alertControllerWithTitle:@"SmartCharge"
+                                            message:(ok ? @"恢复充电指令已发送" : @"恢复充电失败")
+                                     preferredStyle:UIAlertControllerStyleAlert];
+
+        [a addAction:[UIAlertAction actionWithTitle:@"确定"
+                                              style:UIAlertActionStyleDefault
+                                            handler:nil]];
+
+        [self presentViewController:a animated:YES completion:nil];
+        return;
+    }
+
+    if(indexPath.row == 24)
+    {
+        UIAlertController *a =
+        [UIAlertController alertControllerWithTitle:@"限制充电电流"
+                                            message:@"输入 mA"
+                                     preferredStyle:UIAlertControllerStyleAlert];
+
+        [a addTextFieldWithConfigurationHandler:^(UITextField *tf){
+            tf.keyboardType = UIKeyboardTypeNumberPad;
+            tf.placeholder = @"例如 2000";
+        }];
+
+        [a addAction:[UIAlertAction actionWithTitle:@"确定"
+                                              style:UIAlertActionStyleDefault
+                                            handler:^(UIAlertAction *action){
+
+            int mA = [a.textFields.firstObject.text intValue];
+
+            if(mA > 0)
+            {
+                SBCPUSetCurrentLimit(mA);
+            }
+
+        }]];
+
+        [a addAction:[UIAlertAction actionWithTitle:@"取消"
+                                              style:UIAlertActionStyleCancel
+                                            handler:nil]];
+
+        [self presentViewController:a animated:YES completion:nil];
+        return;
+    }
+
+
     // SmartCharge Test8: 独立温度编辑页面
     if(indexPath.row >= 17 && indexPath.row <= 20)
     {
