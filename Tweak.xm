@@ -1988,6 +1988,86 @@ static void sbcpuSmartChargeServiceScan()
 
 
 
+
+// ==============================
+// SmartCharge Scheme A - DLSYM runtime loader
+// ==============================
+
+typedef io_service_t (*IOAccessoryManagerGetServiceWithPrimaryPort_t)(SInt32);
+typedef IOReturn (*IOAccessoryManagerSetUSBCurrentLimitBase_t)(io_service_t, uint64_t);
+typedef IOReturn (*IOAccessoryManagerRestoreUSBCurrentLimitBase_t)(io_service_t);
+typedef IOReturn (*IOAccessoryManagerSetUSBCurrentLimitMaximum_t)(uint32_t, uint64_t);
+
+static void *SBCPULoadAccessoryFramework(void)
+{
+    static void *handle = NULL;
+
+    if(handle)
+        return handle;
+
+    handle = dlopen("/System/Library/PrivateFrameworks/AppleEmbeddedAccessory.framework/AppleEmbeddedAccessory", RTLD_NOW);
+
+    return handle;
+}
+
+static BOOL SBCPUStopCharging(void)
+{
+    void *h = SBCPULoadAccessoryFramework();
+    if(!h) return NO;
+
+    IOAccessoryManagerGetServiceWithPrimaryPort_t getService =
+    (IOAccessoryManagerGetServiceWithPrimaryPort_t)dlsym(h, "IOAccessoryManagerGetServiceWithPrimaryPort");
+
+    IOAccessoryManagerSetUSBCurrentLimitBase_t setLimit =
+    (IOAccessoryManagerSetUSBCurrentLimitBase_t)dlsym(h, "IOAccessoryManagerSetUSBCurrentLimitBase");
+
+    if(!getService || !setLimit)
+        return NO;
+
+    io_service_t service = getService(0);
+
+    if(!service)
+        return NO;
+
+    return setLimit(service, 0) == KERN_SUCCESS;
+}
+
+static BOOL SBCPURestoreCharging(void)
+{
+    void *h = SBCPULoadAccessoryFramework();
+    if(!h) return NO;
+
+    IOAccessoryManagerGetServiceWithPrimaryPort_t getService =
+    (IOAccessoryManagerGetServiceWithPrimaryPort_t)dlsym(h, "IOAccessoryManagerGetServiceWithPrimaryPort");
+
+    IOAccessoryManagerRestoreUSBCurrentLimitBase_t restore =
+    (IOAccessoryManagerRestoreUSBCurrentLimitBase_t)dlsym(h, "IOAccessoryManagerRestoreUSBCurrentLimitBase");
+
+    if(!getService || !restore)
+        return NO;
+
+    io_service_t service = getService(0);
+
+    if(!service)
+        return NO;
+
+    return restore(service) == KERN_SUCCESS;
+}
+
+static BOOL SBCPUSetCurrentLimit(int mA)
+{
+    void *h = SBCPULoadAccessoryFramework();
+    if(!h) return NO;
+
+    IOAccessoryManagerSetUSBCurrentLimitMaximum_t setMaximum =
+    (IOAccessoryManagerSetUSBCurrentLimitMaximum_t)dlsym(h, "IOAccessoryManagerSetUSBCurrentLimitMaximum");
+
+    if(!setMaximum)
+        return NO;
+
+    return setMaximum(0, (uint64_t)mA) == KERN_SUCCESS;
+}
+
 // ==============================
 // Test10G 控制服务探测
 // ==============================
