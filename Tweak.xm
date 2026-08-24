@@ -3,20 +3,78 @@
 #import <mach/mach.h>
 #import <signal.h>
 #import <IOKit/IOKitLib.h>
+#include <dlfcn.h>
 
 
 
-#pragma mark - SmartCharge Battman Control (Scheme A)
+#pragma mark - SmartCharge Battman Control (Scheme A DLSYM)
 
-extern io_service_t IOAccessoryManagerGetServiceWithPrimaryPort(SInt32 port);
-extern IOReturn IOAccessoryManagerSetUSBCurrentLimitBase(io_service_t service, uint64_t input);
-extern IOReturn IOAccessoryManagerRestoreUSBCurrentLimitBase(io_service_t service);
-extern IOReturn IOAccessoryManagerSetUSBCurrentLimitMaximum(io_service_t service, uint64_t ilimMax);
-extern IOReturn IOAccessoryManagerClearUSBCurrentLimitMaximum(io_service_t service);
+typedef io_service_t (*IOAccessoryManagerGetServiceWithPrimaryPort_t)(SInt32);
+typedef IOReturn (*IOAccessoryManagerSetUSBCurrentLimitBase_t)(io_service_t, uint64_t);
+typedef IOReturn (*IOAccessoryManagerRestoreUSBCurrentLimitBase_t)(io_service_t);
+typedef IOReturn (*IOAccessoryManagerSetUSBCurrentLimitMaximum_t)(uint32_t, uint64_t);
 
-static io_service_t SBCPUGetAccessoryService(void)
+static void *SmartChargeLoadBattman(void)
 {
-    return IOAccessoryManagerGetServiceWithPrimaryPort(2);
+    static void *handle = NULL;
+    if (!handle)
+    {
+        handle = dlopen("/System/Library/PrivateFrameworks/AppleEmbeddedAccessory.framework/AppleEmbeddedAccessory", RTLD_NOW);
+        if (!handle)
+            handle = dlopen("/System/Library/PrivateFrameworks/BatteryUsageUI.framework/BatteryUsageUI", RTLD_NOW);
+    }
+    return handle;
+}
+
+static BOOL SBCPUStopCharging(void)
+{
+    void *h = SmartChargeLoadBattman();
+    if (!h) return NO;
+
+    IOAccessoryManagerGetServiceWithPrimaryPort_t getService =
+    (IOAccessoryManagerGetServiceWithPrimaryPort_t)dlsym(h, "IOAccessoryManagerGetServiceWithPrimaryPort");
+
+    IOAccessoryManagerSetUSBCurrentLimitBase_t setLimit =
+    (IOAccessoryManagerSetUSBCurrentLimitBase_t)dlsym(h, "IOAccessoryManagerSetUSBCurrentLimitBase");
+
+    if (!getService || !setLimit) return NO;
+
+    io_service_t service = getService(0);
+    if (!service) return NO;
+
+    return setLimit(service, 0) == KERN_SUCCESS;
+}
+
+static BOOL SBCPURestoreCharging(void)
+{
+    void *h = SmartChargeLoadBattman();
+    if (!h) return NO;
+
+    IOAccessoryManagerGetServiceWithPrimaryPort_t getService =
+    (IOAccessoryManagerGetServiceWithPrimaryPort_t)dlsym(h, "IOAccessoryManagerGetServiceWithPrimaryPort");
+
+    IOAccessoryManagerRestoreUSBCurrentLimitBase_t restore =
+    (IOAccessoryManagerRestoreUSBCurrentLimitBase_t)dlsym(h, "IOAccessoryManagerRestoreUSBCurrentLimitBase");
+
+    if (!getService || !restore) return NO;
+
+    io_service_t service = getService(0);
+    if (!service) return NO;
+
+    return restore(service) == KERN_SUCCESS;
+}
+
+static BOOL SBCPUSetCurrentLimit(int mA)
+{
+    void *h = SmartChargeLoadBattman();
+    if (!h) return NO;
+
+    IOAccessoryManagerSetUSBCurrentLimitMaximum_t setMax =
+    (IOAccessoryManagerSetUSBCurrentLimitMaximum_t)dlsym(h, "IOAccessoryManagerSetUSBCurrentLimitMaximum");
+
+    if (!setMax) return NO;
+
+    return setMax(0, (uint64_t)mA) == KERN_SUCCESS;
 }
 
 static BOOL SBCPUStopCharging(void)
