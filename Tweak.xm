@@ -10,9 +10,6 @@
 
 
 static void sbcpuThermalProbe(void);
-static void sbcpuSmartChargeSetCurrentLimitTest(NSInteger ma);
-static void sbcpuSmartChargeStopTest(void);
-static void sbcpuSmartChargeRestoreTest(void);
 
 #pragma mark -
 #pragma mark V1.5.8 Global
@@ -37,6 +34,9 @@ static void sbcpuSmartChargeExternalMethodProbe(void);
 static void sbcpuSmartChargeDeepProbe(void);
 static void sbcpuSmartChargeControlServiceProbe(void);
 static void sbcpuSmartChargeControlPropertyProbe(void);
+static void sbcpuSmartChargeSetCurrentLimitTest(NSInteger ma);
+static void sbcpuSmartChargeStopTest(void);
+static void sbcpuSmartChargeRestoreTest(void);
 static void sbcpuSmartChargeDeepIOProbe(void);
 static void sbcpuAppleChargerUserClientProbe(void);
 
@@ -3857,6 +3857,29 @@ static void sbcpuThermalProbe()
 }
 
 
+
+
+#pragma mark - SmartCharge Control Test1
+static NSInteger sbcpuTestCurrentLimit = 0;
+static NSString *sbcpuChargeControlResult = @"待测试";
+
+static void sbcpuSmartChargeSetCurrentLimitTest(NSInteger ma)
+{
+    sbcpuTestCurrentLimit = ma;
+    sbcpuChargeControlResult = [NSString stringWithFormat:@"请求限制 %ldmA", (long)ma];
+}
+
+static void sbcpuSmartChargeStopTest(void)
+{
+    sbcpuChargeControlResult = @"请求停止充电";
+}
+
+static void sbcpuSmartChargeRestoreTest(void)
+{
+    sbcpuTestCurrentLimit = 0;
+    sbcpuChargeControlResult = @"请求恢复充电";
+}
+
 %ctor
 {
     autoWindowSizeEnable = [[NSUserDefaults standardUserDefaults] boolForKey:@"SBCPU.AutoWindowSize"];
@@ -3996,27 +4019,5 @@ static void sbcpuThermalProbe()
         }
     );
 
-#pragma mark - SmartCharge Control Test1
-static NSInteger sbcpuTestCurrentLimit = 0;
-static NSString *sbcpuChargeControlResult = @"待测试";
-
-static void sbcpuSmartChargeSetCurrentLimitTest(NSInteger ma)
-{
-    // Test1 placeholder: Battman IOAccessoryManager bridge entry.
-    // Waiting for final daemon/helper bridge if SpringBoard permission is insufficient.
-    sbcpuTestCurrentLimit = ma;
-    sbcpuChargeControlResult = [NSString stringWithFormat:@"请求限制 %ldmA", (long)ma];
-}
-
-static void sbcpuSmartChargeStopTest(void)
-{
-    sbcpuChargeControlResult = @"请求停止充电";
-}
-
-static void sbcpuSmartChargeRestoreTest(void)
-{
-    sbcpuTestCurrentLimit = 0;
-    sbcpuChargeControlResult = @"请求恢复充电";
-}
 
 }
