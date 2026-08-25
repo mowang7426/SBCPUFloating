@@ -115,6 +115,7 @@ static DeviceSpec getDeviceSpec(void) {
 @property (nonatomic, strong) UILabel *currentSubLabel;
 
 @property (nonatomic, strong) UIView *bottomCapsule;
+@property (nonatomic, strong) UIView *batteryProgressView; // 🔋 充电进度条
 @property (nonatomic, strong) UILabel *statusLabel;
 
 @property (nonatomic, strong) UIView *collapsedContainerView;
@@ -339,7 +340,6 @@ static BOOL isDeviceOverheated(void) {
 
 - (instancetype)init {
     if (self = [super init]) {
-        // 创建微像素驱动图层，挂载到 Window 产生持续微小重绘事务
         _driverLayer = [CALayer layer];
         _driverLayer.frame = CGRectMake(0, 0, 2, 2);
         _driverLayer.backgroundColor = [UIColor clearColor].CGColor;
@@ -396,10 +396,8 @@ static BOOL isDeviceOverheated(void) {
 
     if (@available(iOS 15.0, *)) {
         float targetFps = apply120 ? 120.0f : 60.0f;
-        // 关键：将 min, max, preferred 全部锁在 120Hz
         _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(targetFps, targetFps, targetFps);
         
-        // 注入 ProMotion 高刷理由标识 (0x110001 = 1114113)
         if (apply120) {
             if ([_displayLink respondsToSelector:@selector(setHighFrameRateReason:)]) {
                 @try {
@@ -616,13 +614,22 @@ static void applySystemRefreshRate(void) {
         _currentSubLabel.font = [UIFont systemFontOfSize:8.5f weight:UIFontWeightMedium];
         [content addSubview:_currentSubLabel];
 
+        // 充电状态胶囊背景容器
         _bottomCapsule = [[UIView alloc] init];
         _bottomCapsule.backgroundColor = [UIColor colorWithWhite:1.0f alpha:0.10f];
         _bottomCapsule.layer.cornerRadius = 10.0f;
+        _bottomCapsule.layer.masksToBounds = YES;
         _bottomCapsule.layer.borderWidth = 0.5f;
         _bottomCapsule.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.12f].CGColor;
         [content addSubview:_bottomCapsule];
 
+        // 🔋 与电量严格同步的绿色进度指示条
+        _batteryProgressView = [[UIView alloc] init];
+        _batteryProgressView.backgroundColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:0.32f];
+        _batteryProgressView.layer.cornerRadius = 10.0f;
+        [_bottomCapsule addSubview:_batteryProgressView];
+
+        // 充电状态文字（悬浮在进度条上层）
         _statusLabel = [[UILabel alloc] init];
         _statusLabel.textColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
         _statusLabel.font = [UIFont systemFontOfSize:10 weight:UIFontWeightMedium];
@@ -1103,6 +1110,17 @@ static void applySystemRefreshRate(void) {
     _tempValueLabel.text = (temp > 0) ? [NSString stringWithFormat:@"%.1f°C", temp] : @"--°C";
     _currentValueLabel.text = [NSString stringWithFormat:@"%.0fmA", current];
     _statusLabel.text = isCharging ? @"🟢 正在充电" : @"⚪ 未在充电";
+
+    // 🔋 实时根据当前电量百分比计算绿色指示条宽度
+    if (isCharging) {
+        CGFloat capsuleW = _bottomCapsule.bounds.size.width;
+        CGFloat capsuleH = _bottomCapsule.bounds.size.height > 0 ? _bottomCapsule.bounds.size.height : 22.0f;
+        CGFloat targetProgressW = MAX(0, MIN(capsuleW, capsuleW * (battery / 100.0f)));
+        
+        [UIView animateWithDuration:0.35 animations:^{
+            self.batteryProgressView.frame = CGRectMake(0, 0, targetProgressW, capsuleH);
+        }];
+    }
 
     _miniCpuLabel.text = [NSString stringWithFormat:@"%.0f%%", cpu];
     
@@ -1785,7 +1803,7 @@ static void createCPUWindow(void) {
     cpuWindow.rootViewController.view.backgroundColor = UIColor.clearColor;
     cpuWindow.hidden = !isEnabled;
 
-    // 将微图层挂载到顶级 Window 上
+    // 挂载 ProMotion 微像素硬件驱动图层
     [cpuWindow.layer addSublayer:[SBCPUFPSHelper sharedInstance].driverLayer];
 
     CGRect initFrame = CGRectMake(20, 160, 240, 60);
@@ -1889,7 +1907,12 @@ static void updateCPU(void) {
         double current = getBatteryCurrentInternal();
         BOOL charging = isChargingInternal();
 
+        // 🔌 检测到刚插上充电器时的触发逻辑
         if (charging && !previousChargingState) {
+            // 若此时浮窗处于收起折叠状态，自动弹出并展开
+            if (floatingView.isCollapsed) {
+                [floatingView expandFromEdgeAnimated:YES];
+            }
             [floatingView triggerPlugAnimation];
         }
         previousChargingState = charging;
@@ -1976,7 +1999,7 @@ static void updateCPU(void) {
 }
 @end
 
-#pragma mark - 14. 完整设置控制器实现（包含全部 6 个设置分组）
+#pragma mark - 14. 完整设置控制器实现（包含说明文本与全部设置分组）
 
 @implementation SBCPUSettingsController
 
@@ -2017,6 +2040,15 @@ static void updateCPU(void) {
     if (section == 3) return @"🧠 智能选项";
     if (section == 4) return @"🎮 性能与高刷锁定";
     return @"📍 位置与显示";
+}
+
+// 📝 在 Section 4（图一位置）增加详细的功能说明文字
+- (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
+    (void)tableView;
+    if (section == 4) {
+        return @"💡 功能说明：\n1. 强制 120Hz 高刷模式：通过底层硬件合成器与微像素渲染驱动，全局锁定 120Hz 满帧，彻底杜绝屏幕静止降频。\n2. 智能温控降频保护：开启时若检测到电池温度 ≥43°C 或系统过热警报将自动降频保护；关闭后解除温控限制，发热也强行保持 120Hz。";
+    }
+    return nil;
 }
 
 - (void)changeScaleSlider:(UISlider *)slider {
