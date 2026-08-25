@@ -1,3 +1,4 @@
+```logos
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 #import <mach/mach.h>
@@ -8,11 +9,9 @@
 #define kIOMainPortDefault kIOMasterPortDefault
 #endif
 
-
 #pragma mark -
 #pragma mark V1.5.8 Global
 #pragma mark -
-
 
 static UIWindow *cpuWindow;
 
@@ -22,14 +21,14 @@ static UILabel *label;
 static UIView *glassContainer;
 static UIView *glassTintView;
 static UIVisualEffectView *glassBlurView;
+static CAGradientLayer *glassGradientLayer;
+
 static CGFloat floatingScale = 1.0;
 static CGFloat floatingFontSize = 14.0;
 static CGFloat landscapeScale = 0.75;
 static CGFloat batteryFontSize = 12.0;
 static CGFloat landscapeFontSize = 12.0;
 static SBCPUDragView *cpuDragView;
-
-
 
 // SmartCharge UI V1.8.3
 static BOOL sbcpuSmartChargeEnable = YES;
@@ -49,26 +48,19 @@ static NSInteger sbcpuEditChargeTempStop = 42;
  */
 static BOOL settingsShowing = NO;
 
-
 /*
  自动注销
  */
 static BOOL autoLogoutEnable = NO;
-
 static double logoutCPUThreshold = 100.0;
-
 static NSInteger logoutDuration = 60;
-
 static NSDate *cpuHighStartTime = nil;
-
 static BOOL logoutCounting = NO;
-
 
 /*
  透明度
  */
 static BOOL floatingAlphaEnable = YES;
-
 static CGFloat floatingAlpha = 0.70f;
 
 /*
@@ -103,503 +95,215 @@ static BOOL smartDockEnable = YES;
 static NSInteger dockMode = 0; // 0自动 1左 2右 3上 4下
 static BOOL rememberPositionEnable = YES;
 
-
-
 /*
  前置声明
  */
 static void openSettings(void);
-
 static void checkHighCPU(double cpu);
 static void applySmartLayout(void);
 static void registerV160Observers(void);
 
-
-
-/*
- 提前声明两个控制器
- 避免 Objective-C 未声明错误
- */
 @class SBCPUValuePickerController;
 @class SBCPUTimePickerController;
-
-
 
 #pragma mark -
 #pragma mark 获取 WindowScene
 #pragma mark -
 
-
 static UIWindowScene *getWindowScene()
 {
-
-    if(cpuWindow &&
-       cpuWindow.windowScene)
+    if(cpuWindow && cpuWindow.windowScene)
     {
         return cpuWindow.windowScene;
     }
 
-
-    UIApplication *app =
-    UIApplication.sharedApplication;
-
-
+    UIApplication *app = UIApplication.sharedApplication;
     for(UIScene *scene in app.connectedScenes)
     {
-
-        if([scene
-            isKindOfClass:
-            UIWindowScene.class])
+        if([scene isKindOfClass:UIWindowScene.class])
         {
-
-            UIWindowScene *ws =
-            (UIWindowScene *)scene;
-
-
-            if(ws.activationState !=
-               UISceneActivationStateUnattached)
+            UIWindowScene *ws = (UIWindowScene *)scene;
+            if(ws.activationState != UISceneActivationStateUnattached)
             {
-
                 return ws;
-
             }
-
         }
-
     }
-
-
     return nil;
 }
-
-
 
 #pragma mark -
 #pragma mark CPU
 #pragma mark -
 
-
 static double getCPUUsage()
 {
-
     thread_array_t threads;
-
     mach_msg_type_number_t count = 0;
 
-
-    kern_return_t kr =
-    task_threads(
-        mach_task_self(),
-        &threads,
-        &count
-    );
-
-
+    kern_return_t kr = task_threads(mach_task_self(), &threads, &count);
     if(kr != KERN_SUCCESS)
     {
         return 0;
     }
 
-
     double total = 0;
-
-
-    for(mach_msg_type_number_t i = 0;
-        i < count;
-        i++)
+    for(mach_msg_type_number_t i = 0; i < count; i++)
     {
-
         thread_info_data_t info;
+        mach_msg_type_number_t infoCount = THREAD_INFO_MAX;
 
-        mach_msg_type_number_t infoCount =
-        THREAD_INFO_MAX;
-
-
-        kr =
-        thread_info(
-            threads[i],
-            THREAD_BASIC_INFO,
-            (thread_info_t)info,
-            &infoCount
-        );
-
-
+        kr = thread_info(threads[i], THREAD_BASIC_INFO, (thread_info_t)info, &infoCount);
         if(kr == KERN_SUCCESS)
         {
-
-            thread_basic_info_t basic =
-            (thread_basic_info_t)info;
-
-
-            if(!(basic->flags &
-                 TH_FLAGS_IDLE))
+            thread_basic_info_t basic = (thread_basic_info_t)info;
+            if(!(basic->flags & TH_FLAGS_IDLE))
             {
-
-                total +=
-                ((double)basic->cpu_usage /
-                 TH_USAGE_SCALE)
-                *
-                100.0;
-
+                total += ((double)basic->cpu_usage / TH_USAGE_SCALE) * 100.0;
             }
-
         }
-
     }
 
-
-    vm_deallocate(
-        mach_task_self(),
-        (vm_address_t)threads,
-        count * sizeof(thread_t)
-    );
-
-
+    vm_deallocate(mach_task_self(), (vm_address_t)threads, count * sizeof(thread_t));
     return total;
 }
-
-
 
 #pragma mark -
 #pragma mark 透明度
 #pragma mark -
 
-
 static void applyFloatingAlpha()
 {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if(!glassContainer) return;
 
-    dispatch_async(
-        dispatch_get_main_queue(),
-        ^{
-
-            if(!label)
-            {
-                return;
-            }
-
-
-            if(floatingAlphaEnable)
-            {
-
-                label.alpha =
-                floatingAlpha;
-
-            }
-            else
-            {
-
-                label.alpha =
-                1.0;
-
-            }
-
+        if(floatingAlphaEnable)
+        {
+            glassContainer.alpha = floatingAlpha;
         }
-    );
-
+        else
+        {
+            glassContainer.alpha = 1.0;
+        }
+    });
 }
-
-
 
 #pragma mark -
 #pragma mark 可穿透 Window
 #pragma mark -
 
-
 @interface SBCPUWindow : UIWindow
-
 @end
-
-
 
 @implementation SBCPUWindow
 
-
-/*
- V1.5.8 最关键的触摸修复
-
- 浮窗 Window 本身是全屏的。
-
- 如果不重写 hitTest：
- 即使背景透明，
- Window 仍然可能把整个屏幕的触摸吃掉。
-
- 现在：
-
- 1. 设置页面打开：
-    正常接收全部触摸。
-
- 2. 设置页面关闭：
-    只有浮窗区域接收触摸。
-
- 3. 其他区域：
-    返回 nil，让 SpringBoard 接收。
- */
-
-
-- (UIView *)hitTest:
-( CGPoint)point
-withEvent:
-(UIEvent *)event
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
 {
-
     if(settingsShowing)
     {
-
-        return
-        [super hitTest:
-         point
-         withEvent:event];
-
+        return [super hitTest:point withEvent:event];
     }
 
-
-    UIView *view =
-    [super hitTest:
-     point
-     withEvent:event];
-
-
+    UIView *view = [super hitTest:point withEvent:event];
     if(!view)
     {
         return nil;
     }
 
-
-    /*
-     只有 label / drag 区域接受事件
-     */
-
-
-    if([view isDescendantOfView:
-        label])
+    /* 浮窗容器及组件接受触摸事件 */
+    if([view isDescendantOfView:glassContainer] || [view isDescendantOfView:label])
     {
         return view;
     }
 
-
-    UIView *root =
-    self.rootViewController.view;
-
-
+    UIView *root = self.rootViewController.view;
     if(root)
     {
-
         for(UIView *subview in root.subviews)
         {
-
-            if(subview != label &&
-               [subview isKindOfClass:
-                NSClassFromString(@"SBCPUDragView")])
+            if([subview isKindOfClass:NSClassFromString(@"SBCPUDragView")])
             {
-
-                CGRect frame =
-                [subview.superview
-                 convertRect:
-                 subview.frame
-                 toView:self];
-
-                if(CGRectContainsPoint(
-                    frame,
-                    point))
+                CGRect frame = [subview.superview convertRect:subview.frame toView:self];
+                if(CGRectContainsPoint(frame, point))
                 {
                     return subview;
                 }
-
             }
-
         }
-
     }
 
-
-    /*
-     浮窗以外全部穿透
-     */
-
+    /* 浮窗以外全屏穿透 */
     return nil;
 }
 
-
 @end
-
-
 
 #pragma mark -
 #pragma mark 拖动层
 #pragma mark -
 
-
 @interface SBCPUDragView : UIView
-
-@property(nonatomic,assign)
-CGPoint lastPoint;
-
+@property(nonatomic,assign) CGPoint lastPoint;
 @end
-
-
 
 @implementation SBCPUDragView
 
-
-- (void)touchesBegan:
-(NSSet *)touches
-withEvent:
-(UIEvent *)event
+- (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event
 {
+    UITouch *touch = touches.anyObject;
+    if(!touch) return;
 
-    UITouch *touch =
-    touches.anyObject;
-
-
-    if(!touch)
-    {
-        return;
-    }
-
-
-    self.lastPoint =
-    [touch locationInView:
-     self.superview];
-
-
-
-    [super touchesBegan:
-     touches
-     withEvent:event];
-
+    self.lastPoint = [touch locationInView:self.superview];
+    [super touchesBegan:touches withEvent:event];
 }
 
-
-
-- (void)touchesMoved:
-(NSSet *)touches
-withEvent:
-(UIEvent *)event
+- (void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event
 {
+    UITouch *touch = touches.anyObject;
+    if(!touch) return;
 
-    UITouch *touch =
-    touches.anyObject;
+    CGPoint now = [touch locationInView:self.superview];
+    CGFloat dx = now.x - self.lastPoint.x;
+    CGFloat dy = now.y - self.lastPoint.y;
 
-
-    if(!touch)
-    {
-        return;
-    }
-
-
-    CGPoint now =
-    [touch locationInView:
-     self.superview];
-
-
-    CGFloat dx =
-    now.x -
-    self.lastPoint.x;
-
-
-    CGFloat dy =
-    now.y -
-    self.lastPoint.y;
-
-
-    CGPoint center =
-    label.center;
-
-
+    CGPoint center = glassContainer.center;
     center.x += dx;
-
     center.y += dy;
 
+    CGSize size = self.superview.bounds.size;
+    CGFloat halfW = glassContainer.bounds.size.width / 2.0;
+    CGFloat halfH = glassContainer.bounds.size.height / 2.0;
 
-    CGSize size =
-    self.superview.bounds.size;
+    if(center.x < halfW) center.x = halfW;
+    if(center.x > size.width - halfW) center.x = size.width - halfW;
+    if(center.y < halfH + 40) center.y = halfH + 40;
+    if(center.y > size.height - halfH) center.y = size.height - halfH;
 
+    glassContainer.center = center;
+    self.center = center;
+    self.lastPoint = now;
 
-    CGFloat halfW =
-    label.bounds.size.width / 2.0;
-
-
-    CGFloat halfH =
-    label.bounds.size.height / 2.0;
-
-
-    if(center.x < halfW)
-    {
-        center.x = halfW;
-    }
-
-
-    if(center.x >
-       size.width - halfW)
-    {
-        center.x =
-        size.width - halfW;
-    }
-
-
-    if(center.y < halfH + 40)
-    {
-        center.y =
-        halfH + 40;
-    }
-
-
-    if(center.y >
-       size.height - halfH)
-    {
-        center.y =
-        size.height - halfH;
-    }
-
-
-    label.center =
-    center;
-
-
-    self.center =
-    center;
-
-
-    self.lastPoint =
-    now;
-
-
-    [super touchesMoved:
-     touches
-     withEvent:event];
-
+    [super touchesMoved:touches withEvent:event];
 }
 
-
-
-- (void)touchesEnded:
-(NSSet *)touches
-withEvent:
-(UIEvent *)event
+- (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event
 {
     [super touchesEnded:touches withEvent:event];
+    if(!glassContainer) return;
 
-    if(!label)
-    {
-        return;
-    }
-
-    // V1.6.2.1 Smart Layout
-    // 关闭智能吸附时，释放后保持当前位置
     if(!smartDockEnable)
     {
         dockSide = 0;
         if(rememberPositionEnable)
         {
-            [[NSUserDefaults standardUserDefaults] setObject:NSStringFromCGRect(label.frame) forKey:@"SBCPU.LastFrame"];
+            [[NSUserDefaults standardUserDefaults] setObject:NSStringFromCGRect(glassContainer.frame) forKey:@"SBCPU.LastFrame"];
             [[NSUserDefaults standardUserDefaults] synchronize];
         }
         return;
     }
 
     CGSize size = self.superview.bounds.size;
-
-    CGRect frame = label.frame;
+    CGRect frame = glassContainer.frame;
 
     CGFloat left = CGRectGetMinX(frame);
     CGFloat right = size.width - CGRectGetMaxX(frame);
@@ -607,51 +311,49 @@ withEvent:
     CGFloat bottom = size.height - CGRectGetMaxY(frame);
 
     CGFloat minDistance = MIN(MIN(left,right),MIN(top,bottom));
+    CGPoint center = glassContainer.center;
 
-    CGPoint center = label.center;
-
-    // 固定吸附模式
     if(dockMode > 0)
     {
         if(dockMode == 1)
         {
-            center.x = label.bounds.size.width / 2.0 + 10;
+            center.x = glassContainer.bounds.size.width / 2.0 + 10;
             dockSide = 1;
         }
         else if(dockMode == 2)
         {
-            center.x = size.width - label.bounds.size.width / 2.0 - 10;
+            center.x = size.width - glassContainer.bounds.size.width / 2.0 - 10;
             dockSide = 2;
         }
         else if(dockMode == 3)
         {
-            center.y = label.bounds.size.height / 2.0 + 10;
+            center.y = glassContainer.bounds.size.height / 2.0 + 10;
             dockSide = 3;
         }
         else if(dockMode == 4)
         {
-            center.y = size.height - label.bounds.size.height / 2.0 - 10;
+            center.y = size.height - glassContainer.bounds.size.height / 2.0 - 10;
             dockSide = 4;
         }
     }
     else if(minDistance == left)
     {
-        center.x = label.bounds.size.width / 2.0 + 10;
+        center.x = glassContainer.bounds.size.width / 2.0 + 10;
         dockSide = 1;
     }
     else if(minDistance == right)
     {
-        center.x = size.width - label.bounds.size.width / 2.0 - 10;
+        center.x = size.width - glassContainer.bounds.size.width / 2.0 - 10;
         dockSide = 2;
     }
     else if(minDistance == top)
     {
-        center.y = label.bounds.size.height / 2.0 + 10;
+        center.y = glassContainer.bounds.size.height / 2.0 + 10;
         dockSide = 3;
     }
     else if(minDistance == bottom)
     {
-        center.y = size.height - label.bounds.size.height / 2.0 - 10;
+        center.y = size.height - glassContainer.bounds.size.height / 2.0 - 10;
         dockSide = 4;
     }
     else
@@ -662,440 +364,217 @@ withEvent:
     [UIView animateWithDuration:0.25
                           delay:0
                         options:UIViewAnimationOptionCurveEaseOut
-                     animations:
-     ^{
-         label.center = center;
-         self.center = center;
-     }
+                     animations:^{
+                         glassContainer.center = center;
+                         self.center = center;
+                     }
                      completion:nil];
 }
 
 @end
 
-
-
 #pragma mark -
 #pragma mark 双击
 #pragma mark -
 
-
 @interface SBCPUAction : NSObject
-
 @end
-
-
 
 @implementation SBCPUAction
 
-
 + (void)doubleTapAction
 {
-    // Test10p: 强制双击只进入主设置
-    // 防止控制属性探测 Controller 被错误复用
     dispatch_async(dispatch_get_main_queue(), ^{
         settingsShowing = NO;
         openSettings();
     });
 }
 
-
 @end
 
-
-
 #pragma mark -
-#pragma mark 创建悬浮窗
+#pragma mark 创建悬浮窗 (Liquid Glass 升级版)
 #pragma mark -
-
 
 static void createCPUWindow()
 {
+    if(cpuWindow) return;
 
-    if(cpuWindow)
-    {
-        return;
-    }
+    UIWindowScene *scene = getWindowScene();
+    if(!scene) return;
 
-
-    UIWindowScene *scene =
-    getWindowScene();
-
-
-    if(!scene)
-    {
-        return;
-    }
-
-
-    cpuWindow =
-    [[SBCPUWindow alloc]
-     initWithFrame:
-     UIScreen.mainScreen.bounds];
-
-
-    cpuWindow.windowScene =
-    scene;
-
+    cpuWindow = [[SBCPUWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+    cpuWindow.windowScene = scene;
+    cpuWindow.windowLevel = UIWindowLevelStatusBar + 1;
+    cpuWindow.backgroundColor = UIColor.clearColor;
+    cpuWindow.opaque = NO;
+    cpuWindow.rootViewController = [UIViewController new];
+    cpuWindow.rootViewController.view.backgroundColor = UIColor.clearColor;
+    cpuWindow.hidden = NO;
 
     /*
-     不使用 Alert+1
+     iOS 26 Liquid Glass 独立容器构建
      */
+    glassContainer = [[UIView alloc] initWithFrame:CGRectMake(20, 200, 140, 64)];
+    glassContainer.backgroundColor = UIColor.clearColor;
+    
+    // 平滑连续曲面圆角
+    if (@available(iOS 13.0, *)) {
+        glassContainer.layer.cornerCurve = kCACornerCurveContinuous;
+    }
+    glassContainer.layer.cornerRadius = 20;
+    glassContainer.layer.masksToBounds = NO; // 允许高质感外阴影溢出
 
-    cpuWindow.windowLevel =
-    UIWindowLevelStatusBar + 1;
+    // 1. 高高级立体环境阴影 (Liquid Glass Ambient Shadow)
+    glassContainer.layer.shadowColor = UIColor.blackColor.CGColor;
+    glassContainer.layer.shadowOpacity = 0.28;
+    glassContainer.layer.shadowRadius = 18;
+    glassContainer.layer.shadowOffset = CGSizeMake(0, 8);
 
-
-    cpuWindow.backgroundColor =
-    UIColor.clearColor;
-
-
-    cpuWindow.opaque =
-    NO;
-
-
-    cpuWindow.rootViewController =
-    [UIViewController new];
-
-
-    cpuWindow.rootViewController.view
-        .backgroundColor =
-        UIColor.clearColor;
-
-
-    cpuWindow.hidden =
-    NO;
-
-
-
-    /*
-     Liquid Glass Floating UI
-     */
-    glassContainer =
-    [[UIView alloc]
-     initWithFrame:CGRectMake(20, 200, 180, 90)];
-
-    glassContainer.layer.cornerRadius = 26;
-    glassContainer.layer.masksToBounds = YES;
-
-    UIBlurEffect *blur =
-    [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterialLight];
-
-    glassBlurView =
-    [[UIVisualEffectView alloc] initWithEffect:blur];
-
-    glassBlurView.frame =
-    glassContainer.bounds;
-
-    glassBlurView.layer.cornerRadius = 26;
+    // 2. 超薄深层模糊背景 (Frosted Glass Backdrop)
+    UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
+    glassBlurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
+    glassBlurView.frame = glassContainer.bounds;
+    if (@available(iOS 13.0, *)) {
+        glassBlurView.layer.cornerCurve = kCACornerCurveContinuous;
+    }
+    glassBlurView.layer.cornerRadius = 20;
     glassBlurView.clipsToBounds = YES;
-
     [glassContainer addSubview:glassBlurView];
 
-
-    /*
-     iOS 26 Liquid Glass 风格增强
-     - 更强景深模糊
-     - 半透明高光层
-     - 边缘反光
-     - 适配浅色背景，不再隐形
-     */
-
-    glassTintView =
-    [[UIView alloc]
-     initWithFrame:glassContainer.bounds];
-
-    glassTintView.layer.cornerRadius = 26;
+    // 3. 液态玻璃高光与微浅色遮罩 (Liquid Specular Layer)
+    glassTintView = [[UIView alloc] initWithFrame:glassContainer.bounds];
+    if (@available(iOS 13.0, *)) {
+        glassTintView.layer.cornerCurve = kCACornerCurveContinuous;
+    }
+    glassTintView.layer.cornerRadius = 20;
     glassTintView.clipsToBounds = YES;
+    glassTintView.backgroundColor = [[UIColor whiteColor] colorWithAlphaComponent:0.06];
 
-    glassTintView.backgroundColor =
-    [[UIColor whiteColor]
-     colorWithAlphaComponent:0.18];
-
-    // 顶部玻璃高光
-    CAGradientLayer *glassGradient =
-    [CAGradientLayer layer];
-
-    glassGradient.frame =
-    glassContainer.bounds;
-
-    glassGradient.cornerRadius = 26;
-
-    glassGradient.colors =
-    @[
-      (id)[[UIColor colorWithWhite:1 alpha:0.35] CGColor],
-      (id)[[UIColor colorWithWhite:1 alpha:0.08] CGColor],
-      (id)[[UIColor colorWithWhite:0 alpha:0.12] CGColor]
+    // 顶端斜向玻璃凸透镜高光 (Convex Glass Highlight)
+    glassGradientLayer = [CAGradientLayer layer];
+    glassGradientLayer.frame = glassContainer.bounds;
+    if (@available(iOS 13.0, *)) {
+        glassGradientLayer.cornerCurve = kCACornerCurveContinuous;
+    }
+    glassGradientLayer.cornerRadius = 20;
+    glassGradientLayer.colors = @[
+        (id)[[UIColor colorWithWhite:1.0 alpha:0.38] CGColor],
+        (id)[[UIColor colorWithWhite:1.0 alpha:0.12] CGColor],
+        (id)[[UIColor colorWithWhite:0.0 alpha:0.04] CGColor],
+        (id)[[UIColor colorWithWhite:1.0 alpha:0.18] CGColor]
     ];
-
-    glassGradient.locations =
-    @[@0.0,@0.45,@1.0];
-
-    [glassTintView.layer addSublayer:glassGradient];
-
+    glassGradientLayer.locations = @[@0.0, @0.35, @0.70, @1.0];
+    glassGradientLayer.startPoint = CGPointMake(0.0, 0.0);
+    glassGradientLayer.endPoint = CGPointMake(1.0, 1.0);
+    [glassTintView.layer addSublayer:glassGradientLayer];
     [glassContainer addSubview:glassTintView];
 
+    // 4. 精细玻璃边缘反光 (Glass Rim Border)
+    glassContainer.layer.borderWidth = 1.0;
+    glassContainer.layer.borderColor = [[UIColor whiteColor] colorWithAlphaComponent:0.32].CGColor;
 
-    // 玻璃边缘增强
-    glassContainer.layer.borderWidth = 1.2;
+    // 5. 内容 Label 嵌入玻璃内部
+    label = [[UILabel alloc] initWithFrame:glassContainer.bounds];
+    label.backgroundColor = UIColor.clearColor;
+    label.textAlignment = NSTextAlignmentCenter;
+    label.numberOfLines = 0;
+    label.textColor = UIColor.whiteColor;
+    label.font = [UIFont monospacedDigitSystemFontOfSize:14 weight:UIFontWeightMedium];
+    label.text = @"SB CPU\n0%";
 
-    glassContainer.layer.borderColor =
-    [[UIColor whiteColor]
-     colorWithAlphaComponent:0.25].CGColor;
+    // 给文字添加清晰易读的微妙阴影，避免在纯白或亮色背景下失真
+    label.layer.shadowColor = UIColor.blackColor.CGColor;
+    label.layer.shadowOffset = CGSizeMake(0, 1);
+    label.layer.shadowOpacity = 0.5;
+    label.layer.shadowRadius = 2.0;
 
+    [glassContainer addSubview:label];
+    [cpuWindow.rootViewController.view addSubview:glassContainer];
 
-    glassContainer.layer.shadowColor =
-    UIColor.blackColor.CGColor;
+    // 6. 透明拖动响应层
+    cpuDragView = [[SBCPUDragView alloc] initWithFrame:glassContainer.frame];
+    cpuDragView.backgroundColor = UIColor.clearColor;
+    cpuDragView.userInteractionEnabled = YES;
+    cpuDragView.multipleTouchEnabled = NO;
 
-    glassContainer.layer.shadowOpacity = 0.20;
-    glassContainer.layer.shadowRadius = 20;
-    glassContainer.layer.shadowOffset = CGSizeMake(0,8);
+    [cpuWindow.rootViewController.view addSubview:cpuDragView];
 
-
-
-    label =
-    [[UILabel alloc]
-     initWithFrame:
-     CGRectMake(15,10,150,70)];
-
-
-    label.backgroundColor =
-    UIColor.clearColor;
-
-
-    label.textAlignment =
-    NSTextAlignmentCenter;
-
-
-    label.numberOfLines =
-    0;
-
-
-    label.textColor =
-    UIColor.whiteColor;
-
-
-    label.font =
-    [UIFont
-     monospacedDigitSystemFontOfSize:
-     14
-     weight:UIFontWeightBold];
-
-
-    label.text =
-    @"SB CPU\n0%";
-
-
-    /*
-     拖动区域
-     */
-
-    cpuDragView =
-    [[SBCPUDragView alloc]
-     initWithFrame:
-     glassContainer.frame];
-
-    SBCPUDragView *drag = cpuDragView;
-
-
-    drag.backgroundColor =
-    UIColor.clearColor;
-
-
-    drag.userInteractionEnabled =
-    YES;
-
-
-    drag.multipleTouchEnabled =
-    NO;
-
-
-    [cpuWindow.rootViewController.view
-     addSubview:label];
-
-
-    [cpuWindow.rootViewController.view
-     addSubview:drag];
-
-
-
-    /*
-     双击
-     */
-
-    UITapGestureRecognizer *doubleTap =
-    [[UITapGestureRecognizer alloc]
-     initWithTarget:
-     [SBCPUAction class]
-     action:@selector(doubleTapAction)];
-
-
-    doubleTap.numberOfTapsRequired =
-    2;
-
-
-    doubleTap.numberOfTouchesRequired =
-    1;
-
-
-    [drag addGestureRecognizer:
-     doubleTap];
-
+    // 双击手势
+    UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:[SBCPUAction class] action:@selector(doubleTapAction)];
+    doubleTap.numberOfTapsRequired = 2;
+    doubleTap.numberOfTouchesRequired = 1;
+    [cpuDragView addGestureRecognizer:doubleTap];
 
     applyFloatingAlpha();
-
 }
 
-
-
+#pragma mark -
 #pragma mark 自动注销
 #pragma mark -
 
-
 static void checkHighCPU(double cpu)
 {
-
     if(!autoLogoutEnable)
     {
-
         cpuHighStartTime = nil;
-
         logoutCounting = NO;
-
         return;
-
     }
-
 
     if(cpu < logoutCPUThreshold)
     {
-
         cpuHighStartTime = nil;
-
         logoutCounting = NO;
-
         return;
-
     }
-
 
     if(!cpuHighStartTime)
     {
-
-        cpuHighStartTime =
-        [NSDate date];
-
+        cpuHighStartTime = [NSDate date];
         return;
-
     }
 
+    NSTimeInterval duration = [[NSDate date] timeIntervalSinceDate:cpuHighStartTime];
 
-    NSTimeInterval duration =
-    [[NSDate date]
-     timeIntervalSinceDate:
-     cpuHighStartTime];
-
-
-    if(duration >= logoutDuration &&
-       !logoutCounting)
+    if(duration >= logoutDuration && !logoutCounting)
     {
-
         logoutCounting = YES;
 
-
-        dispatch_async(
-            dispatch_get_main_queue(),
-            ^{
-
-                if(!cpuWindow)
-                {
-                    logoutCounting = NO;
-                    return;
-                }
-
-
-                UIViewController *root =
-                cpuWindow.rootViewController;
-
-
-                if(!root)
-                {
-                    logoutCounting = NO;
-                    return;
-                }
-
-
-                /*
-                 防止重复弹窗
-                 */
-
-                if(root.presentedViewController)
-                {
-                    return;
-                }
-
-
-                UIAlertController *alert =
-                [UIAlertController
-                 alertControllerWithTitle:
-                 @"SpringBoard CPU过高"
-                 message:
-                 @"5秒后自动注销"
-                 preferredStyle:
-                 UIAlertControllerStyleAlert];
-
-
-                [alert addAction:
-                 [UIAlertAction
-                  actionWithTitle:
-                  @"取消"
-                  style:
-                  UIAlertActionStyleCancel
-                  handler:
-                  ^(UIAlertAction *action)
-                  {
-
-                      logoutCounting = NO;
-
-                      cpuHighStartTime = nil;
-
-                  }]];
-
-
-                [root
-                 presentViewController:
-                 alert
-                 animated:YES
-                 completion:nil];
-
-
-                dispatch_after(
-                    dispatch_time(
-                        DISPATCH_TIME_NOW,
-                        5 * NSEC_PER_SEC),
-                    dispatch_get_main_queue(),
-                    ^{
-
-                        if(logoutCounting)
-                        {
-
-                            kill(
-                                getpid(),
-                                SIGTERM
-                            );
-
-                        }
-
-                    });
-
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if(!cpuWindow)
+            {
+                logoutCounting = NO;
+                return;
             }
-        );
 
+            UIViewController *root = cpuWindow.rootViewController;
+            if(!root || root.presentedViewController)
+            {
+                logoutCounting = NO;
+                return;
+            }
+
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"SpringBoard CPU过高"
+                                                                           message:@"5秒后自动注销"
+                                                                    preferredStyle:UIAlertControllerStyleAlert];
+
+            [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) {
+                logoutCounting = NO;
+                cpuHighStartTime = nil;
+            }]];
+
+            [root presentViewController:alert animated:YES completion:nil];
+
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                if(logoutCounting)
+                {
+                    kill(getpid(), SIGTERM);
+                }
+            });
+        });
     }
-
 }
-
-
-
 
 static BOOL isLandscapeMode()
 {
@@ -1103,24 +582,14 @@ static BOOL isLandscapeMode()
     return size.width > size.height;
 }
 
-
 static NSInteger getBatteryPercent()
 {
     UIDevice *device = [UIDevice currentDevice];
     device.batteryMonitoringEnabled = YES;
-
     float level = device.batteryLevel;
-
-    if(level < 0)
-    {
-        return -1;
-    }
-
+    if(level < 0) return -1;
     return (NSInteger)(level * 100.0f);
 }
-
-
-
 
 #pragma mark -
 #pragma mark V1.6.1 横屏电池温度
@@ -1131,47 +600,26 @@ static double getBatteryTemperature()
     io_iterator_t iterator = 0;
     io_service_t service = IO_OBJECT_NULL;
 
-    CFMutableDictionaryRef matching =
-    IOServiceMatching("AppleSmartBattery");
+    CFMutableDictionaryRef matching = IOServiceMatching("AppleSmartBattery");
+    if(!matching) return -1;
 
-    if(!matching)
-        return -1;
-
-    if(IOServiceGetMatchingServices(kIOMasterPortDefault,
-                                    matching,
-                                    &iterator) != KERN_SUCCESS)
+    if(IOServiceGetMatchingServices(kIOMasterPortDefault, matching, &iterator) != KERN_SUCCESS)
         return -1;
 
     while((service = IOIteratorNext(iterator)))
     {
-        CFTypeRef temp =
-        IORegistryEntryCreateCFProperty(
-            service,
-            CFSTR("Temperature"),
-            kCFAllocatorDefault,
-            0);
-
+        CFTypeRef temp = IORegistryEntryCreateCFProperty(service, CFSTR("Temperature"), kCFAllocatorDefault, 0);
         if(temp)
         {
             double value = -1;
-
             if(CFGetTypeID(temp) == CFNumberGetTypeID())
             {
-                CFNumberGetValue((CFNumberRef)temp,
-                                 kCFNumberDoubleType,
-                                 &value);
+                CFNumberGetValue((CFNumberRef)temp, kCFNumberDoubleType, &value);
             }
-
             CFRelease(temp);
             IOObjectRelease(service);
             IOObjectRelease(iterator);
 
-            /*
-             AppleSmartBattery Temperature:
-             iOS usually returns centi-degrees Celsius.
-             Example: 3650 = 36.50℃
-             Some devices expose deci-Kelvin, keep compatibility.
-            */
             if(value > 1000 && value < 10000)
             {
                 value = value / 100.0;
@@ -1180,176 +628,127 @@ static double getBatteryTemperature()
             {
                 value = value / 10.0 - 273.15;
             }
-
             return value;
         }
-
         IOObjectRelease(service);
     }
-
     IOObjectRelease(iterator);
-
     return -1;
 }
-
-
-
 
 static double getBatteryCurrent()
 {
     io_iterator_t iterator = 0;
     io_service_t service = IO_OBJECT_NULL;
 
-    CFMutableDictionaryRef matching =
-    IOServiceMatching("AppleSmartBattery");
+    CFMutableDictionaryRef matching = IOServiceMatching("AppleSmartBattery");
+    if(!matching) return -1;
 
-    if(!matching)
-        return -1;
-
-    if(IOServiceGetMatchingServices(kIOMasterPortDefault,
-                                    matching,
-                                    &iterator) != KERN_SUCCESS)
+    if(IOServiceGetMatchingServices(kIOMasterPortDefault, matching, &iterator) != KERN_SUCCESS)
         return -1;
 
     while((service = IOIteratorNext(iterator)))
     {
-        CFTypeRef value =
-        IORegistryEntryCreateCFProperty(
-            service,
-            CFSTR("Amperage"),
-            kCFAllocatorDefault,
-            0);
-
+        CFTypeRef value = IORegistryEntryCreateCFProperty(service, CFSTR("Amperage"), kCFAllocatorDefault, 0);
         if(value)
         {
             double current = -1;
-
             if(CFGetTypeID(value) == CFNumberGetTypeID())
             {
-                CFNumberGetValue((CFNumberRef)value,
-                                 kCFNumberDoubleType,
-                                 &current);
+                CFNumberGetValue((CFNumberRef)value, kCFNumberDoubleType, &current);
             }
-
             CFRelease(value);
             IOObjectRelease(service);
             IOObjectRelease(iterator);
-
             return current;
         }
-
         IOObjectRelease(service);
     }
-
     IOObjectRelease(iterator);
-
     return -1;
 }
 
 static BOOL isCharging()
 {
-    io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault,
-        IOServiceMatching("AppleSmartBattery"));
+    io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleSmartBattery"));
+    if(!service) return NO;
 
-    if(!service)
-        return NO;
-
-    CFTypeRef value = IORegistryEntryCreateCFProperty(service,
-        CFSTR("IsCharging"),
-        kCFAllocatorDefault,
-        0);
-
+    CFTypeRef value = IORegistryEntryCreateCFProperty(service, CFSTR("IsCharging"), kCFAllocatorDefault, 0);
     BOOL charging = NO;
 
     if(value)
     {
         if(CFGetTypeID(value) == CFBooleanGetTypeID())
             charging = CFBooleanGetValue((CFBooleanRef)value);
-
         CFRelease(value);
     }
-
     IOObjectRelease(service);
-
     return charging;
 }
 
-
 #pragma mark -
-#pragma mark 横竖屏尺寸调整
+#pragma mark 横竖屏尺寸与液态玻璃同步更新
 #pragma mark -
 
 static void updateFloatingSize()
 {
-    if(!label)
-    {
-        return;
-    }
+    if(!label || !glassContainer) return;
+
+    CGRect targetFrame;
+    CGPoint center = glassContainer.center;
 
     if(autoWindowSizeEnable)
     {
         CGSize maxSize = CGSizeMake(UIScreen.mainScreen.bounds.size.width - 40, 200);
-
         CGSize textSize = [label sizeThatFits:maxSize];
+        CGSize targetSize = CGSizeMake(textSize.width + 32, textSize.height + 20);
 
-        CGSize targetSize = CGSizeMake(textSize.width + 30, textSize.height + 20);
+        if(targetSize.width < 100) targetSize.width = 100;
+        if(targetSize.height < 48) targetSize.height = 48;
 
-        if(targetSize.width < 100)
-            targetSize.width = 100;
+        targetFrame = CGRectMake(center.x - targetSize.width / 2.0, center.y - targetSize.height / 2.0, targetSize.width, targetSize.height);
+    }
+    else
+    {
+        BOOL landscape = isLandscapeMode();
+        CGFloat scale = landscape ? landscapeScale : floatingScale;
+        CGSize targetSize = landscape ? CGSizeMake(135 * scale, 58 * scale) : CGSizeMake(100 * scale, 48 * scale);
 
-        if(targetSize.height < 48)
-            targetSize.height = 48;
-
-        CGPoint center = label.center;
-
-        CGRect frame = label.frame;
-        frame.size = targetSize;
-        label.frame = frame;
-        label.center = center;
-
-        if(cpuDragView)
-            cpuDragView.frame = label.frame;
-
-        label.layer.cornerRadius = 18;
-
-        [label setNeedsLayout];
-        return;
+        targetFrame = CGRectMake(center.x - targetSize.width / 2.0, center.y - targetSize.height / 2.0, targetSize.width, targetSize.height);
     }
 
-    BOOL landscape = isLandscapeMode();
-
-    CGFloat scale = landscape ? landscapeScale : floatingScale;
-
-    CGSize targetSize =
-    landscape ?
-    CGSizeMake(135 * scale, 58 * scale) :
-    CGSizeMake(100 * scale, 48 * scale);
-
-    if(!CGSizeEqualToSize(label.bounds.size, targetSize))
+    if(!CGRectEqualToRect(glassContainer.frame, targetFrame))
     {
-        CGRect frame = label.frame;
-
-        CGPoint center = label.center;
-
-        frame.size = targetSize;
-
-        label.frame = frame;
-
-        label.center = center;
+        glassContainer.frame = targetFrame;
+        glassBlurView.frame = glassContainer.bounds;
+        glassTintView.frame = glassContainer.bounds;
+        if(glassGradientLayer)
+        {
+            glassGradientLayer.frame = glassContainer.bounds;
+        }
+        label.frame = glassContainer.bounds;
 
         if(cpuDragView)
         {
-            cpuDragView.frame = label.frame;
+            cpuDragView.frame = targetFrame;
         }
 
-        label.layer.cornerRadius =
-        landscape ? 18 : 12;
+        // 根据浮窗尺寸动态调整圆角半径，保持连续弧度
+        CGFloat radius = MIN(targetFrame.size.width, targetFrame.size.height) * 0.35;
+        if(radius > 22) radius = 22;
+        if(radius < 12) radius = 12;
 
-        [label setNeedsLayout];
+        glassContainer.layer.cornerRadius = radius;
+        glassBlurView.layer.cornerRadius = radius;
+        glassTintView.layer.cornerRadius = radius;
+        if(glassGradientLayer)
+        {
+            glassGradientLayer.cornerRadius = radius;
+        }
+
+        [glassContainer setNeedsLayout];
     }
 }
-
-
 
 // SmartCharge Engine Test9
 typedef NS_ENUM(NSInteger, SBCPUSmartChargeState)
@@ -1403,23 +802,16 @@ static void updateSmartChargeState(double temperature)
     }
 }
 
-
-
-// SmartCharge Control Test10C - Hardware Probe
-// 仅探测设备支持情况，不修改充电参数
 static BOOL sbcpuSmartChargeProbeDone = NO;
 static NSString *sbcpuSmartChargeHardwareStatus = @"Unknown";
 
-// Test10E Deep Property Scan
-// 仅扫描 AppleSmartBattery 属性，不修改任何充电参数
 static NSString *sbcpuSmartChargePropertyScanStatus = @"未扫描";
 static NSInteger sbcpuSmartChargePropertyCount = 0;
 static NSInteger sbcpuSmartChargeWritableCount = 0;
 
 static void sbcpuSmartChargeDeepPropertyScan()
 {
-    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault,
-                                                       IOServiceMatching("AppleSmartBattery"));
+    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"));
     if (!service)
     {
         sbcpuSmartChargePropertyScanStatus = @"AppleSmartBattery 不可用";
@@ -1442,23 +834,15 @@ static void sbcpuSmartChargeDeepPropertyScan()
     IOObjectRelease(service);
 }
 
-
 static void smartChargeHardwareProbe()
 {
     if (sbcpuSmartChargeProbeDone) return;
 
-    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault,
-                                                       IOServiceMatching("AppleSmartBattery"));
+    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"));
     if (service)
     {
-        CFTypeRef limit = IORegistryEntryCreateCFProperty(service,
-                                                           CFSTR("ChargeCurrentLimit"),
-                                                           kCFAllocatorDefault,
-                                                           0);
-        CFTypeRef enabled = IORegistryEntryCreateCFProperty(service,
-                                                             CFSTR("ChargingEnabled"),
-                                                             kCFAllocatorDefault,
-                                                             0);
+        CFTypeRef limit = IORegistryEntryCreateCFProperty(service, CFSTR("ChargeCurrentLimit"), kCFAllocatorDefault, 0);
+        CFTypeRef enabled = IORegistryEntryCreateCFProperty(service, CFSTR("ChargingEnabled"), kCFAllocatorDefault, 0);
 
         if (limit || enabled)
         {
@@ -1471,7 +855,6 @@ static void smartChargeHardwareProbe()
 
         if (limit) CFRelease(limit);
         if (enabled) CFRelease(enabled);
-
         IOObjectRelease(service);
     }
     else
@@ -1486,23 +869,8 @@ static void smartChargeHardwareProbe()
 #pragma mark SmartCharge Control Engine Test10-A
 #pragma mark -
 
-/*
- Test10-A:
- 充电控制接口探测层
-
- 当前阶段只负责准备控制入口：
- - 根据 SmartCharge 状态进入对应策略
- - 不直接修改系统充电参数
- - 避免接口不兼容导致无法恢复充电
-
- 后续确认接口后在这里接入：
- 降低功率 / 暂停充电 / 恢复充电
-*/
-
 static BOOL sbcpuSmartChargeControlReady = YES;
-
 static NSString *sbcpuSmartChargeControlStatus = @"Idle";
-
 static BOOL sbcpuSmartChargeActionLocked = NO;
 
 static void smartChargeControlEngine()
@@ -1513,31 +881,17 @@ static void smartChargeControlEngine()
         return;
     }
 
-    /*
-     Test10-B 第一阶段：
-     控制执行层框架
-
-     当前只记录控制请求，不直接修改充电硬件参数。
-     后续确认接口后在这里接入：
-     - ChargingCurrentLimit
-     - ChargingEnabled
-     - powerd / IOKit 控制
-    */
-
     switch(smartChargeState)
     {
         case SBCPUSmartChargeReduce:
             sbcpuSmartChargeControlStatus = @"Reduce Requested";
             break;
-
         case SBCPUSmartChargePause:
             sbcpuSmartChargeControlStatus = @"Pause Requested";
             break;
-
         case SBCPUSmartChargeStop:
             sbcpuSmartChargeControlStatus = @"Stop Requested";
             break;
-
         default:
             sbcpuSmartChargeControlStatus = @"Normal";
             sbcpuSmartChargeActionLocked = NO;
@@ -1549,24 +903,17 @@ static void smartChargeControlEngine()
 #pragma mark CPU刷新
 #pragma mark -
 
-
 static void updateCPU()
 {
-
     double cpu = getCPUUsage();
-
     checkHighCPU(cpu);
 
     dispatch_async(dispatch_get_main_queue(), ^{
-
-        if(!label)
-            return;
+        if(!label) return;
 
         updateFloatingSize();
 
-        label.font =
-        [UIFont systemFontOfSize:(isLandscapeMode() ? landscapeFontSize : floatingFontSize)];
-
+        label.font = [UIFont systemFontOfSize:(isLandscapeMode() ? landscapeFontSize : floatingFontSize) weight:UIFontWeightMedium];
 
         NSInteger battery = getBatteryPercent();
         double temp = getBatteryTemperature();
@@ -1576,45 +923,30 @@ static void updateCPU()
         updateSmartChargeState(temp);
         smartChargeControlEngine();
 
-
         NSString *batteryText = @"";
         if(battery >= 0)
         {
-            batteryText =
-            [NSString stringWithFormat:@"%ld%%",
-             (long)battery];
+            batteryText = [NSString stringWithFormat:@"%ld%%", (long)battery];
         }
-
 
         NSString *tempText = @"";
-
         if(temp > 0 && temp < 100)
         {
-            tempText =
-            [NSString stringWithFormat:@"%.1f℃",
-             temp];
+            tempText = [NSString stringWithFormat:@"%.1f℃", temp];
         }
-
 
         NSString *currentText = @"";
-
         if(current != -1)
         {
-            currentText =
-            [NSString stringWithFormat:@"%.0fmA",
-             current];
+            currentText = [NSString stringWithFormat:@"%.0fmA", current];
         }
-
 
         NSString *chargeText = charging ? @"⚡" : @"";
 
-
         NSMutableArray *displayLines = [NSMutableArray array];
-
         [displayLines addObject:[NSString stringWithFormat:@"SB CPU %.1f%%", cpu]];
 
         NSMutableArray *batteryLine = [NSMutableArray array];
-
         if(showBatteryPercent && battery >= 0)
             [batteryLine addObject:[NSString stringWithFormat:@"🔋%@", batteryText]];
 
@@ -1632,224 +964,90 @@ static void updateCPU()
 
         label.text = [displayLines componentsJoinedByString:@"\n"];
 
-if (cpu >= 80.0)
-            label.textColor = UIColor.redColor;
+        if (cpu >= 80.0)
+            label.textColor = [UIColor colorWithRed:1.0 green:0.35 blue:0.35 alpha:1.0];
         else
             label.textColor = UIColor.whiteColor;
-
     });
 }
-
 
 #pragma mark -
 #pragma mark CPU选择页面
 #pragma mark -
 
-
-@interface SBCPUValuePickerController :
-UITableViewController
-
+@interface SBCPUValuePickerController : UITableViewController
 @end
-
-
 
 @implementation SBCPUValuePickerController
 
-
-- (NSInteger)tableView:
-(UITableView *)tableView
-numberOfRowsInSection:
-(NSInteger)section
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-
     return 7;
-
 }
 
-
-- (NSString *)tableView:
-(UITableView *)tableView
-titleForHeaderInSection:
-(NSInteger)section
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
 {
-
     return @"CPU触发值";
-
 }
 
-
-- (UITableViewCell *)tableView:
-(UITableView *)tableView
-cellForRowAtIndexPath:
-(NSIndexPath *)indexPath
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
 
-    UITableViewCell *cell =
-    [[UITableViewCell alloc]
-     initWithStyle:
-     UITableViewCellStyleDefault
-     reuseIdentifier:nil];
+    NSArray *titles = @[@"80%", @"100%", @"120%", @"140%", @"160%", @"180%", @"200%"];
+    NSArray *values = @[@80, @100, @120, @140, @160, @180, @200];
 
-
-    NSArray *titles =
-    @[
-      @"80%",
-      @"100%",
-      @"120%",
-      @"140%",
-      @"160%",
-      @"180%",
-      @"200%"
-    ];
-
-
-    NSArray *values =
-    @[
-      @80,
-      @100,
-      @120,
-      @140,
-      @160,
-      @180,
-      @200
-    ];
-
-
-    cell.textLabel.text =
-    titles[indexPath.row];
-
-
-    if([values[indexPath.row] doubleValue]
-       ==
-       logoutCPUThreshold)
+    cell.textLabel.text = titles[indexPath.row];
+    if([values[indexPath.row] doubleValue] == logoutCPUThreshold)
     {
-
-        cell.accessoryType =
-        UITableViewCellAccessoryCheckmark;
-
+        cell.accessoryType = UITableViewCellAccessoryCheckmark;
     }
 
-
     return cell;
-
 }
 
-
-
-
-
 @end
-
-
 
 #pragma mark -
 #pragma mark 时间选择页面
 #pragma mark -
 
-
-@interface SBCPUTimePickerController :
-UITableViewController
-
+@interface SBCPUTimePickerController : UITableViewController
 @end
-
-
 
 @implementation SBCPUTimePickerController
 
-
-- (NSInteger)tableView:
-(UITableView *)tableView
-numberOfRowsInSection:
-(NSInteger)section
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-
     return 7;
-
 }
 
-
-- (NSString *)tableView:
-(UITableView *)tableView
-titleForHeaderInSection:
-(NSInteger)section
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
 {
-
     return @"持续时间";
-
 }
 
-
-- (UITableViewCell *)tableView:
-(UITableView *)tableView
-cellForRowAtIndexPath:
-(NSIndexPath *)indexPath
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
 
-    UITableViewCell *cell =
-    [[UITableViewCell alloc]
-     initWithStyle:
-     UITableViewCellStyleDefault
-     reuseIdentifier:nil];
+    NSArray *titles = @[@"10秒", @"30秒", @"60秒", @"120秒", @"180秒", @"300秒", @"600秒"];
+    NSArray *values = @[@10, @30, @60, @120, @180, @300, @600];
 
-
-    NSArray *titles =
-    @[
-      @"10秒",
-      @"30秒",
-      @"60秒",
-      @"120秒",
-      @"180秒",
-      @"300秒",
-      @"600秒"
-    ];
-
-
-    NSArray *values =
-    @[
-      @10,
-      @30,
-      @60,
-      @120,
-      @180,
-      @300,
-      @600
-    ];
-
-
-    cell.textLabel.text =
-    titles[indexPath.row];
-
-
-    if([values[indexPath.row] integerValue]
-       ==
-       logoutDuration)
+    cell.textLabel.text = titles[indexPath.row];
+    if([values[indexPath.row] integerValue] == logoutDuration)
     {
-
-        cell.accessoryType =
-        UITableViewCellAccessoryCheckmark;
-
+        cell.accessoryType = UITableViewCellAccessoryCheckmark;
     }
 
-
     return cell;
-
 }
 
-
-
-
-
 @end
-
-
 
 #pragma mark -
 #pragma mark 设置主页
 #pragma mark -
-
-
-
-#pragma mark - SmartCharge Temp Edit Test8
 
 @interface SBChargeTempEditController : UIViewController
 @property(nonatomic,assign) NSInteger tempValue;
@@ -1865,7 +1063,6 @@ cellForRowAtIndexPath:
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-
     self.view.backgroundColor = UIColor.systemGroupedBackgroundColor;
     self.title = self.tempTitle;
 
@@ -1931,43 +1128,25 @@ cellForRowAtIndexPath:
 
 @end
 
-
-
 static NSString *sbcpuSmartChargeDeepProbeStatus = @"未检测";
 
 static void sbcpuSmartChargeDeepProbe()
 {
-    io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault,
-        IOServiceMatching("AppleSmartBattery"));
+    io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleSmartBattery"));
 
     if(service)
     {
         CFMutableDictionaryRef props = NULL;
-
-        kern_return_t kr = IORegistryEntryCreateCFProperties(
-            service,
-            &props,
-            kCFAllocatorDefault,
-            0);
+        kern_return_t kr = IORegistryEntryCreateCFProperties(service, &props, kCFAllocatorDefault, 0);
 
         if(kr == KERN_SUCCESS && props)
         {
-            BOOL hasCurrentLimit =
-            CFDictionaryContainsKey(props, CFSTR("ChargeCurrentLimit")) ||
-            CFDictionaryContainsKey(props, CFSTR("CurrentLimit"));
+            BOOL hasCurrentLimit = CFDictionaryContainsKey(props, CFSTR("ChargeCurrentLimit")) || CFDictionaryContainsKey(props, CFSTR("CurrentLimit"));
+            BOOL hasCharging = CFDictionaryContainsKey(props, CFSTR("ChargingEnabled")) || CFDictionaryContainsKey(props, CFSTR("BatteryCharging"));
 
-            BOOL hasCharging =
-            CFDictionaryContainsKey(props, CFSTR("ChargingEnabled")) ||
-            CFDictionaryContainsKey(props, CFSTR("BatteryCharging"));
-
-            sbcpuSmartChargeDeepProbeStatus =
-            [NSString stringWithFormat:@"CurrentLimit:%@  Charge:%@",
-             hasCurrentLimit ? @"YES" : @"NO",
-             hasCharging ? @"YES" : @"NO"];
-
+            sbcpuSmartChargeDeepProbeStatus = [NSString stringWithFormat:@"CurrentLimit:%@  Charge:%@", hasCurrentLimit ? @"YES" : @"NO", hasCharging ? @"YES" : @"NO"];
             CFRelease(props);
         }
-
         IOObjectRelease(service);
     }
     else
@@ -1976,27 +1155,16 @@ static void sbcpuSmartChargeDeepProbe()
     }
 }
 
-
 static NSString *sbcpuSmartChargeServiceScanStatus = @"未扫描";
 
 static void sbcpuSmartChargeServiceScan()
 {
     NSMutableString *result = [NSMutableString string];
-
-    NSArray *services = @[
-        @"AppleSmartBattery",
-        @"IOPMPowerSource",
-        @"AppleCharger",
-        @"AppleSMC"
-    ];
+    NSArray *services = @[@"AppleSmartBattery", @"IOPMPowerSource", @"AppleCharger", @"AppleSMC"];
 
     for(NSString *name in services)
     {
-        io_service_t service = IOServiceGetMatchingService(
-            kIOMasterPortDefault,
-            IOServiceMatching([name UTF8String])
-        );
-
+        io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching([name UTF8String]));
         if(service)
         {
             [result appendFormat:@"%@:YES  ", name];
@@ -2007,10 +1175,8 @@ static void sbcpuSmartChargeServiceScan()
             [result appendFormat:@"%@:NO  ", name];
         }
     }
-
     sbcpuSmartChargeServiceScanStatus = result;
 }
-
 
 @interface SBCPUSmartChargeServiceDetailController : UITableViewController
 @end
@@ -2030,59 +1196,27 @@ static void sbcpuSmartChargeServiceScan()
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    UITableViewCell *cell =
-    [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
-
-    NSArray *names = @[
-        @"AppleSmartBattery",
-        @"IOPMPowerSource",
-        @"AppleCharger",
-        @"AppleSMC"
-    ];
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+    NSArray *names = @[@"AppleSmartBattery", @"IOPMPowerSource", @"AppleCharger", @"AppleSMC"];
 
     NSString *result = sbcpuSmartChargeServiceScanStatus ?: @"未知";
-
     cell.textLabel.text = names[indexPath.row];
-
-    if([result containsString:names[indexPath.row]])
-    {
-        cell.detailTextLabel.text = @"已检测";
-    }
-    else
-    {
-        cell.detailTextLabel.text = @"未发现";
-    }
-
+    cell.detailTextLabel.text = [result containsString:names[indexPath.row]] ? @"已检测" : @"未发现";
     return cell;
 }
 
 @end
-
-
-
-// ==============================
-// Test10G 控制服务探测
-// ==============================
 
 static NSString *sbcpuSmartChargeControlServiceStatus = @"未检测";
 
 static void sbcpuSmartChargeControlServiceProbe()
 {
     NSMutableString *result = [NSMutableString string];
-
-    NSArray *services = @[
-        @"AppleCharger",
-        @"IOPMPowerSource",
-        @"AppleSMC"
-    ];
+    NSArray *services = @[@"AppleCharger", @"IOPMPowerSource", @"AppleSMC"];
 
     for(NSString *name in services)
     {
-        io_service_t service = IOServiceGetMatchingService(
-            kIOMasterPortDefault,
-            IOServiceMatching([name UTF8String])
-        );
-
+        io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching([name UTF8String]));
         if(service)
         {
             [result appendFormat:@"%@:YES  ", name];
@@ -2093,10 +1227,8 @@ static void sbcpuSmartChargeControlServiceProbe()
             [result appendFormat:@"%@:NO  ", name];
         }
     }
-
     sbcpuSmartChargeControlServiceStatus = result;
 }
-
 
 @interface SBCPUSmartChargeControlServiceDetailController : UITableViewController
 @end
@@ -2116,26 +1248,16 @@ static void sbcpuSmartChargeControlServiceProbe()
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    UITableViewCell *cell =
-    [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
-
-    NSArray *names = @[
-        @"AppleCharger",
-        @"IOPMPowerSource",
-        @"AppleSMC"
-    ];
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+    NSArray *names = @[@"AppleCharger", @"IOPMPowerSource", @"AppleSMC"];
 
     NSString *result = sbcpuSmartChargeControlServiceStatus ?: @"未知";
-
     cell.textLabel.text = names[indexPath.row];
-    cell.detailTextLabel.text =
-    [result containsString:names[indexPath.row]] ? @"已检测" : @"未发现";
-
+    cell.detailTextLabel.text = [result containsString:names[indexPath.row]] ? @"已检测" : @"未发现";
     return cell;
 }
 
 @end
-
 
 @interface SBCPUSmartChargeDiagnosticsController : UITableViewController
 @end
@@ -2232,40 +1354,24 @@ static void sbcpuSmartChargeControlServiceProbe()
 {
     if(indexPath.row == 11)
     {
-        SBCPUSmartChargeServiceDetailController *vc =
-        [[SBCPUSmartChargeServiceDetailController alloc]
-         initWithStyle:UITableViewStyleInsetGrouped];
-
+        SBCPUSmartChargeServiceDetailController *vc = [[SBCPUSmartChargeServiceDetailController alloc] initWithStyle:UITableViewStyleInsetGrouped];
         [self.navigationController pushViewController:vc animated:YES];
-     }
-
+    }
     if(indexPath.row == 13)
     {
-        SBCPUSmartChargeControlServiceDetailController *vc =
-        [[SBCPUSmartChargeControlServiceDetailController alloc]
-         initWithStyle:UITableViewStyleInsetGrouped];
+        SBCPUSmartChargeControlServiceDetailController *vc = [[SBCPUSmartChargeControlServiceDetailController alloc] initWithStyle:UITableViewStyleInsetGrouped];
         [self.navigationController pushViewController:vc animated:YES];
-         return;
+        return;
     }
-
     if(indexPath.row == 12)
     {
-        SBCPUSmartChargeControlServiceDetailController *vc =
-        [[SBCPUSmartChargeControlServiceDetailController alloc]
-         initWithStyle:UITableViewStyleInsetGrouped];
-
+        SBCPUSmartChargeControlServiceDetailController *vc = [[SBCPUSmartChargeControlServiceDetailController alloc] initWithStyle:UITableViewStyleInsetGrouped];
         [self.navigationController pushViewController:vc animated:YES];
-       return;
+        return;
     }
 }
 
 @end
-
-
-
-// ==============================
-// Test10H 控制属性探测
-// ==============================
 
 static NSString *sbcpuSmartChargeControlPropertyStatus = @"未检测";
 
@@ -2308,16 +1414,11 @@ static NSString *sbcpuScanPropertyKeys(io_service_t service)
 static void sbcpuSmartChargeControlPropertyProbe()
 {
     NSMutableString *result=[NSMutableString string];
-
     NSArray *services=@[@"AppleCharger",@"IOPMPowerSource",@"AppleSMC"];
 
     for(NSString *name in services)
     {
-        io_service_t service=IOServiceGetMatchingService(
-            kIOMasterPortDefault,
-            IOServiceMatching([name UTF8String])
-        );
-
+        io_service_t service=IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching([name UTF8String]));
         [result appendFormat:@"\n[%@]\n",name];
 
         if(service)
@@ -2334,7 +1435,6 @@ static void sbcpuSmartChargeControlPropertyProbe()
     sbcpuSmartChargeControlPropertyStatus=result;
 }
 
-
 @interface SBCPUSmartChargeControlPropertyDetailController : UITableViewController
 @end
 
@@ -2343,12 +1443,8 @@ static void sbcpuSmartChargeControlPropertyProbe()
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-
     self.title=@"控制属性探测";
-
-    // 进入页面自动扫描
     sbcpuSmartChargeControlPropertyProbe();
-
     [self.tableView reloadData];
 }
 
@@ -2365,112 +1461,52 @@ static void sbcpuSmartChargeControlPropertyProbe()
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
     UITableViewCell *cell=[[UITableViewCell alloc]initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
-
     cell.textLabel.text=@"扫描结果";
     cell.textLabel.numberOfLines=1;
-
     cell.detailTextLabel.text=sbcpuSmartChargeControlPropertyStatus;
     cell.detailTextLabel.numberOfLines=0;
-
     return cell;
 }
 
 @end
 
-
-@interface SBCPUSettingsController :
-UITableViewController
-
+@interface SBCPUSettingsController : UITableViewController
 @end
-
-
 
 @implementation SBCPUSettingsController
 
-
 - (void)viewDidLoad
 {
-
     [super viewDidLoad];
-
-
-    self.title =
-    @"SBCPUFloating 设置";
-
-
-    self.navigationItem.rightBarButtonItem =
-    [[UIBarButtonItem alloc]
-     initWithBarButtonSystemItem:
-     UIBarButtonSystemItemDone
-     target:self
-     action:@selector(closeSettings)];
-
+    self.title = @"SBCPUFloating 设置";
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(closeSettings)];
 }
-
-
-#pragma mark 关闭
-
 
 - (void)closeSettings
 {
-
     settingsShowing = NO;
-
-
-    [self dismissViewControllerAnimated:YES
-                             completion:
-     ^{
-
-         /*
-          重新刷新 Window 触摸状态
-          */
-
-         [cpuWindow setNeedsLayout];
-
-     }];
-
+    [self dismissViewControllerAnimated:YES completion:^{
+        [cpuWindow setNeedsLayout];
+    }];
 }
 
-
-#pragma mark Table
-
-
-- (NSInteger)tableView:
-(UITableView *)tableView
-numberOfRowsInSection:
-(NSInteger)section
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-
     return 22;
-
 }
 
-
-- (NSString *)tableView:
-(UITableView *)tableView
-titleForHeaderInSection:
-(NSInteger)section
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
 {
-
-    return
-    @"自动注销 / 悬浮窗 / 智能布局";
-
+    return @"自动注销 / 悬浮窗 / 智能布局";
 }
-
-
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
     if(indexPath.row == 13)
     {
-        SBCPUSmartChargeControlPropertyDetailController *vc =
-        [[SBCPUSmartChargeControlPropertyDetailController alloc]
-         initWithStyle:UITableViewStyleInsetGrouped];
-
+        SBCPUSmartChargeControlPropertyDetailController *vc = [[SBCPUSmartChargeControlPropertyDetailController alloc] initWithStyle:UITableViewStyleInsetGrouped];
         [self.navigationController pushViewController:vc animated:YES];
     }
-
-
 
     if(indexPath.row == 10)
     {
@@ -2484,148 +1520,47 @@ titleForHeaderInSection:
 
     if(indexPath.row == 1)
     {
-
-        SBCPUValuePickerController *vc =
-        [[SBCPUValuePickerController alloc]
-         initWithStyle:
-         UITableViewStyleInsetGrouped];
-
-
-        [self.navigationController
-         pushViewController:
-         vc
-         animated:YES];
-
+        SBCPUValuePickerController *vc = [[SBCPUValuePickerController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+        [self.navigationController pushViewController:vc animated:YES];
     }
-
 
     if(indexPath.row == 2)
     {
-
-        SBCPUTimePickerController *vc =
-        [[SBCPUTimePickerController alloc]
-         initWithStyle:
-         UITableViewStyleInsetGrouped];
-
-
-        [self.navigationController
-         pushViewController:
-         vc
-         animated:YES];
-
+        SBCPUTimePickerController *vc = [[SBCPUTimePickerController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+        [self.navigationController pushViewController:vc animated:YES];
     }
-
 
     if(indexPath.row == 21)
     {
-        SBCPUSmartChargeDiagnosticsController *vc =
-        [[SBCPUSmartChargeDiagnosticsController alloc]
-         initWithStyle:UITableViewStyleInsetGrouped];
-
-        [self.navigationController
-         pushViewController:vc
-         animated:YES];
-
+        SBCPUSmartChargeDiagnosticsController *vc = [[SBCPUSmartChargeDiagnosticsController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+        [self.navigationController pushViewController:vc animated:YES];
         return;
     }
 
-
     if(indexPath.row == 4)
     {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"透明度" message:@"选择悬浮窗透明度" preferredStyle:UIAlertControllerStyleActionSheet];
+        NSArray *titles = @[@"20%", @"40%", @"60%", @"70%", @"80%", @"100%"];
+        NSArray *values = @[@0.2, @0.4, @0.6, @0.7, @0.8, @1.0];
 
-        UIAlertController *alert =
-        [UIAlertController
-         alertControllerWithTitle:
-         @"透明度"
-         message:
-         @"选择悬浮窗透明度"
-         preferredStyle:
-         UIAlertControllerStyleActionSheet];
-
-
-        NSArray *titles =
-        @[
-          @"20%",
-          @"40%",
-          @"60%",
-          @"70%",
-          @"80%",
-          @"100%"
-        ];
-
-
-        NSArray *values =
-        @[
-          @0.2,
-          @0.4,
-          @0.6,
-          @0.7,
-          @0.8,
-          @1.0
-        ];
-
-
-        for(NSInteger i = 0;
-            i < titles.count;
-            i++)
+        for(NSInteger i = 0; i < titles.count; i++)
         {
-
-            [alert addAction:
-             [UIAlertAction
-              actionWithTitle:
-              titles[i]
-              style:
-              UIAlertActionStyleDefault
-              handler:
-              ^(UIAlertAction *action)
-              {
-
-                  floatingAlpha =
-                  [values[i] floatValue];
-
-
-                  [[NSUserDefaults standardUserDefaults]
-                   setFloat:
-                   floatingAlpha
-                   forKey:
-                   @"SBCPU.FloatingAlpha"];
-
-
-                  [[NSUserDefaults standardUserDefaults]
-                   synchronize];
-
-
-                  applyFloatingAlpha();
-
-
-                  [self.tableView reloadData];
-
-              }]];
-
+            [alert addAction:[UIAlertAction actionWithTitle:titles[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                floatingAlpha = [values[i] floatValue];
+                [[NSUserDefaults standardUserDefaults] setFloat:floatingAlpha forKey:@"SBCPU.FloatingAlpha"];
+                [[NSUserDefaults standardUserDefaults] synchronize];
+                applyFloatingAlpha();
+                [self.tableView reloadData];
+            }]];
         }
 
-
-        [alert addAction:
-         [UIAlertAction
-          actionWithTitle:
-          @"取消"
-          style:
-          UIAlertActionStyleCancel
-          handler:nil]];
-
-
-        [self presentViewController:
-         alert
-         animated:YES
-         completion:nil];
-
+        [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
     }
 
-    // SmartCharge Test8: 独立温度编辑页面
     if(indexPath.row >= 17 && indexPath.row <= 20)
     {
         NSInteger type = indexPath.row - 17;
-
         NSInteger current = 35;
         NSString *title = @"温度";
 
@@ -2637,7 +1572,6 @@ titleForHeaderInSection:
         SBChargeTempEditController *vc = [SBChargeTempEditController new];
         vc.tempValue = current;
         vc.tempTitle = title;
-
         vc.finishBlock = ^(NSInteger value){
             if(type == 0) sbcpuChargeTempFast = value;
             if(type == 1) sbcpuChargeTempReduce = value;
@@ -2650,20 +1584,8 @@ titleForHeaderInSection:
         return;
     }
 
-
-
-
-    [tableView deselectRowAtIndexPath:
-     indexPath
-     animated:YES];
-
-
-
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 }
-
-
-#pragma mark 滑动调整
 
 - (void)changeScaleSlider:(UISlider *)slider
 {
@@ -2679,15 +1601,12 @@ titleForHeaderInSection:
     floatingFontSize = slider.value;
     [[NSUserDefaults standardUserDefaults] setFloat:floatingFontSize forKey:@"SBCPU.FloatingFontSize"];
     [[NSUserDefaults standardUserDefaults] synchronize];
-    if(label)
-        label.font = [UIFont systemFontOfSize:floatingFontSize];
+    if(label) label.font = [UIFont systemFontOfSize:floatingFontSize weight:UIFontWeightMedium];
     [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:6 inSection:0]] withRowAnimation:UITableViewRowAnimationNone];
 }
 
 - (void)changeLandscapeScaleSlider:(UISlider *)slider
 {
-    // 横屏独立悬浮窗大小
-    // 范围 60% - 120%，避免横屏显示电量时框体过大
     landscapeScale = MAX(0.4, MIN(1.2, slider.value));
     [[NSUserDefaults standardUserDefaults] setFloat:landscapeScale forKey:@"SBCPU.LandscapeScale"];
     [[NSUserDefaults standardUserDefaults] synchronize];
@@ -2700,7 +1619,7 @@ titleForHeaderInSection:
     [[NSUserDefaults standardUserDefaults] setFloat:landscapeFontSize forKey:@"SBCPU.LandscapeFontSize"];
     if(label && isLandscapeMode())
     {
-        label.font = [UIFont systemFontOfSize:landscapeFontSize];
+        label.font = [UIFont systemFontOfSize:landscapeFontSize weight:UIFontWeightMedium];
     }
 }
 
@@ -2712,124 +1631,49 @@ titleForHeaderInSection:
     updateFloatingSize();
 }
 
-#pragma mark Cell
-
-
-- (UITableViewCell *)tableView:
-(UITableView *)tableView
-cellForRowAtIndexPath:
-(NSIndexPath *)indexPath
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-
-    UITableViewCell *cell =
-    [[UITableViewCell alloc]
-     initWithStyle:
-     UITableViewCellStyleValue1
-     reuseIdentifier:nil];
-
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
 
     if(indexPath.row == 0)
     {
-
-        cell.textLabel.text =
-        @"自动注销";
-
-
-        UISwitch *sw =
-        [[UISwitch alloc] init];
-
-
-        sw.on =
-        autoLogoutEnable;
-
-
-        [sw addTarget:self
-               action:@selector(changeLogout:)
-     forControlEvents:
-      UIControlEventValueChanged];
-
-
-        cell.accessoryView =
-        sw;
-
+        cell.textLabel.text = @"自动注销";
+        UISwitch *sw = [[UISwitch alloc] init];
+        sw.on = autoLogoutEnable;
+        [sw addTarget:self action:@selector(changeLogout:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = sw;
     }
-
 
     if(indexPath.row == 1)
     {
-
-        cell.textLabel.text =
-        @"CPU触发值";
-
-
-        cell.detailTextLabel.text =
-        [NSString
-         stringWithFormat:
-         @"%.0f%%",
-         logoutCPUThreshold];
-
+        cell.textLabel.text = @"CPU触发值";
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", logoutCPUThreshold];
     }
-
 
     if(indexPath.row == 2)
     {
-
-        cell.textLabel.text =
-        @"持续时间";
-
-
-        cell.detailTextLabel.text =
-        [NSString
-         stringWithFormat:
-         @"%ld秒",
-         (long)logoutDuration];
-
+        cell.textLabel.text = @"持续时间";
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld秒", (long)logoutDuration];
     }
-
 
     if(indexPath.row == 3)
     {
-
-        cell.textLabel.text =
-        @"透明度开关";
-
-
-        UISwitch *sw =
-        [[UISwitch alloc] init];
-
-
-        sw.on =
-        floatingAlphaEnable;
-
-
-        [sw addTarget:self
-               action:@selector(changeAlpha:)
-     forControlEvents:
-      UIControlEventValueChanged];
-
-
-        cell.accessoryView =
-        sw;
-
+        cell.textLabel.text = @"透明度开关";
+        UISwitch *sw = [[UISwitch alloc] init];
+        sw.on = floatingAlphaEnable;
+        [sw addTarget:self action:@selector(changeAlpha:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = sw;
     }
-
 
     if(indexPath.row == 4)
     {
-
-        cell.textLabel.text =
-        @"透明度";
-
-
-        cell.detailTextLabel.text =
-        [NSString stringWithFormat:@"%.0f%%", floatingAlpha * 100.0];
-
+        cell.textLabel.text = @"透明度";
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", floatingAlpha * 100.0];
     }
 
     if(indexPath.row == 5)
     {
         cell.textLabel.text = @"浮窗大小";
-
         UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,150,30)];
         slider.minimumValue = 0.4;
         slider.maximumValue = 1.5;
@@ -2842,7 +1686,6 @@ cellForRowAtIndexPath:
     if(indexPath.row == 6)
     {
         cell.textLabel.text = @"字体大小";
-
         UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,150,30)];
         slider.minimumValue = 10;
         slider.maximumValue = 24;
@@ -2852,12 +1695,9 @@ cellForRowAtIndexPath:
         cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f", floatingFontSize];
     }
 
-
-
     if(indexPath.row == 7)
     {
         cell.textLabel.text = @"横屏浮窗大小";
-
         UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,150,30)];
         slider.minimumValue = 0.8;
         slider.maximumValue = 1.5;
@@ -2870,7 +1710,6 @@ cellForRowAtIndexPath:
     if(indexPath.row == 8)
     {
         cell.textLabel.text = @"电量字体大小";
-
         UISlider *landscapeFontSlider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,150,30)];
         landscapeFontSlider.minimumValue = 8;
         landscapeFontSlider.maximumValue = 20;
@@ -2878,7 +1717,6 @@ cellForRowAtIndexPath:
         [landscapeFontSlider addTarget:self action:@selector(changeLandscapeFontSlider:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = landscapeFontSlider;
         cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f", landscapeFontSize];
-
     }
 
     if(indexPath.row == 9)
@@ -2906,25 +1744,12 @@ cellForRowAtIndexPath:
         cell.accessoryView = sw;
     }
 
-
-    if(indexPath.row == 13)
-    {
-        cell.textLabel.text = @"控制属性探测";
-        cell.detailTextLabel.text = @"手动进入扫描";
-        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-    }
-
     if(indexPath.row == 12)
     {
         cell.textLabel.text = @"自动调整浮窗大小";
-
         UISwitch *sw = [[UISwitch alloc] init];
         sw.on = autoWindowSizeEnable;
-
-        [sw addTarget:self
-               action:@selector(changeAutoWindowSize:)
-     forControlEvents:UIControlEventValueChanged];
-
+        [sw addTarget:self action:@selector(changeAutoWindowSize:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = sw;
     }
 
@@ -2974,7 +1799,6 @@ cellForRowAtIndexPath:
         cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld℃", (long)[chargeValues[i] integerValue]];
     }
 
-
     if(indexPath.row == 21)
     {
         cell.textLabel.text = @"SmartCharge 诊断";
@@ -2982,9 +1806,7 @@ cellForRowAtIndexPath:
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     }
     return cell;
-
 }
-
 
 - (void)changeShowBattery:(UISwitch *)sw
 {
@@ -3013,17 +1835,10 @@ cellForRowAtIndexPath:
 - (void)changeAutoWindowSize:(UISwitch *)sw
 {
     autoWindowSizeEnable = sw.isOn;
-
-    [[NSUserDefaults standardUserDefaults]
-     setBool:autoWindowSizeEnable
-     forKey:@"SBCPU.AutoWindowSize"];
-
+    [[NSUserDefaults standardUserDefaults] setBool:autoWindowSizeEnable forKey:@"SBCPU.AutoWindowSize"];
     [[NSUserDefaults standardUserDefaults] synchronize];
-
     updateFloatingSize();
 }
-
-#pragma mark 智能布局控制
 
 - (void)changeSmartDock:(UISwitch *)sw
 {
@@ -3039,20 +1854,6 @@ cellForRowAtIndexPath:
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
-
-
-- (NSString *)smartChargeEditText:(NSInteger)type
-{
-    NSInteger value = 0;
-    switch(type){
-        case 0: value = sbcpuEditChargeTempFast; break;
-        case 1: value = sbcpuEditChargeTempReduce; break;
-        case 2: value = sbcpuEditChargeTempPause; break;
-        case 3: value = sbcpuEditChargeTempStop; break;
-    }
-    return [NSString stringWithFormat:@"临时值：%ld℃\n点击完成后才保存",(long)value];
-}
-
 - (void)changeSmartCharge:(UISwitch *)sw
 {
     sbcpuSmartChargeEnable = sw.isOn;
@@ -3060,163 +1861,58 @@ cellForRowAtIndexPath:
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
-
-#pragma mark 自动注销
-
-
-- (void)changeLogout:
-(UISwitch *)sw
+- (void)changeLogout:(UISwitch *)sw
 {
-
-    autoLogoutEnable =
-    sw.isOn;
-
-
-    [[NSUserDefaults standardUserDefaults]
-     setBool:
-     autoLogoutEnable
-     forKey:
-     @"SBCPU.AutoLogout"];
-
-
-    [[NSUserDefaults standardUserDefaults]
-     synchronize];
-
+    autoLogoutEnable = sw.isOn;
+    [[NSUserDefaults standardUserDefaults] setBool:autoLogoutEnable forKey:@"SBCPU.AutoLogout"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
-
-#pragma mark 透明度
-
-
-- (void)changeAlpha:
-(UISwitch *)sw
+- (void)changeAlpha:(UISwitch *)sw
 {
-
-    floatingAlphaEnable =
-    sw.isOn;
-
-
-    [[NSUserDefaults standardUserDefaults]
-     setBool:
-     floatingAlphaEnable
-     forKey:
-     @"SBCPU.FloatingAlphaEnable"];
-
-
-    [[NSUserDefaults standardUserDefaults]
-     synchronize];
-
-
+    floatingAlphaEnable = sw.isOn;
+    [[NSUserDefaults standardUserDefaults] setBool:floatingAlphaEnable forKey:@"SBCPU.FloatingAlphaEnable"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
     applyFloatingAlpha();
-
 }
-
-
-#pragma mark 点击项目
-
-
-
-
 
 - (void)saveSmartChargeTemps
 {
     [[NSUserDefaults standardUserDefaults] setInteger:sbcpuChargeTempFast forKey:@"SBCPU.ChargeFastTemp"];
     [[NSUserDefaults standardUserDefaults] setInteger:sbcpuChargeTempReduce forKey:@"SBCPU.ChargeReduceTemp"];
-    [[NSUserDefaults standardUserDefaults] setInteger:sbcpuChargeTempPause forKey:@"SBCPU.ChargePauseTemp"];
+    [[NSUserDefaults standardUserDefaults] setInteger:sbcpuChargePauseTemp forKey:@"SBCPU.ChargePauseTemp"];
     [[NSUserDefaults standardUserDefaults] setInteger:sbcpuChargeTempStop forKey:@"SBCPU.ChargeStopTemp"];
     [[NSUserDefaults standardUserDefaults] synchronize];
     [self.tableView reloadData];
 }
 
-
 @end
-
-
 
 #pragma mark -
 #pragma mark 打开设置
 #pragma mark -
 
-
 static void openSettings()
 {
+    if(settingsShowing || !cpuWindow) return;
 
-    if(settingsShowing)
-    {
-        return;
-    }
-
-
-    if(!cpuWindow)
-    {
-        return;
-    }
-
-
-    UIViewController *root =
-    cpuWindow.rootViewController;
-
-
-    if(!root)
-    {
-        return;
-    }
-
-
-    /*
-     Test10q: 修复双击后进入旧探测页面
-     如果之前残留了控制属性探测页面，先关闭
-     不再直接复用旧 presented controller
-     */
+    UIViewController *root = cpuWindow.rootViewController;
+    if(!root) return;
 
     if(root.presentedViewController)
     {
         [root.presentedViewController dismissViewControllerAnimated:NO completion:nil];
     }
 
-
     settingsShowing = YES;
-
     keyboardShowing = NO;
 
+    SBCPUSettingsController *vc = [[SBCPUSettingsController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
+    nav.modalPresentationStyle = UIModalPresentationFullScreen;
 
-    // Test10p: 双击入口防串页
-    // 每次重新创建设置控制器，避免残留探测页面
-    SBCPUSettingsController *vc =
-    [[SBCPUSettingsController alloc]
-     initWithStyle:
-     UITableViewStyleInsetGrouped];
-
-
-    UINavigationController *nav =
-    [[UINavigationController alloc]
-     initWithRootViewController:vc];
-
-
-    /*
-     设置页面期间允许整个 Window 接收触摸
-     */
-
-    nav.modalPresentationStyle =
-    UIModalPresentationFullScreen;
-
-
-    [root
-     presentViewController:
-     nav
-     animated:YES
-     completion:nil];
-
+    [root presentViewController:nav animated:YES completion:nil];
 }
-
-
-
-#pragma mark -
-#pragma mark 初始化
-#pragma mark -
-
-
-
 
 #pragma mark -
 #pragma mark V1.6.0 Smart Layout
@@ -3224,19 +1920,17 @@ static void openSettings()
 
 static void applySmartLayout()
 {
-    if(!cpuWindow || !label || !smartLayoutEnable || settingsShowing)
+    if(!cpuWindow || !glassContainer || !smartLayoutEnable || settingsShowing)
         return;
 
     dispatch_async(dispatch_get_main_queue(), ^{
-
         UIWindowScene *scene = cpuWindow.windowScene;
-        if(!scene)
-            return;
+        if(!scene) return;
 
         CGRect area = scene.coordinateSpace.bounds;
         UIEdgeInsets safe = scene.windows.firstObject.safeAreaInsets;
 
-        CGSize size = label.bounds.size;
+        CGSize size = glassContainer.bounds.size;
         CGRect target = lastUserFrame;
 
         if(CGRectIsEmpty(target))
@@ -3255,87 +1949,73 @@ static void applySmartLayout()
         if(CGRectGetMaxX(target) > CGRectGetWidth(area)-safe.right)
             target.origin.x = CGRectGetWidth(area)-safe.right-size.width-5;
 
-        // V1.6.2 fixed2: 顶部吸附不再受横屏 safeArea 顶部偏移影响
         if(target.origin.y < 5)
             target.origin.y = 5;
 
         if(CGRectGetMaxY(target) > CGRectGetHeight(area)-safe.bottom)
             target.origin.y = CGRectGetHeight(area)-safe.bottom-size.height-5;
 
-        label.frame = target;
+        glassContainer.frame = target;
+        glassBlurView.frame = glassContainer.bounds;
+        glassTintView.frame = glassContainer.bounds;
+        if(glassGradientLayer) glassGradientLayer.frame = glassContainer.bounds;
+        label.frame = glassContainer.bounds;
         cpuDragView.frame = target;
         lastFloatingFrame = target;
     });
 }
 
-
 static void registerV160Observers()
 {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken,^{
+        NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
 
-        NSNotificationCenter *nc =
-        NSNotificationCenter.defaultCenter;
-
-
-        [nc addObserverForName:
-         UIDeviceOrientationDidChangeNotification
-         object:nil
-         queue:NSOperationQueue.mainQueue
-         usingBlock:^(NSNotification *n){
-
-             // V1.6.1 fixed2: rotate only clamp/reposition, never reset style
-             if(cpuWindow && label)
+        [nc addObserverForName:UIDeviceOrientationDidChangeNotification
+                        object:nil
+                         queue:NSOperationQueue.mainQueue
+                    usingBlock:^(NSNotification *n){
+             if(cpuWindow && glassContainer)
              {
-                 CGRect f = label.frame;
+                 CGRect f = glassContainer.frame;
                  CGSize s = cpuWindow.bounds.size;
-                 if(CGRectGetMaxX(f) > s.width)
-                     f.origin.x = s.width - f.size.width - 10;
-                 if(CGRectGetMaxY(f) > s.height)
-                     f.origin.y = s.height - f.size.height - 10;
+                 if(CGRectGetMaxX(f) > s.width) f.origin.x = s.width - f.size.width - 10;
+                 if(CGRectGetMaxY(f) > s.height) f.origin.y = s.height - f.size.height - 10;
                  if(f.origin.x < 0) f.origin.x = 10;
                  if(f.origin.y < 0) f.origin.y = 10;
-                 label.frame = f;
+
+                 glassContainer.frame = f;
+                 glassBlurView.frame = glassContainer.bounds;
+                 glassTintView.frame = glassContainer.bounds;
+                 if(glassGradientLayer) glassGradientLayer.frame = glassContainer.bounds;
+                 label.frame = glassContainer.bounds;
                  cpuDragView.frame = f;
                  lastFloatingFrame = f;
              }
-
          }];
-
 
         if(keyboardAvoidEnable)
         {
-
-            [nc addObserverForName:
-             UIKeyboardWillShowNotification
-             object:nil
-             queue:NSOperationQueue.mainQueue
-             usingBlock:^(NSNotification *n){
-
-                 if(settingsShowing)
-                    return;
-
+            [nc addObserverForName:UIKeyboardWillShowNotification
+                            object:nil
+                             queue:NSOperationQueue.mainQueue
+                        usingBlock:^(NSNotification *n){
+                 if(settingsShowing) return;
                  keyboardShowing = YES;
 
-                 if(cpuWindow && label)
+                 if(cpuWindow && glassContainer)
                  {
-                     // V1.6.1 fixed3 智能键盘避让
-                     // 悬浮窗在屏幕上半部分时不避让键盘
                      UIWindowScene *scene = getWindowScene();
                      CGRect screenBounds = scene ? scene.coordinateSpace.bounds : UIScreen.mainScreen.bounds;
 
-                     CGFloat centerY = CGRectGetMidY(label.frame);
+                     CGFloat centerY = CGRectGetMidY(glassContainer.frame);
                      CGFloat limitY = CGRectGetMidY(screenBounds);
 
-                     if(centerY < limitY)
-                     {
-                         return;
-                     }
+                     if(centerY < limitY) return;
 
-                     // 只临时移动位置，不重新布局，不修改尺寸/透明度/圆角
                      if(!keyboardMoved)
                      {
-                         keyboardBeforeFrame = label.frame;
+                         keyboardBeforeFrame = glassContainer.frame;
                      }
 
                      CGRect f = keyboardBeforeFrame;
@@ -3350,138 +2030,59 @@ static void registerV160Observers()
                      }
 
                      f.origin.y = MAX(20, f.origin.y - keyboardHeight);
-
-                     label.frame = f;
+                     glassContainer.frame = f;
                      cpuDragView.frame = f;
                      keyboardMoved = YES;
                  }
-
              }];
 
-
-            [nc addObserverForName:
-             UIKeyboardWillHideNotification
-             object:nil
-             queue:NSOperationQueue.mainQueue
-             usingBlock:^(NSNotification *n){
-
+            [nc addObserverForName:UIKeyboardWillHideNotification
+                            object:nil
+                             queue:NSOperationQueue.mainQueue
+                        usingBlock:^(NSNotification *n){
                  keyboardShowing = NO;
-
                  if(!settingsShowing && keyboardMoved)
                  {
-                     // 恢复键盘前的位置，保持用户设置的大小、透明度、圆角
-                     label.frame = keyboardBeforeFrame;
+                     glassContainer.frame = keyboardBeforeFrame;
                      cpuDragView.frame = keyboardBeforeFrame;
                      lastFloatingFrame = keyboardBeforeFrame;
                      keyboardMoved = NO;
                  }
-
              }];
         }
-
 
         if(hideControlCenterEnable)
         {
-            [nc addObserverForName:
-             UIApplicationWillResignActiveNotification
-             object:nil
-             queue:NSOperationQueue.mainQueue
-             usingBlock:^(NSNotification *n){
-
-                 if(cpuWindow)
-                     cpuWindow.hidden = YES;
-
+            [nc addObserverForName:UIApplicationWillResignActiveNotification
+                            object:nil
+                             queue:NSOperationQueue.mainQueue
+                        usingBlock:^(NSNotification *n){
+                 if(cpuWindow) cpuWindow.hidden = YES;
              }];
 
-
-            [nc addObserverForName:
-             UIApplicationDidBecomeActiveNotification
-             object:nil
-             queue:NSOperationQueue.mainQueue
-             usingBlock:^(NSNotification *n){
-
-                 if(cpuWindow)
-                     cpuWindow.hidden = NO;
-
+            [nc addObserverForName:UIApplicationDidBecomeActiveNotification
+                            object:nil
+                             queue:NSOperationQueue.mainQueue
+                        usingBlock:^(NSNotification *n){
+                 if(cpuWindow) cpuWindow.hidden = NO;
              }];
         }
-
     });
-}
-
-
-
-// ==============================
-// V1.8.2 SmartCharge Temperature Setting
-// +- 调节模式
-// ==============================
-
-static BOOL SBCPUChargingEnabled = YES;
-static NSInteger SBCPUFastTemp = 35;
-static NSInteger SBCPUReduceTemp = 38;
-static NSInteger SBCPUPauseTemp = 40;
-static NSInteger SBCPUCutTemp = 42;
-
-__attribute__((unused))
-static void SBCPUChargingLoadSettings()
-{
-    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-
-    SBCPUChargingEnabled = [d objectForKey:@"SBCPUCharging.Enabled"] ?
-    [d boolForKey:@"SBCPUCharging.Enabled"] : YES;
-
-    SBCPUFastTemp = [d objectForKey:@"SBCPUCharging.FastTemp"] ?
-    [d integerForKey:@"SBCPUCharging.FastTemp"] : 35;
-
-    SBCPUReduceTemp = [d objectForKey:@"SBCPUCharging.ReduceTemp"] ?
-    [d integerForKey:@"SBCPUCharging.ReduceTemp"] : 38;
-
-    SBCPUPauseTemp = [d objectForKey:@"SBCPUCharging.PauseTemp"] ?
-    [d integerForKey:@"SBCPUCharging.PauseTemp"] : 40;
-
-    SBCPUCutTemp = [d objectForKey:@"SBCPUCharging.CutTemp"] ?
-    [d integerForKey:@"SBCPUCharging.CutTemp"] : 42;
-}
-
-__attribute__((unused))
-static void SBCPUChargingSaveValue(NSString *key, NSInteger value)
-{
-    [[NSUserDefaults standardUserDefaults] setInteger:value forKey:key];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-}
-
-__attribute__((unused))
-static NSInteger SBCPUChargingAdjust(NSInteger value, NSInteger step, NSInteger min, NSInteger max)
-{
-    value += step;
-
-    if (value < min) value = min;
-    if (value > max) value = max;
-
-    return value;
 }
 
 %ctor
 {
     autoWindowSizeEnable = [[NSUserDefaults standardUserDefaults] boolForKey:@"SBCPU.AutoWindowSize"];
+    NSString *process = NSProcessInfo.processInfo.processName;
 
-    NSString *process =
-    NSProcessInfo.processInfo.processName;
-
-
-    if(![process
-         isEqualToString:@"SpringBoard"])
+    if(![process isEqualToString:@"SpringBoard"])
     {
         return;
     }
 
-    // Test10m: 启动 SmartCharge 属性探测，避免 unused function 编译错误
     sbcpuSmartChargeControlPropertyProbe();
 
-
-    NSUserDefaults *def =
-    NSUserDefaults.standardUserDefaults;
-
+    NSUserDefaults *def = NSUserDefaults.standardUserDefaults;
     floatingScale = [def floatForKey:@"SBCPU.FloatingScale"];
     if(floatingScale < 0.4) floatingScale = 1.0;
     floatingFontSize = [def floatForKey:@"SBCPU.FloatingFontSize"];
@@ -3494,110 +2095,30 @@ static NSInteger SBCPUChargingAdjust(NSInteger value, NSInteger step, NSInteger 
     if(batteryFontSize < 1) batteryFontSize = 12.0;
     dockMode = [def integerForKey:@"SBCPU.DockMode"];
 
+    autoLogoutEnable = [def boolForKey:@"SBCPU.AutoLogout"];
+    double cpu = [def doubleForKey:@"SBCPU.CPUThreshold"];
+    if(cpu >= 80.0 && cpu <= 1000.0) logoutCPUThreshold = cpu;
 
-    /*
-     自动注销
-     */
+    NSInteger time = [def integerForKey:@"SBCPU.LogoutTime"];
+    if(time >= 10) logoutDuration = time;
 
-    autoLogoutEnable =
-    [def boolForKey:
-     @"SBCPU.AutoLogout"];
-
-
-    double cpu =
-    [def doubleForKey:
-     @"SBCPU.CPUThreshold"];
-
-
-    if(cpu >= 80.0 &&
-       cpu <= 1000.0)
+    if([def objectForKey:@"SBCPU.FloatingAlphaEnable"])
     {
-
-        logoutCPUThreshold =
-        cpu;
-
+        floatingAlphaEnable = [def boolForKey:@"SBCPU.FloatingAlphaEnable"];
     }
 
+    CGFloat alpha = [def floatForKey:@"SBCPU.FloatingAlpha"];
+    if(alpha >= 0.2 && alpha <= 1.0) floatingAlpha = alpha;
 
-    NSInteger time =
-    [def integerForKey:
-     @"SBCPU.LogoutTime"];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        createCPUWindow();
+        registerV160Observers();
+        applySmartLayout();
 
-
-    if(time >= 10)
-    {
-
-        logoutDuration =
-        time;
-
-    }
-
-
-    /*
-     透明度开关
-     */
-
-    if([def objectForKey:
-        @"SBCPU.FloatingAlphaEnable"])
-    {
-
-        floatingAlphaEnable =
-        [def boolForKey:
-         @"SBCPU.FloatingAlphaEnable"];
-
-    }
-
-
-    /*
-     透明度
-     */
-
-    CGFloat alpha =
-    [def floatForKey:
-     @"SBCPU.FloatingAlpha"];
-
-
-    if(alpha >= 0.2 &&
-       alpha <= 1.0)
-    {
-
-        floatingAlpha =
-        alpha;
-
-    }
-
-
-    /*
-     等 SpringBoard 完全启动
-     */
-
-    dispatch_after(
-        dispatch_time(
-            DISPATCH_TIME_NOW,
-            5 * NSEC_PER_SEC),
-        dispatch_get_main_queue(),
-        ^{
-
-            createCPUWindow();
-
-            // V1.6.0 Smart Layout
-            registerV160Observers();
-            applySmartLayout();
-
-
-            [NSTimer
-             scheduledTimerWithTimeInterval:
-             1.0
-             repeats:YES
-             block:
-             ^(NSTimer *timer)
-             {
-
-                 updateCPU();
-
-             }];
-
-        }
-    );
-
+        [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *timer) {
+            updateCPU();
+        }];
+    });
 }
+
+```
