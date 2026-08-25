@@ -4,6 +4,7 @@
 #import <mach/mach.h>
 #import <signal.h>
 #import <IOKit/IOKitLib.h>
+#import <sys/sysctl.h>
 
 #ifndef kIOMainPortDefault
 #define kIOMainPortDefault kIOMasterPortDefault
@@ -12,12 +13,13 @@
 #define kPlistPath @"/var/mobile/Library/Preferences/com.yourname.sbcpufloating.plist"
 #define kPrefChangedNotification "com.yourname.sbcpufloating.prefschanged"
 
-#pragma mark - 1. 前置类 Interface 声明 (解决 Clang 编译报错)
+#pragma mark - 1. 前置类 Interface 声明 (避免 Clang 编译报错)
 
 @interface SBCPUFloatingView : UIView
 @property (nonatomic, strong) UIVisualEffectView *blurView;
 
 @property (nonatomic, strong) UILabel *cpuTitleLabel;
+@property (nonatomic, strong) UILabel *cpuFreqLabel;
 @property (nonatomic, strong) UILabel *cpuValueLabel;
 @property (nonatomic, strong) UIView *topDivider;
 
@@ -35,13 +37,14 @@
 @property (nonatomic, strong) UILabel *currentLabel;
 @property (nonatomic, strong) UILabel *statusLabel;
 
-- (void)updateLayoutWithAutoWindowSize:(BOOL)autoSize
-                    showBatteryPercent:(BOOL)showBattery
-                       showBatteryTemp:(BOOL)showTemp
-                    showBatteryCurrent:(BOOL)showCurrent
-                      floatingFontSize:(CGFloat)fontSize;
+- (void)updateLayoutWithShowCpuFreq:(BOOL)showFreq
+                 showBatteryPercent:(BOOL)showBattery
+                    showBatteryTemp:(BOOL)showTemp
+                 showBatteryCurrent:(BOOL)showCurrent
+                   floatingFontSize:(CGFloat)fontSize;
 
 - (void)updateDataWithCPU:(double)cpu 
+                  cpuFreq:(double)cpuFreq
                   battery:(NSInteger)battery 
                      temp:(double)temp 
                   current:(double)current 
@@ -87,12 +90,12 @@ static BOOL floatingAlphaEnable = YES;
 static CGFloat floatingAlpha = 0.70f;
 
 // 布局、吸附与键盘避让控制配置
-static BOOL autoWindowSizeEnable = NO;
 static BOOL keyboardAvoidEnable = YES;
 static BOOL smartDockEnable = YES;
 static NSInteger dockMode = 0; // 0自动 1左 2右 3上 4下
 static BOOL rememberPositionEnable = YES;
 
+static BOOL showCpuFrequency = YES; // 新增：CPU 频率显示开关
 static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
@@ -114,7 +117,7 @@ static void registerV160Observers(void);
         self.backgroundColor = [UIColor clearColor];
         self.layer.masksToBounds = NO;
         
-        // 自然落影与精致边缘高光
+        // 自然落影与高透细光边
         self.layer.shadowColor = [UIColor blackColor].CGColor;
         self.layer.shadowOpacity = 0.35f;
         self.layer.shadowOffset = CGSizeMake(0, 5);
@@ -132,21 +135,27 @@ static void registerV160Observers(void);
         _blurView.layer.cornerRadius = 20.0f;
         _blurView.layer.masksToBounds = YES;
         _blurView.layer.borderWidth = 0.75f;
-        _blurView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.35f].CGColor; // 晶莹发光微边框
+        _blurView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.35f].CGColor;
         [self addSubview:_blurView];
 
         UIView *content = _blurView.contentView;
 
-        // 顶行：CPU 芯片标识与占用率
+        // 顶行：CPU 标识与占用率
         _cpuTitleLabel = [[UILabel alloc] init];
-        _cpuTitleLabel.text = @"🔲 SB CPU";
+        _cpuTitleLabel.text = @"🔲 CPU"; // 修改：从 SB CPU 改为 CPU
         _cpuTitleLabel.textColor = [UIColor colorWithWhite:0.95f alpha:1.0f];
-        _cpuTitleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightBold];
+        _cpuTitleLabel.font = [UIFont systemFontOfSize:12.5f weight:UIFontWeightBold];
         [content addSubview:_cpuTitleLabel];
+
+        _cpuFreqLabel = [[UILabel alloc] init];
+        _cpuFreqLabel.text = @"📈 2457 MHz";
+        _cpuFreqLabel.textColor = [UIColor colorWithRed:0.4f green:0.8f blue:1.0f alpha:0.9f];
+        _cpuFreqLabel.font = [UIFont monospacedDigitSystemFontOfSize:9.5f weight:UIFontWeightMedium];
+        [content addSubview:_cpuFreqLabel];
 
         _cpuValueLabel = [[UILabel alloc] init];
         _cpuValueLabel.textColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
-        _cpuValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:16 weight:UIFontWeightBlack];
+        _cpuValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:16.5f weight:UIFontWeightBlack];
         _cpuValueLabel.textAlignment = NSTextAlignmentRight;
         [content addSubview:_cpuValueLabel];
 
@@ -214,14 +223,16 @@ static void registerV160Observers(void);
     return self;
 }
 
-- (void)updateLayoutWithAutoWindowSize:(BOOL)autoSize
-                    showBatteryPercent:(BOOL)showBattery
-                       showBatteryTemp:(BOOL)showTemp
-                    showBatteryCurrent:(BOOL)showCurrent
-                      floatingFontSize:(CGFloat)fontSize {
+- (void)updateLayoutWithShowCpuFreq:(BOOL)showFreq
+                 showBatteryPercent:(BOOL)showBattery
+                    showBatteryTemp:(BOOL)showTemp
+                 showBatteryCurrent:(BOOL)showCurrent
+                   floatingFontSize:(CGFloat)fontSize {
     
     BOOL hasMid = (showBattery || showTemp);
     BOOL hasBottom = showCurrent;
+
+    _cpuFreqLabel.hidden = !showFreq;
 
     _batteryIconLabel.hidden = !showBattery;
     _batteryValueLabel.hidden = !showBattery;
@@ -236,24 +247,30 @@ static void registerV160Observers(void);
     _bottomCapsule.hidden = !hasBottom;
 
     if (fontSize > 0) {
-        _cpuTitleLabel.font = [UIFont systemFontOfSize:fontSize - 1 weight:UIFontWeightBold];
-        _cpuValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:fontSize + 3 weight:UIFontWeightBlack];
+        _cpuTitleLabel.font = [UIFont systemFontOfSize:fontSize - 0.5f weight:UIFontWeightBold];
+        _cpuValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:fontSize + 3.5f weight:UIFontWeightBlack];
         _batteryValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:fontSize weight:UIFontWeightBold];
         _tempValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:fontSize weight:UIFontWeightBold];
         _currentLabel.font = [UIFont monospacedDigitSystemFontOfSize:fontSize - 1.5f weight:UIFontWeightBold];
     }
 
-    // 180pt 紧凑小巧极简宽度
-    CGFloat baseW = 180.0f;
+    CGFloat baseW = 185.0f;
     CGFloat padX = 10.0f;
     CGFloat contentW = baseW - 2 * padX;
 
-    CGFloat currentY = 8.0f;
+    CGFloat currentY = 7.0f;
 
-    // 顶行 CPU
-    _cpuTitleLabel.frame = CGRectMake(padX, currentY, 80, 18);
-    _cpuValueLabel.frame = CGRectMake(padX + contentW - 75, currentY - 2, 75, 20);
-    currentY += 22.0f;
+    // 顶行布局 (CPU + 频率)
+    if (showFreq) {
+        _cpuTitleLabel.frame = CGRectMake(padX, currentY, 80, 15);
+        _cpuFreqLabel.frame = CGRectMake(padX, currentY + 15, 80, 12);
+        _cpuValueLabel.frame = CGRectMake(padX + contentW - 75, currentY + 2, 75, 22);
+        currentY += 29.0f;
+    } else {
+        _cpuTitleLabel.frame = CGRectMake(padX, currentY + 2, 80, 18);
+        _cpuValueLabel.frame = CGRectMake(padX + contentW - 75, currentY, 75, 20);
+        currentY += 22.0f;
+    }
 
     if (hasMid || hasBottom) {
         _topDivider.frame = CGRectMake(padX, currentY + 2, contentW, 0.5f);
@@ -292,11 +309,9 @@ static void registerV160Observers(void);
         currentY += 26.0f;
     }
 
-    currentY += 6.0f; // 底部留白
+    currentY += 6.0f;
 
-    CGFloat targetH = autoSize ? currentY : 92.0f;
-
-    CGRect newBounds = CGRectMake(0, 0, baseW, targetH);
+    CGRect newBounds = CGRectMake(0, 0, baseW, currentY);
     if (!CGRectEqualToRect(self.bounds, newBounds)) {
         CGPoint center = self.center;
         self.bounds = newBounds;
@@ -307,12 +322,15 @@ static void registerV160Observers(void);
 }
 
 - (void)updateDataWithCPU:(double)cpu 
+                  cpuFreq:(double)cpuFreq
                   battery:(NSInteger)battery 
                      temp:(double)temp 
                   current:(double)current 
                isCharging:(BOOL)isCharging {
     _cpuValueLabel.text = [NSString stringWithFormat:@"%.1f%%", cpu];
     _cpuValueLabel.textColor = (cpu >= 80.0) ? [UIColor systemRedColor] : [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
+
+    _cpuFreqLabel.text = [NSString stringWithFormat:@"📈 %.0f MHz", cpuFreq];
 
     _batteryValueLabel.text = [NSString stringWithFormat:@"%ld%%", (long)battery];
     _tempValueLabel.text = (temp > 0) ? [NSString stringWithFormat:@"%.1f°C", temp] : @"--°C";
@@ -322,7 +340,7 @@ static void registerV160Observers(void);
 
 @end
 
-#pragma mark - 4. 拖动与边缘零阻碍吸附 (彻底消除空气墙)
+#pragma mark - 4. 拖动与边缘智能吸附 (零空气墙阻碍)
 
 @implementation SBCPUDragView
 
@@ -347,7 +365,7 @@ static void registerV160Observers(void);
     center.x += dx;
     center.y += dy;
 
-    // 核心：使用变形后的真实可视尺寸计算，消除空气墙撞阻问题！
+    // 关键：采用变形后的实时可视尺寸，消除边缘撞击“空气墙”问题
     CGRect realFrame = floatingView.frame;
     CGSize size = self.superview.bounds.size;
     CGFloat halfW = realFrame.size.width / 2.0f;
@@ -376,7 +394,6 @@ static void registerV160Observers(void);
 
     if (!smartDockEnable) return;
 
-    // 基于变形后的实时视觉宽度紧贴屏幕边缘吸附
     CGSize size = self.superview.bounds.size;
     CGRect realFrame = floatingView.frame;
     CGFloat left = CGRectGetMinX(realFrame);
@@ -442,13 +459,13 @@ static void LoadPreferences() {
     if ([def objectForKey:@"floatingAlpha"]) floatingAlpha = [def floatForKey:@"floatingAlpha"];
     if ([def objectForKey:@"floatingScale"]) floatingScale = [def floatForKey:@"floatingScale"];
     if ([def objectForKey:@"floatingFontSize"]) floatingFontSize = [def floatForKey:@"floatingFontSize"];
-    if ([def objectForKey:@"autoWindowSizeEnable"]) autoWindowSizeEnable = [def boolForKey:@"autoWindowSizeEnable"];
     
     if ([def objectForKey:@"keyboardAvoidEnable"]) keyboardAvoidEnable = [def boolForKey:@"keyboardAvoidEnable"];
     if ([def objectForKey:@"smartDockEnable"]) smartDockEnable = [def boolForKey:@"smartDockEnable"];
     if ([def objectForKey:@"dockMode"]) dockMode = [def integerForKey:@"dockMode"];
     if ([def objectForKey:@"rememberPositionEnable"]) rememberPositionEnable = [def boolForKey:@"rememberPositionEnable"];
     
+    if ([def objectForKey:@"showCpuFrequency"]) showCpuFrequency = [def boolForKey:@"showCpuFrequency"];
     if ([def objectForKey:@"showBatteryPercent"]) showBatteryPercent = [def boolForKey:@"showBatteryPercent"];
     if ([def objectForKey:@"showBatteryTemperature"]) showBatteryTemperature = [def boolForKey:@"showBatteryTemperature"];
     if ([def objectForKey:@"showBatteryCurrent"]) showBatteryCurrent = [def boolForKey:@"showBatteryCurrent"];
@@ -464,13 +481,13 @@ static void SavePreferencesAndNotify() {
     [def setFloat:floatingAlpha forKey:@"floatingAlpha"];
     [def setFloat:floatingScale forKey:@"floatingScale"];
     [def setFloat:floatingFontSize forKey:@"floatingFontSize"];
-    [def setBool:autoWindowSizeEnable forKey:@"autoWindowSizeEnable"];
     
     [def setBool:keyboardAvoidEnable forKey:@"keyboardAvoidEnable"];
     [def setBool:smartDockEnable forKey:@"smartDockEnable"];
     [def setInteger:dockMode forKey:@"dockMode"];
     [def setBool:rememberPositionEnable forKey:@"rememberPositionEnable"];
     
+    [def setBool:showCpuFrequency forKey:@"showCpuFrequency"];
     [def setBool:showBatteryPercent forKey:@"showBatteryPercent"];
     [def setBool:showBatteryTemperature forKey:@"showBatteryTemperature"];
     [def setBool:showBatteryCurrent forKey:@"showBatteryCurrent"];
@@ -481,6 +498,21 @@ static void SavePreferencesAndNotify() {
         CFSTR(kPrefChangedNotification),
         NULL, NULL, YES
     );
+}
+
+// 动态读取 CPU 频率 (MHz)
+static double getCPUFrequencyMHz() {
+    uint64_t freq = 0;
+    size_t size = sizeof(freq);
+    if (sysctlbyname("hw.cpufrequency", &freq, &size, NULL, 0) == 0 && freq > 0) {
+        return (double)freq / 1000000.0;
+    }
+    uint64_t freqMax = 0;
+    size = sizeof(freqMax);
+    if (sysctlbyname("hw.cpufrequency_max", &freqMax, &size, NULL, 0) == 0 && freqMax > 0) {
+        return (double)freqMax / 1000000.0;
+    }
+    return 2457.0; // 默认平滑降级展示 2457 MHz
 }
 
 static double getBatteryTemperatureInternal() {
@@ -598,15 +630,14 @@ static void applyFloatingAlpha() {
     });
 }
 
-// Transform 等比例整体缩放，文字、图标、边框彻底紧凑统一！
 static void updateFloatingSize() {
     if (!floatingView) return;
 
-    [floatingView updateLayoutWithAutoWindowSize:autoWindowSizeEnable
-                              showBatteryPercent:showBatteryPercent
-                                 showBatteryTemp:showBatteryTemperature
-                              showBatteryCurrent:showBatteryCurrent
-                                floatingFontSize:floatingFontSize];
+    [floatingView updateLayoutWithShowCpuFreq:showCpuFrequency
+                           showBatteryPercent:showBatteryPercent
+                              showBatteryTemp:showBatteryTemperature
+                           showBatteryCurrent:showBatteryCurrent
+                             floatingFontSize:floatingFontSize];
 
     CGAffineTransform transform = CGAffineTransformMakeScale(floatingScale, floatingScale);
     if (!CGAffineTransformEqualToTransform(floatingView.transform, transform)) {
@@ -645,7 +676,7 @@ static void createCPUWindow() {
     cpuWindow.rootViewController.view.backgroundColor = UIColor.clearColor;
     cpuWindow.hidden = NO;
 
-    CGRect initFrame = CGRectMake(20, 160, 180, 92);
+    CGRect initFrame = CGRectMake(20, 160, 185, 95);
     NSString *savedFrame = [[NSUserDefaults standardUserDefaults] stringForKey:@"SBCPU.LastFrame"];
     if (rememberPositionEnable && savedFrame) {
         CGRect parsed = CGRectFromString(savedFrame);
@@ -706,6 +737,7 @@ static void checkHighCPU(double cpu) {
 
 static void updateCPU() {
     double cpu = getCPUUsage();
+    double cpuFreq = getCPUFrequencyMHz();
     checkHighCPU(cpu);
 
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -720,6 +752,7 @@ static void updateCPU() {
         BOOL charging = isChargingInternal();
 
         [floatingView updateDataWithCPU:cpu 
+                                cpuFreq:cpuFreq
                                 battery:showBatteryPercent ? battery : 0 
                                    temp:showBatteryTemperature ? temp : 0 
                                 current:showBatteryCurrent ? current : 0 
@@ -799,9 +832,9 @@ static void updateCPU() {
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 4; }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     if (section == 0) return 3; // ⚡ 自动控制
-    if (section == 1) return 5; // 🔲 悬浮窗外观
+    if (section == 1) return 4; // 🔲 悬浮窗外观
     if (section == 2) return 3; // 🧠 智能选项
-    return 4;                   // 📍 位置与显示
+    return 5;                   // 📍 位置与显示 (已加入 CPU 频率开关)
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
@@ -869,12 +902,6 @@ static void updateCPU() {
             [slider addTarget:self action:@selector(changeFontSlider:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = slider;
             cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0fpt", floatingFontSize];
-        } else if (indexPath.row == 4) {
-            cell.textLabel.text = @"自动调整浮窗大小";
-            UISwitch *sw = [UISwitch new];
-            sw.on = autoWindowSizeEnable;
-            [sw addTarget:self action:@selector(changeAutoWindowSize:) forControlEvents:UIControlEventValueChanged];
-            cell.accessoryView = sw;
         }
     } else if (indexPath.section == 2) {
         if (indexPath.row == 0) {
@@ -903,18 +930,24 @@ static void updateCPU() {
             [sw addTarget:self action:@selector(changeRememberPosition:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
         } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"显示 CPU 频率"; // 新增设置选项
+            UISwitch *sw = [UISwitch new];
+            sw.on = showCpuFrequency;
+            [sw addTarget:self action:@selector(changeShowCpuFreq:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 2) {
             cell.textLabel.text = @"显示电池百分比";
             UISwitch *sw = [UISwitch new];
             sw.on = showBatteryPercent;
             [sw addTarget:self action:@selector(changeShowBattery:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
-        } else if (indexPath.row == 2) {
+        } else if (indexPath.row == 3) {
             cell.textLabel.text = @"显示电池温度";
             UISwitch *sw = [UISwitch new];
             sw.on = showBatteryTemperature;
             [sw addTarget:self action:@selector(changeShowTemp:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
-        } else if (indexPath.row == 3) {
+        } else if (indexPath.row == 4) {
             cell.textLabel.text = @"显示实时电流";
             UISwitch *sw = [UISwitch new];
             sw.on = showBatteryCurrent;
@@ -965,10 +998,11 @@ static void updateCPU() {
 
 - (void)changeLogout:(UISwitch *)sw { autoLogoutEnable = sw.isOn; SavePreferencesAndNotify(); }
 - (void)changeAlphaEnable:(UISwitch *)sw { floatingAlphaEnable = sw.isOn; SavePreferencesAndNotify(); applyFloatingAlpha(); }
-- (void)changeAutoWindowSize:(UISwitch *)sw { autoWindowSizeEnable = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
 - (void)changeKeyboardAvoid:(UISwitch *)sw { keyboardAvoidEnable = sw.isOn; SavePreferencesAndNotify(); }
 - (void)changeSmartDock:(UISwitch *)sw { smartDockEnable = sw.isOn; SavePreferencesAndNotify(); }
 - (void)changeRememberPosition:(UISwitch *)sw { rememberPositionEnable = sw.isOn; SavePreferencesAndNotify(); }
+
+- (void)changeShowCpuFreq:(UISwitch *)sw { showCpuFrequency = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
 - (void)changeShowBattery:(UISwitch *)sw { showBatteryPercent = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
 - (void)changeShowTemp:(UISwitch *)sw { showBatteryTemperature = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
 - (void)changeShowCurrent:(UISwitch *)sw { showBatteryCurrent = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
@@ -1010,7 +1044,7 @@ static void registerV160Observers() {
             }
         }];
 
-        // 键盘避让逻辑 (智能判别中线)
+        // 键盘避让逻辑 (基于中线智能判别)
         [nc addObserverForName:UIKeyboardWillShowNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
             if (settingsShowing || !keyboardAvoidEnable) return;
 
