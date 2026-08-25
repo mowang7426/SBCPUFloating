@@ -19,7 +19,7 @@
 - (void)resumeCharging;
 @end
 
-#pragma mark - 封装精美悬浮窗视图 (解决文字不可见与阴影重影)
+#pragma mark - 悬浮窗精致视图类 (解决文字遮挡与阴影重影)
 @interface SBCPUFloatingView : UIView
 @property (nonatomic, strong) UIVisualEffectView *blurView;
 @property (nonatomic, strong) UILabel *textLabel;
@@ -38,7 +38,7 @@
         self.layer.shadowOffset = CGSizeMake(0, 3);
         self.layer.shadowRadius = 5.0f;
 
-        // 高透暗色毛玻璃
+        // 高透超薄暗色毛玻璃
         UIBlurEffect *blurEffect = nil;
         if (@available(iOS 13.0, *)) {
             blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark];
@@ -48,12 +48,12 @@
 
         _blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
         _blurView.layer.cornerRadius = 14.0f;
-        _blurView.layer.masksToBounds = YES; // 内裁切，防止虚影溢出
+        _blurView.layer.masksToBounds = YES;
         _blurView.layer.borderWidth = 0.5f;
         _blurView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.25f].CGColor;
         [self addSubview:_blurView];
 
-        // UILabel 置于毛玻璃 contentView 最上层，保证文字清晰可见
+        // UILabel 放在毛玻璃 contentView 最上层，保证文字清晰可见
         _textLabel = [[UILabel alloc] init];
         _textLabel.numberOfLines = 0;
         _textLabel.textAlignment = NSTextAlignmentCenter;
@@ -85,7 +85,7 @@ static CGFloat floatingFontSize = 13.0;
 static CGFloat landscapeScale = 0.75;
 static CGFloat landscapeFontSize = 12.0;
 
-// SmartCharge 参数
+// SmartCharge 温控参数
 static BOOL sbcpuSmartChargeEnable = YES;
 static NSInteger sbcpuChargeTempFast = 35;
 static NSInteger sbcpuChargeTempReduce = 38;
@@ -182,7 +182,7 @@ static double getBatteryTemperatureInternal() {
     return -1;
 }
 
-#pragma mark - 充电硬件调控 Engine
+#pragma mark - 充电硬件调控 Engine (ARC 安全写法，无类型转换报错)
 static void applyChargingControl(BOOL pause) {
     // 1. PowerUI Private Framework
     Class clientClass = objc_getClass("PowerUISmartChargingClient");
@@ -199,14 +199,15 @@ static void applyChargingControl(BOOL pause) {
         if (client) {
             SEL sel = pause ? @selector(pauseCharging) : @selector(resumeCharging);
             if ([client respondsToSelector:sel]) {
-                IMP imp = [client methodForSelector:sel];
-                void (*func)(id, SEL) = (void *)imp;
-                func(client, sel);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                [client performSelector:sel];
+#pragma clang diagnostic pop
             }
         }
     }
 
-    // 2. IOKit Direct Property
+    // 2. IOKit Direct Property Fallback
     io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleSmartBattery"));
     if (service) {
         CFBooleanRef boolVal = pause ? kCFBooleanTrue : kCFBooleanFalse;
@@ -293,7 +294,7 @@ static UIWindowScene *getWindowScene() {
     return nil;
 }
 
-#pragma mark - 精准 SpringBoard 进程 CPU 占用率计算
+#pragma mark - 精准 SpringBoard 进程 CPU 占用率计算 (mach_task_self)
 static double getCPUUsage() {
     thread_array_t threads;
     mach_msg_type_number_t count = 0;
@@ -1141,3 +1142,4 @@ static void registerV160Observers() {
         });
     }
 }
+
