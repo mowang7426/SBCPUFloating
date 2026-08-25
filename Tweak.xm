@@ -249,7 +249,7 @@ static void createCPUWindow(void);
 static BOOL isDeviceOverheated(void);
 static void applySystemRefreshRate(void);
 
-#pragma mark - 5. 温控状态检测与底层 120Hz 高刷锁定 Hook
+#pragma mark - 5. 温控检测与底层 120Hz 硬件锁 Hook
 
 static BOOL isDeviceOverheated(void) {
     if (@available(iOS 11.0, *)) {
@@ -265,7 +265,7 @@ static BOOL isDeviceOverheated(void) {
     return NO;
 }
 
-// Hook 系统底层显示服务器，实现全局真正的 120Hz 硬件锁
+// Hook 底层窗口合成器，强制覆盖刷新率返回值为 120Hz
 %hook CAWindowServerDisplay
 - (float)minimumRefreshRate {
     if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
@@ -289,7 +289,7 @@ static BOOL isDeviceOverheated(void) {
 }
 %end
 
-// Hook 屏幕最大帧率，防止低电量模式或系统降频
+// Hook UIScreen 绕过系统低电量或省电模式降频限制
 %hook UIScreen
 - (NSInteger)maximumFramesPerSecond {
     if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
@@ -299,7 +299,7 @@ static BOOL isDeviceOverheated(void) {
 }
 %end
 
-#pragma mark - 6. CADisplayLink 帧率监控与 120Hz 驱动器
+#pragma mark - 6. CADisplayLink 帧率监控与 GlobalRefresh 硬件驱动引擎
 
 @interface SBCPUFPSHelper : NSObject
 + (instancetype)sharedInstance;
@@ -307,6 +307,7 @@ static BOOL isDeviceOverheated(void) {
 - (void)stopMonitoring;
 - (void)updateFrameRate;
 @property (nonatomic, assign) double currentFPS;
+@property (nonatomic, strong) CALayer *driverLayer;
 @end
 
 @implementation SBCPUFPSHelper {
@@ -322,6 +323,17 @@ static BOOL isDeviceOverheated(void) {
         instance = [[SBCPUFPSHelper alloc] init];
     });
     return instance;
+}
+
+- (instancetype)init {
+    if (self = [super init]) {
+        // 创建微像素驱动图层，用于向 WindowServer 提交微小渲染以维持 120Hz
+        _driverLayer = [CALayer layer];
+        _driverLayer.frame = CGRectMake(0, 0, 1, 1);
+        _driverLayer.backgroundColor = [UIColor clearColor].CGColor;
+        _driverLayer.opacity = 1.0f;
+    }
+    return self;
 }
 
 - (void)startMonitoring {
@@ -347,9 +359,9 @@ static BOOL isDeviceOverheated(void) {
     BOOL apply120 = force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated());
 
     if (@available(iOS 15.0, *)) {
-        float fps = apply120 ? 120.0f : 60.0f;
-        // 将 min, max, preferred 全部锁死在 120，阻止 VRR 降频
-        CAFrameRateRange range = CAFrameRateRangeMake(fps, fps, fps);
+        float targetFps = apply120 ? 120.0f : 60.0f;
+        // 将 min, max, preferred 全部固定在 120，阻止系统降频到 60/30
+        CAFrameRateRange range = CAFrameRateRangeMake(targetFps, targetFps, targetFps);
         _displayLink.preferredFrameRateRange = range;
     } else {
         _displayLink.preferredFramesPerSecond = apply120 ? 120 : 60;
@@ -357,6 +369,12 @@ static BOOL isDeviceOverheated(void) {
 }
 
 - (void)tick:(CADisplayLink *)link {
+    // 借鉴 GlobalRefresh-PiP 核心机制：提交微小事务强制渲染合成器以 120Hz 进行画面翻转
+    BOOL apply120 = force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated());
+    if (apply120 && _driverLayer) {
+        _driverLayer.opacity = (_driverLayer.opacity > 0.995f) ? 0.99f : 1.0f;
+    }
+
     if (_lastTimestamp == 0) {
         _lastTimestamp = link.timestamp;
         return;
@@ -379,6 +397,9 @@ static void applySystemRefreshRate(void) {
         CAWindowServer *server = [serverClass serverIfRunning];
         if (server) {
             for (CAWindowServerDisplay *display in [server displays]) {
+                if ([display respondsToSelector:@selector(setAllowsVirtualModes:)]) {
+                    [display setAllowsVirtualModes:YES];
+                }
                 if (apply120) {
                     if ([display respondsToSelector:@selector(setMinimumRefreshRate:)]) [display setMinimumRefreshRate:120.0f];
                     if ([display respondsToSelector:@selector(setMaximumRefreshRate:)]) [display setMaximumRefreshRate:120.0f];
@@ -855,7 +876,7 @@ static void applySystemRefreshRate(void) {
     }
 }
 
-- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimiterWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
     (void)gestureRecognizer;
     (void)otherGestureRecognizer;
     return YES;
@@ -1718,6 +1739,9 @@ static void createCPUWindow(void) {
     cpuWindow.rootViewController = [[SBCPURootViewController alloc] init];
     cpuWindow.rootViewController.view.backgroundColor = UIColor.clearColor;
     cpuWindow.hidden = !isEnabled;
+
+    // 将硬件驱动图层挂载到顶级 Window 上
+    [cpuWindow.layer addSublayer:[SBCPUFPSHelper sharedInstance].driverLayer];
 
     CGRect initFrame = CGRectMake(20, 160, 240, 60);
     NSString *savedFrame = [[NSUserDefaults standardUserDefaults] stringForKey:@"SBCPU.LastFrame"];
