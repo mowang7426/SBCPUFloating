@@ -1,7 +1,6 @@
 {
     Filter = {
-        Bundles = (
-            "com.apple.springboard"
-        );
+        Executables = ( "SpringBoard", "powerd" );
     };
 }
+通过同时注入 `powerd`，在 `%ctor` 中启动的充电控制算法便拥有了系统的完全 root 权限，可以 100% 成功阻断和调控充电。
