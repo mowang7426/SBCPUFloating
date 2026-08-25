@@ -19,7 +19,7 @@
 - (void)resumeCharging;
 @end
 
-#pragma mark - 悬浮窗精致视图类 (解决文字遮挡与阴影重影)
+#pragma mark - 悬浮窗视图类 (解决文字遮挡与阴影重影)
 @interface SBCPUFloatingView : UIView
 @property (nonatomic, strong) UIVisualEffectView *blurView;
 @property (nonatomic, strong) UILabel *textLabel;
@@ -105,8 +105,9 @@ static BOOL logoutCounting = NO;
 static BOOL floatingAlphaEnable = YES;
 static CGFloat floatingAlpha = 0.70f;
 
-// 布局与吸附控制配置
+// 布局、吸附与键盘避让控制配置
 static BOOL autoWindowSizeEnable = NO;
+static BOOL keyboardAvoidEnable = YES; // 新增：键盘避让开关
 static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
@@ -114,6 +115,8 @@ static BOOL smartDockEnable = YES;
 static NSInteger dockMode = 0; // 0自动 1左 2右 3上 4下
 static BOOL rememberPositionEnable = YES;
 
+static CGRect keyboardBeforeFrame = {0};
+static BOOL keyboardMoved = NO;
 static BOOL g_ForcePauseCharging = NO;
 
 // 前置函数声明
@@ -133,6 +136,7 @@ static void LoadPreferences() {
         if (prefs[@"sbcpuChargeTempReduce"]) sbcpuChargeTempReduce = [prefs[@"sbcpuChargeTempReduce"] integerValue];
         if (prefs[@"sbcpuChargeTempPause"]) sbcpuChargeTempPause = [prefs[@"sbcpuChargeTempPause"] integerValue];
         if (prefs[@"sbcpuChargeTempStop"]) sbcpuChargeTempStop = [prefs[@"sbcpuChargeTempStop"] integerValue];
+        if (prefs[@"keyboardAvoidEnable"]) keyboardAvoidEnable = [prefs[@"keyboardAvoidEnable"] boolValue];
     }
 }
 
@@ -143,6 +147,7 @@ static void SavePreferencesAndNotify() {
     dict[@"sbcpuChargeTempReduce"] = @(sbcpuChargeTempReduce);
     dict[@"sbcpuChargeTempPause"] = @(sbcpuChargeTempPause);
     dict[@"sbcpuChargeTempStop"] = @(sbcpuChargeTempStop);
+    dict[@"keyboardAvoidEnable"] = @(keyboardAvoidEnable);
     [dict writeToFile:kPlistPath atomically:YES];
 
     CFNotificationCenterPostNotification(
@@ -182,9 +187,9 @@ static double getBatteryTemperatureInternal() {
     return -1;
 }
 
-#pragma mark - 充电硬件调控 Engine (ARC 安全写法，无类型转换报错)
+#pragma mark - 充电硬件调控 Engine
 static void applyChargingControl(BOOL pause) {
-    // 1. PowerUI Private Framework
+    // 1. PowerUI Private Framework (Client & Manager)
     Class clientClass = objc_getClass("PowerUISmartChargingClient");
     if (clientClass) {
         static id client = nil;
@@ -207,23 +212,49 @@ static void applyChargingControl(BOOL pause) {
         }
     }
 
-    // 2. IOKit Direct Property Fallback
-    io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleSmartBattery"));
-    if (service) {
-        CFBooleanRef boolVal = pause ? kCFBooleanTrue : kCFBooleanFalse;
-        CFBooleanRef invVal = pause ? kCFBooleanFalse : kCFBooleanTrue;
-        IORegistryEntrySetCFProperty(service, CFSTR("InhibitCharging"), boolVal);
-        IORegistryEntrySetCFProperty(service, CFSTR("DisableCharging"), boolVal);
-        IORegistryEntrySetCFProperty(service, CFSTR("ChargingEnabled"), invVal);
+    Class managerClass = objc_getClass("PowerUISmartChargingManager");
+    if (managerClass && [managerClass respondsToSelector:@selector(sharedInstance)]) {
+        id manager = [managerClass performSelector:@selector(sharedInstance)];
+        if (manager) {
+            if ([manager respondsToSelector:@selector(setChargingPaused:withReason:)]) {
+                typedef void (*SetPausedReasonFunc)(id, SEL, BOOL, unsigned long long);
+                SetPausedReasonFunc func = (SetPausedReasonFunc)[manager methodForSelector:@selector(setChargingPaused:withReason:)];
+                if (func) func(manager, @selector(setChargingPaused:withReason:), pause, 1);
+            } else if ([manager respondsToSelector:@selector(setChargingPaused:)]) {
+                typedef void (*SetPausedFunc)(id, SEL, BOOL);
+                SetPausedFunc func = (SetPausedFunc)[manager methodForSelector:@selector(setChargingPaused:)];
+                if (func) func(manager, @selector(setChargingPaused:), pause);
+            }
+        }
+    }
+
+    // 2. IOKit Direct Property Writes
+    io_service_t batteryService = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleSmartBattery"));
+    if (batteryService) {
+        CFBooleanRef pauseBool = pause ? kCFBooleanTrue : kCFBooleanFalse;
+        CFBooleanRef enableBool = pause ? kCFBooleanFalse : kCFBooleanTrue;
+
+        IORegistryEntrySetCFProperty(batteryService, CFSTR("InhibitCharging"), pauseBool);
+        IORegistryEntrySetCFProperty(batteryService, CFSTR("DisableCharging"), pauseBool);
+        IORegistryEntrySetCFProperty(batteryService, CFSTR("ChargingEnabled"), enableBool);
 
         int currentLimit = pause ? 0 : 3000;
         CFNumberRef numVal = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &currentLimit);
         if (numVal) {
-            IORegistryEntrySetCFProperty(service, CFSTR("ChargeCurrentLimit"), numVal);
-            IORegistryEntrySetCFProperty(service, CFSTR("CurrentLimit"), numVal);
+            IORegistryEntrySetCFProperty(batteryService, CFSTR("ChargeCurrentLimit"), numVal);
+            IORegistryEntrySetCFProperty(batteryService, CFSTR("CurrentLimit"), numVal);
             CFRelease(numVal);
         }
-        IOObjectRelease(service);
+        IOObjectRelease(batteryService);
+    }
+
+    // 3. AppleSMC Fallback
+    io_service_t smcService = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleSMC"));
+    if (smcService) {
+        CFBooleanRef pauseBool = pause ? kCFBooleanTrue : kCFBooleanFalse;
+        IORegistryEntrySetCFProperty(smcService, CFSTR("CH0B"), pauseBool);
+        IORegistryEntrySetCFProperty(smcService, CFSTR("CH0C"), pauseBool);
+        IOObjectRelease(smcService);
     }
 }
 
@@ -814,7 +845,7 @@ static void updateCPU() {
     }];
 }
 
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 18; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 20; }
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { return @"自动注销 / 悬浮窗 / 智能温控"; }
 
 - (void)changeScaleSlider:(UISlider *)slider {
@@ -884,45 +915,57 @@ static void updateCPU() {
         sw.on = autoWindowSizeEnable;
         [sw addTarget:self action:@selector(changeAutoWindowSize:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = sw;
-    } else if (indexPath.row == 8) {
+    } else if (indexPath.row == 8) { // 新增：键盘避让开关
+        cell.textLabel.text = @"键盘避让";
+        UISwitch *sw = [[UISwitch alloc] init];
+        sw.on = keyboardAvoidEnable;
+        [sw addTarget:self action:@selector(changeKeyboardAvoid:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = sw;
+    } else if (indexPath.row == 9) {
         cell.textLabel.text = @"智能吸附";
         UISwitch *sw = [[UISwitch alloc] init];
         sw.on = smartDockEnable;
         [sw addTarget:self action:@selector(changeSmartDock:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = sw;
-    } else if (indexPath.row == 9) {
+    } else if (indexPath.row == 10) {
         cell.textLabel.text = @"吸附模式";
         NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
         cell.detailTextLabel.text = (dockMode >= 0 && dockMode < modes.count) ? modes[dockMode] : @"自动";
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-    } else if (indexPath.row == 10) {
+    } else if (indexPath.row == 11) {
+        cell.textLabel.text = @"记忆悬浮窗位置";
+        UISwitch *sw = [[UISwitch alloc] init];
+        sw.on = rememberPositionEnable;
+        [sw addTarget:self action:@selector(changeRemember:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = sw;
+    } else if (indexPath.row == 12) {
         cell.textLabel.text = @"显示电池百分比";
         UISwitch *sw = [[UISwitch alloc] init];
         sw.on = showBatteryPercent;
         [sw addTarget:self action:@selector(changeShowBattery:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = sw;
-    } else if (indexPath.row == 11) {
+    } else if (indexPath.row == 13) {
         cell.textLabel.text = @"显示电池温度";
         UISwitch *sw = [[UISwitch alloc] init];
         sw.on = showBatteryTemperature;
         [sw addTarget:self action:@selector(changeShowTemperature:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = sw;
-    } else if (indexPath.row == 12) {
+    } else if (indexPath.row == 14) {
         cell.textLabel.text = @"显示实时电流";
         UISwitch *sw = [[UISwitch alloc] init];
         sw.on = showBatteryCurrent;
         [sw addTarget:self action:@selector(changeShowCurrent:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = sw;
-    } else if (indexPath.row == 13) {
+    } else if (indexPath.row == 15) {
         cell.textLabel.text = @"智能温控";
         UISwitch *sw = [[UISwitch alloc] init];
         sw.on = sbcpuSmartChargeEnable;
         [sw addTarget:self action:@selector(changeSmartCharge:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = sw;
-    } else if (indexPath.row >= 14 && indexPath.row <= 17) {
+    } else if (indexPath.row >= 16 && indexPath.row <= 19) {
         NSArray *chargeTitles = @[@"保持快充温度", @"降低功率温度", @"暂停充电温度", @"断充保护温度"];
         NSArray *chargeValues = @[@(sbcpuChargeTempFast), @(sbcpuChargeTempReduce), @(sbcpuChargeTempPause), @(sbcpuChargeTempStop)];
-        NSInteger i = indexPath.row - 14;
+        NSInteger i = indexPath.row - 16;
         cell.textLabel.text = chargeTitles[i];
         cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld℃", (long)[chargeValues[i] integerValue]];
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
@@ -955,14 +998,14 @@ static void updateCPU() {
         }
         [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
         [self presentViewController:alert animated:YES completion:nil];
-    } else if (indexPath.row == 9) {
+    } else if (indexPath.row == 10) {
         NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
         dockMode = (dockMode + 1) % modes.count;
         [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPU.DockMode"];
         [[NSUserDefaults standardUserDefaults] synchronize];
         [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
-    } else if (indexPath.row >= 14 && indexPath.row <= 17) {
-        NSInteger type = indexPath.row - 14;
+    } else if (indexPath.row >= 16 && indexPath.row <= 19) {
+        NSInteger type = indexPath.row - 16;
         NSInteger current = 35;
         NSString *title = @"温度";
 
@@ -1006,9 +1049,20 @@ static void updateCPU() {
     updateFloatingSize();
 }
 
+- (void)changeKeyboardAvoid:(UISwitch *)sw {
+    keyboardAvoidEnable = sw.isOn;
+    SavePreferencesAndNotify();
+}
+
 - (void)changeSmartDock:(UISwitch *)sw {
     smartDockEnable = sw.isOn;
     [[NSUserDefaults standardUserDefaults] setBool:smartDockEnable forKey:@"SBCPU.SmartDock"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+- (void)changeRemember:(UISwitch *)sw {
+    rememberPositionEnable = sw.isOn;
+    [[NSUserDefaults standardUserDefaults] setBool:rememberPositionEnable forKey:@"SBCPU.RememberPosition"];
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
@@ -1073,6 +1127,53 @@ static void registerV160Observers() {
                 if (f.origin.y < 0) f.origin.y = 10;
                 floatingView.frame = f;
                 if (cpuDragView) cpuDragView.frame = f;
+            }
+        }];
+
+        // 键盘避让观察者 (根据中线位置判定)
+        [nc addObserverForName:UIKeyboardWillShowNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+            if (settingsShowing || !keyboardAvoidEnable) return;
+
+            if (cpuWindow && floatingView) {
+                UIWindowScene *scene = getWindowScene();
+                CGRect screenBounds = scene ? scene.coordinateSpace.bounds : UIScreen.mainScreen.bounds;
+
+                CGFloat centerY = CGRectGetMidY(floatingView.frame);
+                CGFloat limitY = CGRectGetMidY(screenBounds);
+
+                // 处于屏幕上半部分时，忽略避让
+                if (centerY < limitY) return;
+
+                if (!keyboardMoved) {
+                    keyboardBeforeFrame = floatingView.frame;
+                }
+
+                NSDictionary *info = n.userInfo;
+                NSValue *endFrameValue = info[UIKeyboardFrameEndUserInfoKey];
+                CGFloat keyboardHeight = 220.0;
+                if (endFrameValue) {
+                    CGRect keyboardFrame = [endFrameValue CGRectValue];
+                    keyboardHeight = MIN(320.0, keyboardFrame.size.height);
+                }
+
+                CGRect f = keyboardBeforeFrame;
+                f.origin.y = MAX(20.0, f.origin.y - keyboardHeight);
+
+                [UIView animateWithDuration:0.25 animations:^{
+                    floatingView.frame = f;
+                    if (cpuDragView) cpuDragView.frame = f;
+                }];
+                keyboardMoved = YES;
+            }
+        }];
+
+        [nc addObserverForName:UIKeyboardWillHideNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+            if (!settingsShowing && keyboardMoved && floatingView) {
+                [UIView animateWithDuration:0.25 animations:^{
+                    floatingView.frame = keyboardBeforeFrame;
+                    if (cpuDragView) cpuDragView.frame = keyboardBeforeFrame;
+                }];
+                keyboardMoved = NO;
             }
         }];
     });
@@ -1142,4 +1243,3 @@ static void registerV160Observers() {
         });
     }
 }
-
