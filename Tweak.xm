@@ -21,7 +21,8 @@ static UIView *glassContainer;
 static UIView *glassTintView;
 static UIVisualEffectView *glassBlurView;
 static CAGradientLayer *glassGradientLayer;
-static CALayer *topHighlightRim;
+static CALayer *glassGlowBorderLayer;
+static UIView *reflectionView;
 
 static CGFloat floatingScale = 1.0;
 static CGFloat floatingFontSize = 13.5;
@@ -61,7 +62,7 @@ static BOOL logoutCounting = NO;
  透明度
  */
 static BOOL floatingAlphaEnable = YES;
-static CGFloat floatingAlpha = 0.75f;
+static CGFloat floatingAlpha = 0.85f;
 
 /*
  V1.6.0 智能布局
@@ -180,10 +181,12 @@ static void applyFloatingAlpha()
         if(floatingAlphaEnable)
         {
             glassContainer.alpha = floatingAlpha;
+            if(reflectionView) reflectionView.alpha = floatingAlpha * 0.45;
         }
         else
         {
             glassContainer.alpha = 1.0;
+            if(reflectionView) reflectionView.alpha = 0.45;
         }
     });
 }
@@ -280,6 +283,10 @@ static void applyFloatingAlpha()
     if(center.y > size.height - halfH) center.y = size.height - halfH;
 
     glassContainer.center = center;
+    if(reflectionView)
+    {
+        reflectionView.center = CGPointMake(center.x, center.y + glassContainer.bounds.size.height + 6);
+    }
     self.center = center;
     self.lastPoint = now;
 
@@ -366,6 +373,10 @@ static void applyFloatingAlpha()
                         options:UIViewAnimationOptionCurveEaseOut
                      animations:^{
                          glassContainer.center = center;
+                         if(reflectionView)
+                         {
+                             reflectionView.center = CGPointMake(center.x, center.y + glassContainer.bounds.size.height + 6);
+                         }
                          self.center = center;
                      }
                      completion:nil];
@@ -393,7 +404,7 @@ static void applyFloatingAlpha()
 @end
 
 #pragma mark -
-#pragma mark 创建悬浮窗 (iOS 锁屏通知卡片式 Liquid Glass)
+#pragma mark 创建悬浮窗 (水晶玻璃胶囊 Crystal Glass Capsule)
 #pragma mark -
 
 static void createCPUWindow()
@@ -412,93 +423,123 @@ static void createCPUWindow()
     cpuWindow.rootViewController.view.backgroundColor = UIColor.clearColor;
     cpuWindow.hidden = NO;
 
+    CGRect capsuleFrame = CGRectMake(30, 200, 180, 72);
+    CGFloat cornerRadius = capsuleFrame.size.height / 2.0;
+
     /*
-     iOS 通知卡片式（Notification Glass Card）外观构造
+     1. 地面水晶倒影 (Mirror Glass Surface Reflection)
      */
-    glassContainer = [[UIView alloc] initWithFrame:CGRectMake(20, 180, 154, 68)];
+    reflectionView = [[UIView alloc] initWithFrame:CGRectMake(capsuleFrame.origin.x, capsuleFrame.origin.y + capsuleFrame.size.height + 6, capsuleFrame.size.width, capsuleFrame.size.height * 0.5)];
+    reflectionView.backgroundColor = UIColor.clearColor;
+    reflectionView.transform = CGAffineTransformMakeScale(1.0, -0.6); // 上下颠倒并压缩高度
+    reflectionView.alpha = 0.40;
+
+    UIBlurEffect *reflBlur = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterialLight];
+    UIVisualEffectView *reflBlurView = [[UIVisualEffectView alloc] initWithEffect:reflBlur];
+    reflBlurView.frame = reflectionView.bounds;
+    reflBlurView.layer.cornerRadius = cornerRadius;
+    reflBlurView.clipsToBounds = YES;
+    [reflectionView addSubview:reflBlurView];
+
+    CAGradientLayer *reflMask = [CAGradientLayer layer];
+    reflMask.frame = reflectionView.bounds;
+    reflMask.colors = @[(id)[UIColor colorWithWhite:1 alpha:0.6].CGColor, (id)[UIColor colorWithWhite:1 alpha:0.0].CGColor];
+    reflMask.locations = @[@0.0, @1.0];
+    reflectionView.layer.mask = reflMask;
+
+    [cpuWindow.rootViewController.view addSubview:reflectionView];
+
+    /*
+     2. 胶囊主容器 (Capsule Main View)
+     */
+    glassContainer = [[UIView alloc] initWithFrame:capsuleFrame];
     glassContainer.backgroundColor = UIColor.clearColor;
     
-    // 1. 采用 iOS 标准通知卡片的连续光滑圆角 (Continuous Curves)
     if (@available(iOS 13.0, *)) {
         glassContainer.layer.cornerCurve = kCACornerCurveContinuous;
     }
-    glassContainer.layer.cornerRadius = 24.0;
-    glassContainer.layer.masksToBounds = NO; // 允许层次感阴影溢出
+    glassContainer.layer.cornerRadius = cornerRadius;
+    glassContainer.layer.masksToBounds = NO;
 
-    // 2. 真实通知卡片悬浮阴影 (Notification Elevation Shadow)
-    glassContainer.layer.shadowColor = [UIColor colorWithWhite:0.0 alpha:0.45].CGColor;
-    glassContainer.layer.shadowOpacity = 0.28;
+    // 强软发光底部阴影
+    glassContainer.layer.shadowColor = [UIColor colorWithWhite:0.0 alpha:0.35].CGColor;
+    glassContainer.layer.shadowOpacity = 0.30;
     glassContainer.layer.shadowRadius = 16.0;
-    glassContainer.layer.shadowOffset = CGSizeMake(0, 7);
+    glassContainer.layer.shadowOffset = CGSizeMake(0, 10);
 
-    // 3. 超高清深层次模糊背景 (iOS Frosted Glass)
+    // 超高清薄深色模糊毛玻璃
     UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
     glassBlurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
     glassBlurView.frame = glassContainer.bounds;
     if (@available(iOS 13.0, *)) {
         glassBlurView.layer.cornerCurve = kCACornerCurveContinuous;
     }
-    glassBlurView.layer.cornerRadius = 24.0;
+    glassBlurView.layer.cornerRadius = cornerRadius;
     glassBlurView.clipsToBounds = YES;
     [glassContainer addSubview:glassBlurView];
 
-    // 4. 液态玻璃斜向镜面遮罩 (Liquid Glass Specular Highlight)
+    // 3. 晶莹玻璃透镜与半透明渐变遮罩 (Liquid Lens Tint Layer)
     glassTintView = [[UIView alloc] initWithFrame:glassContainer.bounds];
     if (@available(iOS 13.0, *)) {
         glassTintView.layer.cornerCurve = kCACornerCurveContinuous;
     }
-    glassTintView.layer.cornerRadius = 24.0;
+    glassTintView.layer.cornerRadius = cornerRadius;
     glassTintView.clipsToBounds = YES;
     glassTintView.backgroundColor = [[UIColor whiteColor] colorWithAlphaComponent:0.08];
 
-    // 顶部斜向柔光透镜渐变
+    // 顶端斜向水晶凸透镜光斑渐变 (3D Convex Glass Specular)
     glassGradientLayer = [CAGradientLayer layer];
     glassGradientLayer.frame = glassContainer.bounds;
     if (@available(iOS 13.0, *)) {
         glassGradientLayer.cornerCurve = kCACornerCurveContinuous;
     }
-    glassGradientLayer.cornerRadius = 24.0;
+    glassGradientLayer.cornerRadius = cornerRadius;
     glassGradientLayer.colors = @[
-        (id)[[UIColor colorWithWhite:1.0 alpha:0.45] CGColor],
-        (id)[[UIColor colorWithWhite:1.0 alpha:0.15] CGColor],
+        (id)[[UIColor colorWithWhite:1.0 alpha:0.75] CGColor], // 顶部强白高光
+        (id)[[UIColor colorWithWhite:1.0 alpha:0.25] CGColor],
         (id)[[UIColor colorWithWhite:0.0 alpha:0.02] CGColor],
-        (id)[[UIColor colorWithWhite:1.0 alpha:0.22] CGColor]
+        (id)[[UIColor colorWithWhite:1.0 alpha:0.40] CGColor]  // 底部透镜折射
     ];
-    glassGradientLayer.locations = @[@0.0, @0.30, @0.68, @1.0];
+    glassGradientLayer.locations = @[@0.0, @0.28, @0.65, @1.0];
     glassGradientLayer.startPoint = CGPointMake(0.0, 0.0);
     glassGradientLayer.endPoint = CGPointMake(1.0, 1.0);
     [glassTintView.layer addSublayer:glassGradientLayer];
     [glassContainer addSubview:glassTintView];
 
-    // 5. iOS 通知卡片顶层折射高光线 (Rim Reflection)
-    topHighlightRim = [CALayer layer];
-    topHighlightRim.frame = CGRectMake(12, 1, glassContainer.bounds.size.width - 24, 1.2);
-    topHighlightRim.backgroundColor = [[UIColor whiteColor] colorWithAlphaComponent:0.60].CGColor;
-    topHighlightRim.cornerRadius = 0.6;
-    [glassContainer.layer addSublayer:topHighlightRim];
+    // 4. 水晶亮边外发光环 (Strong Glowing Rim Border)
+    glassGlowBorderLayer = [CALayer layer];
+    glassGlowBorderLayer.frame = glassContainer.bounds;
+    glassGlowBorderLayer.cornerRadius = cornerRadius;
+    glassGlowBorderLayer.borderWidth = 2.2;
+    glassGlowBorderLayer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.95].CGColor;
+    
+    // 给边框添加外发光 Glow 效果
+    glassGlowBorderLayer.shadowColor = UIColor.whiteColor.CGColor;
+    glassGlowBorderLayer.shadowOffset = CGSizeZero;
+    glassGlowBorderLayer.shadowRadius = 6.0;
+    glassGlowBorderLayer.shadowOpacity = 0.85;
+    
+    [glassContainer.layer addSublayer:glassGlowBorderLayer];
 
-    // 6. 精细全包围玻璃微反光外框
-    glassContainer.layer.borderWidth = 1.0;
-    glassContainer.layer.borderColor = [[UIColor whiteColor] colorWithAlphaComponent:0.35].CGColor;
-
-    // 7. 文字标签及清晰微阴影
+    // 5. 内容文字标签
     label = [[UILabel alloc] initWithFrame:glassContainer.bounds];
     label.backgroundColor = UIColor.clearColor;
     label.textAlignment = NSTextAlignmentCenter;
     label.numberOfLines = 0;
     label.textColor = UIColor.whiteColor;
-    label.font = [UIFont systemFontOfSize:13.5 weight:UIFontWeightMedium];
+    label.font = [UIFont systemFontOfSize:13.5 weight:UIFontWeightBold];
     label.text = @"SB CPU\n0%";
 
+    // 文字柔和阴影，确保可读性
     label.layer.shadowColor = UIColor.blackColor.CGColor;
     label.layer.shadowOffset = CGSizeMake(0, 1);
-    label.layer.shadowOpacity = 0.55;
+    label.layer.shadowOpacity = 0.60;
     label.layer.shadowRadius = 2.0;
 
     [glassContainer addSubview:label];
     [cpuWindow.rootViewController.view addSubview:glassContainer];
 
-    // 8. 拖动手势响应层
+    // 6. 拖动手势响应层
     cpuDragView = [[SBCPUDragView alloc] initWithFrame:glassContainer.frame];
     cpuDragView.backgroundColor = UIColor.clearColor;
     cpuDragView.userInteractionEnabled = YES;
@@ -692,7 +733,7 @@ static BOOL isCharging()
 }
 
 #pragma mark -
-#pragma mark 横竖屏尺寸与通知卡片同步更新
+#pragma mark 胶囊外形与倒影联动更新
 #pragma mark -
 
 static void updateFloatingSize()
@@ -706,10 +747,10 @@ static void updateFloatingSize()
     {
         CGSize maxSize = CGSizeMake(UIScreen.mainScreen.bounds.size.width - 40, 200);
         CGSize textSize = [label sizeThatFits:maxSize];
-        CGSize targetSize = CGSizeMake(textSize.width + 36, textSize.height + 22);
+        CGSize targetSize = CGSizeMake(textSize.width + 42, textSize.height + 24);
 
-        if(targetSize.width < 110) targetSize.width = 110;
-        if(targetSize.height < 52) targetSize.height = 52;
+        if(targetSize.width < 120) targetSize.width = 120;
+        if(targetSize.height < 60) targetSize.height = 60;
 
         targetFrame = CGRectMake(center.x - targetSize.width / 2.0, center.y - targetSize.height / 2.0, targetSize.width, targetSize.height);
     }
@@ -717,7 +758,7 @@ static void updateFloatingSize()
     {
         BOOL landscape = isLandscapeMode();
         CGFloat scale = landscape ? landscapeScale : floatingScale;
-        CGSize targetSize = landscape ? CGSizeMake(142 * scale, 62 * scale) : CGSizeMake(110 * scale, 52 * scale);
+        CGSize targetSize = landscape ? CGSizeMake(160 * scale, 68 * scale) : CGSizeMake(130 * scale, 60 * scale);
 
         targetFrame = CGRectMake(center.x - targetSize.width / 2.0, center.y - targetSize.height / 2.0, targetSize.width, targetSize.height);
     }
@@ -731,9 +772,9 @@ static void updateFloatingSize()
         {
             glassGradientLayer.frame = glassContainer.bounds;
         }
-        if(topHighlightRim)
+        if(glassGlowBorderLayer)
         {
-            topHighlightRim.frame = CGRectMake(12, 1, glassContainer.bounds.size.width - 24, 1.2);
+            glassGlowBorderLayer.frame = glassContainer.bounds;
         }
         label.frame = glassContainer.bounds;
 
@@ -742,18 +783,23 @@ static void updateFloatingSize()
             cpuDragView.frame = targetFrame;
         }
 
-        // 维持连续通知卡片弧度
-        CGFloat radius = MIN(targetFrame.size.width, targetFrame.size.height) * 0.38;
-        if(radius > 26.0) radius = 26.0;
-        if(radius < 14.0) radius = 14.0;
-
-        glassContainer.layer.cornerRadius = radius;
-        glassBlurView.layer.cornerRadius = radius;
-        glassTintView.layer.cornerRadius = radius;
-        if(glassGradientLayer)
+        if(reflectionView)
         {
-            glassGradientLayer.cornerRadius = radius;
+            reflectionView.frame = CGRectMake(targetFrame.origin.x, targetFrame.origin.y + targetFrame.size.height + 6, targetFrame.size.width, targetFrame.size.height * 0.5);
+            if(reflectionView.subviews.firstObject)
+            {
+                reflectionView.subviews.firstObject.frame = reflectionView.bounds;
+            }
         }
+
+        // 完美胶囊形状 (Pill shape)
+        CGFloat cornerRadius = targetFrame.size.height / 2.0;
+
+        glassContainer.layer.cornerRadius = cornerRadius;
+        glassBlurView.layer.cornerRadius = cornerRadius;
+        glassTintView.layer.cornerRadius = cornerRadius;
+        if(glassGradientLayer) glassGradientLayer.cornerRadius = cornerRadius;
+        if(glassGlowBorderLayer) glassGlowBorderLayer.cornerRadius = cornerRadius;
 
         [glassContainer setNeedsLayout];
     }
@@ -819,7 +865,7 @@ static NSInteger sbcpuSmartChargeWritableCount __attribute__((unused)) = 0;
 
 static void sbcpuSmartChargeDeepPropertyScan()
 {
-    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"));
+    io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleSmartBattery"));
     if (!service)
     {
         sbcpuSmartChargePropertyScanStatus = @"AppleSmartBattery 不可用";
@@ -846,7 +892,7 @@ static void smartChargeHardwareProbe()
 {
     if (sbcpuSmartChargeProbeDone) return;
 
-    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"));
+    io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleSmartBattery"));
     if (service)
     {
         CFTypeRef limit = IORegistryEntryCreateCFProperty(service, CFSTR("ChargeCurrentLimit"), kCFAllocatorDefault, 0);
@@ -908,7 +954,7 @@ static void smartChargeControlEngine()
 }
 
 #pragma mark -
-#pragma mark CPU刷新
+#pragma mark CPU刷新与图片排版对齐
 #pragma mark -
 
 static void updateCPU()
@@ -921,7 +967,7 @@ static void updateCPU()
 
         updateFloatingSize();
 
-        label.font = [UIFont systemFontOfSize:(isLandscapeMode() ? landscapeFontSize : floatingFontSize) weight:UIFontWeightMedium];
+        label.font = [UIFont systemFontOfSize:(isLandscapeMode() ? landscapeFontSize : floatingFontSize) weight:UIFontWeightBold];
 
         NSInteger battery = getBatteryPercent();
         double temp = getBatteryTemperature();
@@ -940,7 +986,7 @@ static void updateCPU()
         NSString *tempText = @"";
         if(temp > 0 && temp < 100)
         {
-            tempText = [NSString stringWithFormat:@"%.1f℃", temp];
+            tempText = [NSString stringWithFormat:@"%.1f°C", temp];
         }
 
         NSString *currentText = @"";
@@ -952,18 +998,22 @@ static void updateCPU()
         NSString *chargeText = charging ? @"⚡" : @"";
 
         NSMutableArray *displayLines = [NSMutableArray array];
+        
+        // 第一行：SB CPU 24.2%
         [displayLines addObject:[NSString stringWithFormat:@"SB CPU %.1f%%", cpu]];
 
+        // 第二行：🔋49%  🌡️32.9°C (同排显示)
         NSMutableArray *batteryLine = [NSMutableArray array];
         if(showBatteryPercent && battery >= 0)
             [batteryLine addObject:[NSString stringWithFormat:@"🔋%@", batteryText]];
 
         if(showBatteryTemperature && tempText.length)
-            [batteryLine addObject:[NSString stringWithFormat:@"🌡%@", tempText]];
+            [batteryLine addObject:[NSString stringWithFormat:@"🌡️%@", tempText]];
 
         if(batteryLine.count)
-            [displayLines addObject:[batteryLine componentsJoinedByString:@" "]];
+            [displayLines addObject:[batteryLine componentsJoinedByString:@"  "]];
 
+        // 第三行：-451mA
         if(showBatteryCurrent && currentText.length)
             [displayLines addObject:[NSString stringWithFormat:@"%@%@", chargeText, currentText]];
 
@@ -1609,7 +1659,7 @@ static void sbcpuSmartChargeControlPropertyProbe()
     floatingFontSize = slider.value;
     [[NSUserDefaults standardUserDefaults] setFloat:floatingFontSize forKey:@"SBCPU.FloatingFontSize"];
     [[NSUserDefaults standardUserDefaults] synchronize];
-    if(label) label.font = [UIFont systemFontOfSize:floatingFontSize weight:UIFontWeightMedium];
+    if(label) label.font = [UIFont systemFontOfSize:floatingFontSize weight:UIFontWeightBold];
     [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:6 inSection:0]] withRowAnimation:UITableViewRowAnimationNone];
 }
 
@@ -1627,7 +1677,7 @@ static void sbcpuSmartChargeControlPropertyProbe()
     [[NSUserDefaults standardUserDefaults] setFloat:landscapeFontSize forKey:@"SBCPU.LandscapeFontSize"];
     if(label && isLandscapeMode())
     {
-        label.font = [UIFont systemFontOfSize:landscapeFontSize weight:UIFontWeightMedium];
+        label.font = [UIFont systemFontOfSize:landscapeFontSize weight:UIFontWeightBold];
     }
 }
 
@@ -1967,7 +2017,13 @@ static void applySmartLayout()
         glassBlurView.frame = glassContainer.bounds;
         glassTintView.frame = glassContainer.bounds;
         if(glassGradientLayer) glassGradientLayer.frame = glassContainer.bounds;
-        if(topHighlightRim) topHighlightRim.frame = CGRectMake(12, 1, glassContainer.bounds.size.width - 24, 1.2);
+        if(glassGlowBorderLayer) glassGlowBorderLayer.frame = glassContainer.bounds;
+        if(reflectionView)
+        {
+            reflectionView.frame = CGRectMake(target.origin.x, target.origin.y + target.size.height + 6, target.size.width, target.size.height * 0.5);
+            if(reflectionView.subviews.firstObject) reflectionView.subviews.firstObject.frame = reflectionView.bounds;
+        }
+
         label.frame = glassContainer.bounds;
         cpuDragView.frame = target;
         lastFloatingFrame = target;
@@ -1997,7 +2053,12 @@ static void registerV160Observers()
                  glassBlurView.frame = glassContainer.bounds;
                  glassTintView.frame = glassContainer.bounds;
                  if(glassGradientLayer) glassGradientLayer.frame = glassContainer.bounds;
-                 if(topHighlightRim) topHighlightRim.frame = CGRectMake(12, 1, glassContainer.bounds.size.width - 24, 1.2);
+                 if(glassGlowBorderLayer) glassGlowBorderLayer.frame = glassContainer.bounds;
+                 if(reflectionView)
+                 {
+                     reflectionView.frame = CGRectMake(f.origin.x, f.origin.y + f.size.height + 6, f.size.width, f.size.height * 0.5);
+                     if(reflectionView.subviews.firstObject) reflectionView.subviews.firstObject.frame = reflectionView.bounds;
+                 }
                  label.frame = glassContainer.bounds;
                  cpuDragView.frame = f;
                  lastFloatingFrame = f;
@@ -2041,6 +2102,10 @@ static void registerV160Observers()
 
                      f.origin.y = MAX(20, f.origin.y - keyboardHeight);
                      glassContainer.frame = f;
+                     if(reflectionView)
+                     {
+                         reflectionView.frame = CGRectMake(f.origin.x, f.origin.y + f.size.height + 6, f.size.width, f.size.height * 0.5);
+                     }
                      cpuDragView.frame = f;
                      keyboardMoved = YES;
                  }
@@ -2054,6 +2119,10 @@ static void registerV160Observers()
                  if(!settingsShowing && keyboardMoved)
                  {
                      glassContainer.frame = keyboardBeforeFrame;
+                     if(reflectionView)
+                     {
+                         reflectionView.frame = CGRectMake(keyboardBeforeFrame.origin.x, keyboardBeforeFrame.origin.y + keyboardBeforeFrame.size.height + 6, keyboardBeforeFrame.size.width, keyboardBeforeFrame.size.height * 0.5);
+                     }
                      cpuDragView.frame = keyboardBeforeFrame;
                      lastFloatingFrame = keyboardBeforeFrame;
                      keyboardMoved = NO;
