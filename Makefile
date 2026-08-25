@@ -7,9 +7,9 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = SBCPUFloating
 
 SBCPUFloating_FILES = Tweak.xm
-
 SBCPUFloating_CFLAGS = -fobjc-arc
-SBCPUFloating_FRAMEWORKS = UIKit Foundation IOKit
+SBCPUFloating_FRAMEWORKS = UIKit Foundation
+SBCPUFloating_PRIVATE_FRAMEWORKS = PowerUI IOKit
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
