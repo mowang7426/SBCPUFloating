@@ -9,43 +9,136 @@
 #define kIOMainPortDefault kIOMasterPortDefault
 #endif
 
-#pragma mark - 私有类接口前置声明 (解决 initWithClientName 编译报错)
-@interface PowerUISmartChargingClient : NSObject
-- (instancetype)initWithClientName:(NSString *)clientName;
-- (void)setChargingStatus:(id)status;
-- (void)pauseCharging;
-- (void)resumeCharging;
-- (void)enterMitigationMode;
-- (void)exitMitigationMode;
-- (void)temporarilyDisableSmartCharging;
-@end
+#define kPlistPath @"/var/mobile/Library/Preferences/com.yourname.sbcpufloating.plist"
+#define kPrefChangedNotification "com.yourname.sbcpufloating.prefschanged"
 
-@interface PowerUISmartChargingManager : NSObject
-+ (instancetype)sharedInstance;
-- (void)setChargingPaused:(BOOL)paused;
-- (void)setOverrideChargingEnabled:(BOOL)enabled;
-@end
-
-#pragma mark - 全局变量声明
-static UIWindow *cpuWindow = nil;
-@class SBCPUDragView;
-
-static UIView *containerView = nil; // 底层容器 View
-static UILabel *label = nil; // 显示文字 Label
-static UIVisualEffectView *blurEffectView = nil; // 背景毛玻璃
-static SBCPUDragView *cpuDragView = nil;
-
-static CGFloat floatingScale = 1.0; // 0.4 到 1.6
-static CGFloat floatingFontSize = 13.0; // 8.0 到 15.0
-static CGFloat landscapeScale = 0.75;
-static CGFloat landscapeFontSize = 12.0;
-
-// SmartCharge 温控参数
+#pragma mark - 全局共享配置变量
 static BOOL sbcpuSmartChargeEnable = YES;
 static NSInteger sbcpuChargeTempFast = 35;
 static NSInteger sbcpuChargeTempReduce = 38;
 static NSInteger sbcpuChargeTempPause = 40;
 static NSInteger sbcpuChargeTempStop = 42;
+
+// 全局强制断充状态 (由 powerd 与 SpringBoard 同步)
+static BOOL g_ForcePauseCharging = NO;
+
+#pragma mark - 读取配置函数
+static void LoadPreferences() {
+    NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:kPlistPath];
+    if (prefs) {
+        if (prefs[@"sbcpuSmartChargeEnable"]) sbcpuSmartChargeEnable = [prefs[@"sbcpuSmartChargeEnable"] boolValue];
+        if (prefs[@"sbcpuChargeTempFast"]) sbcpuChargeTempFast = [prefs[@"sbcpuChargeTempFast"] integerValue];
+        if (prefs[@"sbcpuChargeTempReduce"]) sbcpuChargeTempReduce = [prefs[@"sbcpuChargeTempReduce"] integerValue];
+        if (prefs[@"sbcpuChargeTempPause"]) sbcpuChargeTempPause = [prefs[@"sbcpuChargeTempPause"] integerValue];
+        if (prefs[@"sbcpuChargeTempStop"]) sbcpuChargeTempStop = [prefs[@"sbcpuChargeTempStop"] integerValue];
+    }
+}
+
+#pragma mark - 读取电池温度辅助函数
+static double getBatteryTemperatureInternal() {
+    io_iterator_t iterator = 0;
+    io_service_t service = IO_OBJECT_NULL;
+    CFMutableDictionaryRef matching = IOServiceMatching("AppleSmartBattery");
+    if (!matching) return -1;
+
+    if (IOServiceGetMatchingServices(kIOMasterPortDefault, matching, &iterator) != KERN_SUCCESS) return -1;
+
+    while ((service = IOIteratorNext(iterator))) {
+        CFTypeRef temp = IORegistryEntryCreateCFProperty(service, CFSTR("Temperature"), kCFAllocatorDefault, 0);
+        if (temp) {
+            double value = -1;
+            if (CFGetTypeID(temp) == CFNumberGetTypeID()) {
+                CFNumberGetValue((CFNumberRef)temp, kCFNumberDoubleType, &value);
+            }
+            CFRelease(temp);
+            IOObjectRelease(service);
+            IOObjectRelease(iterator);
+
+            if (value > 1000 && value < 10000) value /= 100.0;
+            else if (value > 200) value = value / 10.0 - 273.15;
+            return value;
+        }
+        IOObjectRelease(service);
+    }
+    IOObjectRelease(iterator);
+    return -1;
+}
+
+// ============================================================================
+#pragma mark - 后端模块：powerd 核心充电控制 Hook
+// ============================================================================
+
+%group PowerdHooks
+
+// Hook 系统的 PowerUISmartChargingManager，接管 pauseCharging 逻辑
+%hook PowerUISmartChargingManager
+
+- (BOOL)isChargingPaused {
+    if (sbcpuSmartChargeEnable && g_ForcePauseCharging) {
+        return YES; // 强行让系统 powerd 认为当前处于暂停充电状态
+    }
+    return %orig;
+}
+
+- (BOOL)isSmartChargingDisabled {
+    if (sbcpuSmartChargeEnable && g_ForcePauseCharging) {
+        return YES;
+    }
+    return %orig;
+}
+
+%end
+
+// 定时监控 powerd 内部的电池温度并下发控制
+static void powerdCheckTemperatureAndControl() {
+    LoadPreferences();
+    if (!sbcpuSmartChargeEnable) {
+        g_ForcePauseCharging = NO;
+        return;
+    }
+
+    double temp = getBatteryTemperatureInternal();
+    if (temp <= 0) return;
+
+    if (temp >= sbcpuChargeTempPause || temp >= sbcpuChargeTempStop) {
+        g_ForcePauseCharging = YES;
+    } else if (temp <= sbcpuChargeTempFast) {
+        g_ForcePauseCharging = NO;
+    }
+
+    // 主动刷新 PowerUISmartChargingManager 单例
+    Class managerClass = objc_getClass("PowerUISmartChargingManager");
+    if (managerClass && [managerClass respondsToSelector:@selector(sharedInstance)]) {
+        id manager = [managerClass performSelector:@selector(sharedInstance)];
+        if (manager) {
+            if ([manager respondsToSelector:@selector(setChargingPaused:)]) {
+                typedef void (*SetPausedFunc)(id, SEL, BOOL);
+                SetPausedFunc func = (SetPausedFunc)[manager methodForSelector:@selector(setChargingPaused:)];
+                if (func) func(manager, @selector(setChargingPaused:), g_ForcePauseCharging);
+            }
+        }
+    }
+}
+
+%end // end group PowerdHooks
+
+
+// ============================================================================
+#pragma mark - 前端模块：SpringBoard 界面与悬浮窗 UI
+// ============================================================================
+
+static UIWindow *cpuWindow = nil;
+@class SBCPUDragView;
+
+static UIView *containerView = nil;
+static UILabel *label = nil;
+static UIVisualEffectView *blurEffectView = nil;
+static SBCPUDragView *cpuDragView = nil;
+
+static CGFloat floatingScale = 1.0;
+static CGFloat floatingFontSize = 13.0;
+static CGFloat landscapeScale = 0.75;
+static CGFloat landscapeFontSize = 12.0;
 
 static BOOL settingsShowing = NO;
 
@@ -66,85 +159,15 @@ static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
 static BOOL smartDockEnable = YES;
-static NSInteger dockMode = 0; // 0自动 1左侧 2右侧 3顶部 4底部
+static NSInteger dockMode = 0;
 static BOOL rememberPositionEnable = YES;
 
-// 前置函数声明
 static void openSettings(void);
 static void checkHighCPU(double cpu);
 static void registerV160Observers(void);
 
 @class SBCPUValuePickerController;
 @class SBCPUTimePickerController;
-
-#pragma mark - PowerUI 私有框架接入
-static PowerUISmartChargingClient *powerUIClient = nil;
-
-static void initPowerUIFramework() {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        NSBundle *powerUIBundle = [NSBundle bundleWithPath:@"/System/Library/PrivateFrameworks/PowerUI.framework"];
-        if (powerUIBundle) {
-            [powerUIBundle load];
-        }
-        
-        Class clientClass = objc_getClass("PowerUISmartChargingClient");
-        if (clientClass) {
-            powerUIClient = [[clientClass alloc] initWithClientName:@"SBCPUFloating"];
-        }
-    });
-}
-
-// 通过系统原生 PowerUI XPC 机制暂停/恢复充电
-static void applyPowerUIChargingPause(BOOL pause) {
-    initPowerUIFramework();
-    
-    // 1. 调用 PowerUISmartChargingClient (向 powerd 发送原生控制指令)
-    if (powerUIClient) {
-        if (pause) {
-            if ([powerUIClient respondsToSelector:@selector(setChargingStatus:)]) {
-                [powerUIClient performSelector:@selector(setChargingStatus:) withObject:@(NO)];
-            }
-            if ([powerUIClient respondsToSelector:@selector(pauseCharging)]) {
-                [powerUIClient performSelector:@selector(pauseCharging)];
-            }
-            if ([powerUIClient respondsToSelector:@selector(enterMitigationMode)]) {
-                [powerUIClient performSelector:@selector(enterMitigationMode)];
-            }
-            if ([powerUIClient respondsToSelector:@selector(temporarilyDisableSmartCharging)]) {
-                [powerUIClient performSelector:@selector(temporarilyDisableSmartCharging)];
-            }
-        } else {
-            if ([powerUIClient respondsToSelector:@selector(setChargingStatus:)]) {
-                [powerUIClient performSelector:@selector(setChargingStatus:) withObject:@(YES)];
-            }
-            if ([powerUIClient respondsToSelector:@selector(resumeCharging)]) {
-                [powerUIClient performSelector:@selector(resumeCharging)];
-            }
-            if ([powerUIClient respondsToSelector:@selector(exitMitigationMode)]) {
-                [powerUIClient performSelector:@selector(exitMitigationMode)];
-            }
-        }
-    }
-    
-    // 2. 调用 PowerUISmartChargingManager 单例
-    Class managerClass = objc_getClass("PowerUISmartChargingManager") ?: objc_getClass("PowerUIManager");
-    if (managerClass && [managerClass respondsToSelector:@selector(sharedInstance)]) {
-        id manager = [managerClass performSelector:@selector(sharedInstance)];
-        if (manager) {
-            if ([manager respondsToSelector:@selector(setChargingPaused:)]) {
-                typedef void (*SetPausedFunc)(id, SEL, BOOL);
-                SetPausedFunc func = (SetPausedFunc)[manager methodForSelector:@selector(setChargingPaused:)];
-                if (func) func(manager, @selector(setChargingPaused:), pause);
-            }
-            if ([manager respondsToSelector:@selector(setOverrideChargingEnabled:)]) {
-                typedef void (*SetOverrideFunc)(id, SEL, BOOL);
-                SetOverrideFunc func = (SetOverrideFunc)[manager methodForSelector:@selector(setOverrideChargingEnabled:)];
-                if (func) func(manager, @selector(setOverrideChargingEnabled:), !pause);
-            }
-        }
-    }
-}
 
 #pragma mark - WindowScene 抓取
 static UIWindowScene *getWindowScene() {
@@ -430,35 +453,6 @@ static NSInteger getBatteryPercent() {
     return (level < 0) ? -1 : (NSInteger)(level * 100.0f);
 }
 
-static double getBatteryTemperature() {
-    io_iterator_t iterator = 0;
-    io_service_t service = IO_OBJECT_NULL;
-    CFMutableDictionaryRef matching = IOServiceMatching("AppleSmartBattery");
-    if (!matching) return -1;
-
-    if (IOServiceGetMatchingServices(kIOMasterPortDefault, matching, &iterator) != KERN_SUCCESS) return -1;
-
-    while ((service = IOIteratorNext(iterator))) {
-        CFTypeRef temp = IORegistryEntryCreateCFProperty(service, CFSTR("Temperature"), kCFAllocatorDefault, 0);
-        if (temp) {
-            double value = -1;
-            if (CFGetTypeID(temp) == CFNumberGetTypeID()) {
-                CFNumberGetValue((CFNumberRef)temp, kCFNumberDoubleType, &value);
-            }
-            CFRelease(temp);
-            IOObjectRelease(service);
-            IOObjectRelease(iterator);
-
-            if (value > 1000 && value < 10000) value /= 100.0;
-            else if (value > 200) value = value / 10.0 - 273.15;
-            return value;
-        }
-        IOObjectRelease(service);
-    }
-    IOObjectRelease(iterator);
-    return -1;
-}
-
 static double getBatteryCurrent() {
     io_iterator_t iterator = 0;
     io_service_t service = IO_OBJECT_NULL;
@@ -547,47 +541,12 @@ static void updateFloatingSize() {
     }
 }
 
-#pragma mark - 智能温控状态 Engine
-typedef NS_ENUM(NSInteger, SBCPUSmartChargeState) {
-    SBCPUSmartChargeNormal = 0,
-    SBCPUSmartChargeReduce,
-    SBCPUSmartChargePause,
-    SBCPUSmartChargeStop
-};
-
-static SBCPUSmartChargeState smartChargeState = SBCPUSmartChargeNormal;
-
 static NSString *smartChargeStateText() {
-    switch (smartChargeState) {
-        case SBCPUSmartChargeReduce: return @"🟡 降低功率";
-        case SBCPUSmartChargePause: return @"🟠 暂停充电";
-        case SBCPUSmartChargeStop: return @"🔴 保护断充";
-        default: return @"🟢 正常充电";
-    }
-}
-
-static void updateSmartChargeState(double temperature) {
-    if (!sbcpuSmartChargeEnable || temperature <= 0 || !isCharging()) {
-        if (smartChargeState != SBCPUSmartChargeNormal) {
-            applyPowerUIChargingPause(NO); // 恢复充电
-        }
-        smartChargeState = SBCPUSmartChargeNormal;
-        return;
-    }
-
-    if (temperature >= sbcpuChargeTempStop) {
-        applyPowerUIChargingPause(YES); // 触发原生保护断充
-        smartChargeState = SBCPUSmartChargeStop;
-    } else if (temperature >= sbcpuChargeTempPause) {
-        applyPowerUIChargingPause(YES); // 触发原生暂停充电
-        smartChargeState = SBCPUSmartChargePause;
-    } else if (temperature >= sbcpuChargeTempReduce) {
-        applyPowerUIChargingPause(YES); // 降低功率
-        smartChargeState = SBCPUSmartChargeReduce;
-    } else if (temperature <= sbcpuChargeTempFast) {
-        applyPowerUIChargingPause(NO); // 恢复正常全速充电
-        smartChargeState = SBCPUSmartChargeNormal;
-    }
+    double temp = getBatteryTemperatureInternal();
+    if (temp >= sbcpuChargeTempStop) return @"🔴 保护断充";
+    if (temp >= sbcpuChargeTempPause) return @"🟠 暂停充电";
+    if (temp >= sbcpuChargeTempReduce) return @"🟡 降低功率";
+    return @"🟢 正常充电";
 }
 
 #pragma mark - CPU 与数据定时刷新
@@ -601,11 +560,9 @@ static void updateCPU() {
         label.font = [UIFont systemFontOfSize:(isLandscapeMode() ? landscapeFontSize : floatingFontSize)];
 
         NSInteger battery = getBatteryPercent();
-        double temp = getBatteryTemperature();
+        double temp = getBatteryTemperatureInternal();
         double current = getBatteryCurrent();
         BOOL charging = isCharging();
-
-        updateSmartChargeState(temp);
 
         NSString *batteryText = (battery >= 0) ? [NSString stringWithFormat:@"%ld%%", (long)battery] : @"";
         NSString *tempText = (temp > 0 && temp < 100) ? [NSString stringWithFormat:@"%.1f℃", temp] : @"";
@@ -905,6 +862,22 @@ static void updateCPU() {
     return cell;
 }
 
+- (void)savePreferencesAndNotify() {
+    NSMutableDictionary *dict = [NSMutableDictionary dictionaryWithContentsOfFile:kPlistPath] ?: [NSMutableDictionary dictionary];
+    dict[@"sbcpuSmartChargeEnable"] = @(sbcpuSmartChargeEnable);
+    dict[@"sbcpuChargeTempFast"] = @(sbcpuChargeTempFast);
+    dict[@"sbcpuChargeTempReduce"] = @(sbcpuChargeTempReduce);
+    dict[@"sbcpuChargeTempPause"] = @(sbcpuChargeTempPause);
+    dict[@"sbcpuChargeTempStop"] = @(sbcpuChargeTempStop);
+    [dict writeToFile:kPlistPath atomically:YES];
+
+    CFNotificationCenterPostNotification(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        CFSTR(kPrefChangedNotification),
+        NULL, NULL, YES
+    );
+}
+
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 
@@ -950,11 +923,11 @@ static void updateCPU() {
         vc.tempValue = current;
         vc.tempTitle = title;
         vc.finishBlock = ^(NSInteger value) {
-            if (type == 0) { sbcpuChargeTempFast = value; [[NSUserDefaults standardUserDefaults] setInteger:value forKey:@"SBCPU.ChargeFastTemp"]; }
-            if (type == 1) { sbcpuChargeTempReduce = value; [[NSUserDefaults standardUserDefaults] setInteger:value forKey:@"SBCPU.ChargeReduceTemp"]; }
-            if (type == 2) { sbcpuChargeTempPause = value; [[NSUserDefaults standardUserDefaults] setInteger:value forKey:@"SBCPU.ChargePauseTemp"]; }
-            if (type == 3) { sbcpuChargeTempStop = value; [[NSUserDefaults standardUserDefaults] setInteger:value forKey:@"SBCPU.ChargeStopTemp"]; }
-            [[NSUserDefaults standardUserDefaults] synchronize];
+            if (type == 0) sbcpuChargeTempFast = value;
+            if (type == 1) sbcpuChargeTempReduce = value;
+            if (type == 2) sbcpuChargeTempPause = value;
+            if (type == 3) sbcpuChargeTempStop = value;
+            [self savePreferencesAndNotify];
             [self.tableView reloadData];
         };
         [self.navigationController pushViewController:vc animated:YES];
@@ -1010,8 +983,7 @@ static void updateCPU() {
 
 - (void)changeSmartCharge:(UISwitch *)sw {
     sbcpuSmartChargeEnable = sw.isOn;
-    [[NSUserDefaults standardUserDefaults] setBool:sbcpuSmartChargeEnable forKey:@"SBCPU.SmartCharge"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
+    [self savePreferencesAndNotify];
 }
 @end
 
@@ -1054,45 +1026,65 @@ static void registerV160Observers() {
     });
 }
 
-#pragma mark - Tweak 入口
+// ============================================================================
+#pragma mark - 构造函数 (%ctor)
+// ============================================================================
+
 %ctor {
-    NSString *process = NSProcessInfo.processInfo.processName;
-    if (![process isEqualToString:@"SpringBoard"] && ![process isEqualToString:@"powerd"]) return;
+    NSString *processName = [NSProcessInfo processInfo].processName;
 
-    NSUserDefaults *def = NSUserDefaults.standardUserDefaults;
-    autoWindowSizeEnable = [def boolForKey:@"SBCPU.AutoWindowSize"];
-    autoLogoutEnable = [def boolForKey:@"SBCPU.AutoLogout"];
+    // 1. 如果注入在 powerd 进程：运行后台精准断充 Hook 引擎
+    if ([processName isEqualToString:@"powerd"]) {
+        %init(PowerdHooks);
+        
+        LoadPreferences();
+        
+        // 监听来自 SpringBoard 设置改动的 Darwin 通知
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            NULL,
+            (CFNotificationCallback)powerdCheckTemperatureAndControl,
+            CFSTR(kPrefChangedNotification),
+            NULL,
+            CFNotificationSuspensionBehaviorCoalesce
+        );
 
-    floatingScale = [def floatForKey:@"SBCPU.FloatingScale"];
-    if (floatingScale < 0.4 || floatingScale > 1.6) floatingScale = 1.0;
-
-    floatingFontSize = [def floatForKey:@"SBCPU.FloatingFontSize"];
-    if (floatingFontSize < 8.0 || floatingFontSize > 15.0) floatingFontSize = 13.0;
-
-    dockMode = [def integerForKey:@"SBCPU.DockMode"];
-
-    double cpu = [def doubleForKey:@"SBCPU.CPUThreshold"];
-    if (cpu >= 80.0 && cpu <= 1000.0) logoutCPUThreshold = cpu;
-
-    NSInteger time = [def integerForKey:@"SBCPU.LogoutTime"];
-    if (time >= 10) logoutDuration = time;
-
-    if ([def objectForKey:@"SBCPU.FloatingAlphaEnable"]) {
-        floatingAlphaEnable = [def boolForKey:@"SBCPU.FloatingAlphaEnable"];
+        // 每 2 秒轮询监测电池温度并驱动断充
+        [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:YES block:^(NSTimer *timer) {
+            powerdCheckTemperatureAndControl();
+        }];
+        return;
     }
 
-    CGFloat alpha = [def floatForKey:@"SBCPU.FloatingAlpha"];
-    if (alpha >= 0.2 && alpha <= 1.0) floatingAlpha = alpha;
+    // 2. 如果注入在 SpringBoard 进程：运行悬浮窗与 UI 控制面板
+    if ([processName isEqualToString:@"SpringBoard"]) {
+        LoadPreferences();
 
-    if ([def objectForKey:@"SBCPU.ChargeFastTemp"]) sbcpuChargeTempFast = [def integerForKey:@"SBCPU.ChargeFastTemp"];
-    if ([def objectForKey:@"SBCPU.ChargeReduceTemp"]) sbcpuChargeTempReduce = [def integerForKey:@"SBCPU.ChargeReduceTemp"];
-    if ([def objectForKey:@"SBCPU.ChargePauseTemp"]) sbcpuChargeTempPause = [def integerForKey:@"SBCPU.ChargePauseTemp"];
-    if ([def objectForKey:@"SBCPU.ChargeStopTemp"]) sbcpuChargeTempStop = [def integerForKey:@"SBCPU.ChargeStopTemp"];
+        NSUserDefaults *def = NSUserDefaults.standardUserDefaults;
+        autoWindowSizeEnable = [def boolForKey:@"SBCPU.AutoWindowSize"];
+        autoLogoutEnable = [def boolForKey:@"SBCPU.AutoLogout"];
 
-    // 初始化 PowerUI 私有框架
-    initPowerUIFramework();
+        floatingScale = [def floatForKey:@"SBCPU.FloatingScale"];
+        if (floatingScale < 0.4 || floatingScale > 1.6) floatingScale = 1.0;
 
-    if ([process isEqualToString:@"SpringBoard"]) {
+        floatingFontSize = [def floatForKey:@"SBCPU.FloatingFontSize"];
+        if (floatingFontSize < 8.0 || floatingFontSize > 15.0) floatingFontSize = 13.0;
+
+        dockMode = [def integerForKey:@"SBCPU.DockMode"];
+
+        double cpu = [def doubleForKey:@"SBCPU.CPUThreshold"];
+        if (cpu >= 80.0 && cpu <= 1000.0) logoutCPUThreshold = cpu;
+
+        NSInteger time = [def integerForKey:@"SBCPU.LogoutTime"];
+        if (time >= 10) logoutDuration = time;
+
+        if ([def objectForKey:@"SBCPU.FloatingAlphaEnable"]) {
+            floatingAlphaEnable = [def boolForKey:@"SBCPU.FloatingAlphaEnable"];
+        }
+
+        CGFloat alpha = [def floatForKey:@"SBCPU.FloatingAlpha"];
+        if (alpha >= 0.2 && alpha <= 1.0) floatingAlpha = alpha;
+
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             createCPUWindow();
             registerV160Observers();
