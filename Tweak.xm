@@ -12,9 +12,8 @@
 #define kPlistPath @"/var/mobile/Library/Preferences/com.yourname.sbcpufloating.plist"
 #define kPrefChangedNotification "com.yourname.sbcpufloating.prefschanged"
 
-#pragma mark - 1. 完整前置类 Interface 声明
+#pragma mark - 1. 前置类 Interface 声明 (解决 Clang 编译报错)
 
-// 1:1 忠实复刻设计图的高颜值悬浮窗视图类
 @interface SBCPUFloatingView : UIView
 @property (nonatomic, strong) UIVisualEffectView *blurView;
 
@@ -36,6 +35,12 @@
 @property (nonatomic, strong) UILabel *currentLabel;
 @property (nonatomic, strong) UILabel *statusLabel;
 
+- (void)updateLayoutWithAutoWindowSize:(BOOL)autoSize
+                    showBatteryPercent:(BOOL)showBattery
+                       showBatteryTemp:(BOOL)showTemp
+                    showBatteryCurrent:(BOOL)showCurrent
+                      floatingFontSize:(CGFloat)fontSize;
+
 - (void)updateDataWithCPU:(double)cpu 
                   battery:(NSInteger)battery 
                      temp:(double)temp 
@@ -43,24 +48,19 @@
                isCharging:(BOOL)isCharging;
 @end
 
-// 拖动手势视图类 (前置完整声明，使所有函数可正常读取 .frame)
 @interface SBCPUDragView : UIView
 @property (nonatomic, assign) CGPoint lastPoint;
 @end
 
-// 可穿透全屏 Window
 @interface SBCPUWindow : UIWindow
 @end
 
-// CPU 触发值选择控制器
 @interface SBCPUValuePickerController : UITableViewController
 @end
 
-// 持续时间选择控制器
 @interface SBCPUTimePickerController : UITableViewController
 @end
 
-// 设置主控制器
 @interface SBCPUSettingsController : UITableViewController
 @end
 
@@ -87,6 +87,7 @@ static BOOL floatingAlphaEnable = YES;
 static CGFloat floatingAlpha = 0.70f;
 
 // 布局、吸附与键盘避让控制配置
+static BOOL autoWindowSizeEnable = NO;
 static BOOL keyboardAvoidEnable = YES;
 static BOOL smartDockEnable = YES;
 static NSInteger dockMode = 0; // 0自动 1左 2右 3上 4下
@@ -113,13 +114,13 @@ static void registerV160Observers(void);
         self.backgroundColor = [UIColor clearColor];
         self.layer.masksToBounds = NO;
         
-        // 细腻阴影与发光微边框
+        // 自然落影与精致边缘高光
         self.layer.shadowColor = [UIColor blackColor].CGColor;
         self.layer.shadowOpacity = 0.35f;
         self.layer.shadowOffset = CGSizeMake(0, 5);
         self.layer.shadowRadius = 10.0f;
 
-        // 高透暗色超薄毛玻璃
+        // 高透超薄暗色毛玻璃
         UIBlurEffect *blurEffect = nil;
         if (@available(iOS 13.0, *)) {
             blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark];
@@ -128,10 +129,10 @@ static void registerV160Observers(void);
         }
 
         _blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
-        _blurView.layer.cornerRadius = 22.0f;
+        _blurView.layer.cornerRadius = 20.0f;
         _blurView.layer.masksToBounds = YES;
         _blurView.layer.borderWidth = 0.75f;
-        _blurView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.35f].CGColor; // 精细光边
+        _blurView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.35f].CGColor; // 晶莹发光微边框
         [self addSubview:_blurView];
 
         UIView *content = _blurView.contentView;
@@ -140,12 +141,12 @@ static void registerV160Observers(void);
         _cpuTitleLabel = [[UILabel alloc] init];
         _cpuTitleLabel.text = @"🔲 SB CPU";
         _cpuTitleLabel.textColor = [UIColor colorWithWhite:0.95f alpha:1.0f];
-        _cpuTitleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightBold];
+        _cpuTitleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightBold];
         [content addSubview:_cpuTitleLabel];
 
         _cpuValueLabel = [[UILabel alloc] init];
         _cpuValueLabel.textColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
-        _cpuValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:17 weight:UIFontWeightBlack];
+        _cpuValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:16 weight:UIFontWeightBlack];
         _cpuValueLabel.textAlignment = NSTextAlignmentRight;
         [content addSubview:_cpuValueLabel];
 
@@ -156,21 +157,20 @@ static void registerV160Observers(void);
         // 中行左列：电量
         _batteryIconLabel = [[UILabel alloc] init];
         _batteryIconLabel.text = @"🔋";
-        _batteryIconLabel.font = [UIFont systemFontOfSize:15];
+        _batteryIconLabel.font = [UIFont systemFontOfSize:14];
         [content addSubview:_batteryIconLabel];
 
         _batteryValueLabel = [[UILabel alloc] init];
         _batteryValueLabel.textColor = [UIColor whiteColor];
-        _batteryValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:13 weight:UIFontWeightBold];
+        _batteryValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:12 weight:UIFontWeightBold];
         [content addSubview:_batteryValueLabel];
 
         _batteryTitleLabel = [[UILabel alloc] init];
         _batteryTitleLabel.text = @"电量";
         _batteryTitleLabel.textColor = [UIColor colorWithWhite:0.65f alpha:1.0f];
-        _batteryTitleLabel.font = [UIFont systemFontOfSize:9 weight:UIFontWeightMedium];
+        _batteryTitleLabel.font = [UIFont systemFontOfSize:8.5f weight:UIFontWeightMedium];
         [content addSubview:_batteryTitleLabel];
 
-        // 中行竖向分割线
         _midDivider = [[UIView alloc] init];
         _midDivider.backgroundColor = [UIColor colorWithWhite:1.0f alpha:0.18f];
         [content addSubview:_midDivider];
@@ -178,70 +178,132 @@ static void registerV160Observers(void);
         // 中行右列：温度
         _tempIconLabel = [[UILabel alloc] init];
         _tempIconLabel.text = @"🌡";
-        _tempIconLabel.font = [UIFont systemFontOfSize:15];
+        _tempIconLabel.font = [UIFont systemFontOfSize:14];
         [content addSubview:_tempIconLabel];
 
         _tempValueLabel = [[UILabel alloc] init];
         _tempValueLabel.textColor = [UIColor whiteColor];
-        _tempValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:13 weight:UIFontWeightBold];
+        _tempValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:12 weight:UIFontWeightBold];
         [content addSubview:_tempValueLabel];
 
         _tempTitleLabel = [[UILabel alloc] init];
         _tempTitleLabel.text = @"温度";
         _tempTitleLabel.textColor = [UIColor colorWithWhite:0.65f alpha:1.0f];
-        _tempTitleLabel.font = [UIFont systemFontOfSize:9 weight:UIFontWeightMedium];
+        _tempTitleLabel.font = [UIFont systemFontOfSize:8.5f weight:UIFontWeightMedium];
         [content addSubview:_tempTitleLabel];
 
         // 底行胶囊框
         _bottomCapsule = [[UIView alloc] init];
         _bottomCapsule.backgroundColor = [UIColor colorWithWhite:1.0f alpha:0.12f];
-        _bottomCapsule.layer.cornerRadius = 11.0f;
+        _bottomCapsule.layer.cornerRadius = 10.0f;
         _bottomCapsule.layer.borderWidth = 0.5f;
         _bottomCapsule.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.15f].CGColor;
         [content addSubview:_bottomCapsule];
 
         _currentLabel = [[UILabel alloc] init];
         _currentLabel.textColor = [UIColor colorWithRed:1.0f green:0.85f blue:0.25f alpha:1.0f];
-        _currentLabel.font = [UIFont monospacedDigitSystemFontOfSize:11.5f weight:UIFontWeightBold];
+        _currentLabel.font = [UIFont monospacedDigitSystemFontOfSize:10.5f weight:UIFontWeightBold];
         [_bottomCapsule addSubview:_currentLabel];
 
         _statusLabel = [[UILabel alloc] init];
         _statusLabel.textColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
-        _statusLabel.font = [UIFont systemFontOfSize:10.5f weight:UIFontWeightMedium];
+        _statusLabel.font = [UIFont systemFontOfSize:9.5f weight:UIFontWeightMedium];
         _statusLabel.textAlignment = NSTextAlignmentRight;
         [_bottomCapsule addSubview:_statusLabel];
     }
     return self;
 }
 
-- (void)layoutSubviews {
-    [super layoutSubviews];
-    _blurView.frame = self.bounds;
-    self.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:self.bounds cornerRadius:22.0f].CGPath;
+- (void)updateLayoutWithAutoWindowSize:(BOOL)autoSize
+                    showBatteryPercent:(BOOL)showBattery
+                       showBatteryTemp:(BOOL)showTemp
+                    showBatteryCurrent:(BOOL)showCurrent
+                      floatingFontSize:(CGFloat)fontSize {
+    
+    BOOL hasMid = (showBattery || showTemp);
+    BOOL hasBottom = showCurrent;
 
-    CGFloat baseW = self.bounds.size.width - 24.0f;
+    _batteryIconLabel.hidden = !showBattery;
+    _batteryValueLabel.hidden = !showBattery;
+    _batteryTitleLabel.hidden = !showBattery;
 
-    // 顶行
-    _cpuTitleLabel.frame = CGRectMake(12, 10, 85, 18);
-    _cpuValueLabel.frame = CGRectMake(12 + baseW - 85, 8, 85, 20);
-    _topDivider.frame = CGRectMake(12, 32, baseW, 0.5f);
+    _tempIconLabel.hidden = !showTemp;
+    _tempValueLabel.hidden = !showTemp;
+    _tempTitleLabel.hidden = !showTemp;
 
-    // 中行电量/温度
-    CGFloat colW = (baseW - 12) / 2.0f;
-    _batteryIconLabel.frame = CGRectMake(12, 37, 18, 22);
-    _batteryValueLabel.frame = CGRectMake(32, 35, colW - 20, 14);
-    _batteryTitleLabel.frame = CGRectMake(32, 50, colW - 20, 11);
+    _midDivider.hidden = !(showBattery && showTemp);
+    _topDivider.hidden = !hasMid && !hasBottom;
+    _bottomCapsule.hidden = !hasBottom;
 
-    _midDivider.frame = CGRectMake(12 + colW + 5, 37, 0.5f, 24);
+    if (fontSize > 0) {
+        _cpuTitleLabel.font = [UIFont systemFontOfSize:fontSize - 1 weight:UIFontWeightBold];
+        _cpuValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:fontSize + 3 weight:UIFontWeightBlack];
+        _batteryValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:fontSize weight:UIFontWeightBold];
+        _tempValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:fontSize weight:UIFontWeightBold];
+        _currentLabel.font = [UIFont monospacedDigitSystemFontOfSize:fontSize - 1.5f weight:UIFontWeightBold];
+    }
 
-    _tempIconLabel.frame = CGRectMake(12 + colW + 12, 37, 18, 22);
-    _tempValueLabel.frame = CGRectMake(12 + colW + 30, 35, colW - 30, 14);
-    _tempTitleLabel.frame = CGRectMake(12 + colW + 30, 50, colW - 30, 11);
+    // 180pt 紧凑小巧极简宽度
+    CGFloat baseW = 180.0f;
+    CGFloat padX = 10.0f;
+    CGFloat contentW = baseW - 2 * padX;
+
+    CGFloat currentY = 8.0f;
+
+    // 顶行 CPU
+    _cpuTitleLabel.frame = CGRectMake(padX, currentY, 80, 18);
+    _cpuValueLabel.frame = CGRectMake(padX + contentW - 75, currentY - 2, 75, 20);
+    currentY += 22.0f;
+
+    if (hasMid || hasBottom) {
+        _topDivider.frame = CGRectMake(padX, currentY + 2, contentW, 0.5f);
+        currentY += 6.0f;
+    }
+
+    // 中行电量 / 温度
+    if (hasMid) {
+        CGFloat colW = (contentW - 10) / 2.0f;
+
+        if (showBattery) {
+            _batteryIconLabel.frame = CGRectMake(padX, currentY + 2, 16, 18);
+            _batteryValueLabel.frame = CGRectMake(padX + 18, currentY, colW - 18, 14);
+            _batteryTitleLabel.frame = CGRectMake(padX + 18, currentY + 14, colW - 18, 11);
+        }
+
+        if (showBattery && showTemp) {
+            _midDivider.frame = CGRectMake(padX + colW + 4.5f, currentY + 2, 0.5f, 22);
+        }
+
+        if (showTemp) {
+            CGFloat tempX = showBattery ? (padX + colW + 10) : padX;
+            _tempIconLabel.frame = CGRectMake(tempX, currentY + 2, 16, 18);
+            _tempValueLabel.frame = CGRectMake(tempX + 18, currentY, colW - 18, 14);
+            _tempTitleLabel.frame = CGRectMake(tempX + 18, currentY + 14, colW - 18, 11);
+        }
+
+        currentY += 28.0f;
+    }
 
     // 底行胶囊
-    _bottomCapsule.frame = CGRectMake(12, 67, baseW, 25);
-    _currentLabel.frame = CGRectMake(8, 3, (baseW - 16) / 2.0f, 19);
-    _statusLabel.frame = CGRectMake(8 + (baseW - 16) / 2.0f, 3, (baseW - 16) / 2.0f, 19);
+    if (hasBottom) {
+        _bottomCapsule.frame = CGRectMake(padX, currentY + 2, contentW, 22);
+        _currentLabel.frame = CGRectMake(6, 2, contentW / 2.0f - 4, 18);
+        _statusLabel.frame = CGRectMake(contentW / 2.0f, 2, contentW / 2.0f - 6, 18);
+        currentY += 26.0f;
+    }
+
+    currentY += 6.0f; // 底部留白
+
+    CGFloat targetH = autoSize ? currentY : 92.0f;
+
+    CGRect newBounds = CGRectMake(0, 0, baseW, targetH);
+    if (!CGRectEqualToRect(self.bounds, newBounds)) {
+        CGPoint center = self.center;
+        self.bounds = newBounds;
+        self.center = center;
+        _blurView.frame = self.bounds;
+        self.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:self.bounds cornerRadius:20.0f].CGPath;
+    }
 }
 
 - (void)updateDataWithCPU:(double)cpu 
@@ -260,7 +322,7 @@ static void registerV160Observers(void);
 
 @end
 
-#pragma mark - 4. 拖动与边缘智能吸附 (完全消除空气墙)
+#pragma mark - 4. 拖动与边缘零阻碍吸附 (彻底消除空气墙)
 
 @implementation SBCPUDragView
 
@@ -285,7 +347,7 @@ static void registerV160Observers(void);
     center.x += dx;
     center.y += dy;
 
-    // 核心修复：采用变形后视觉上的真实可视宽高，彻底解决空气墙隔离问题！
+    // 核心：使用变形后的真实可视尺寸计算，消除空气墙撞阻问题！
     CGRect realFrame = floatingView.frame;
     CGSize size = self.superview.bounds.size;
     CGFloat halfW = realFrame.size.width / 2.0f;
@@ -314,7 +376,7 @@ static void registerV160Observers(void);
 
     if (!smartDockEnable) return;
 
-    // 基于变形后的实时尺寸计算边缘吸附
+    // 基于变形后的实时视觉宽度紧贴屏幕边缘吸附
     CGSize size = self.superview.bounds.size;
     CGRect realFrame = floatingView.frame;
     CGFloat left = CGRectGetMinX(realFrame);
@@ -380,6 +442,7 @@ static void LoadPreferences() {
     if ([def objectForKey:@"floatingAlpha"]) floatingAlpha = [def floatForKey:@"floatingAlpha"];
     if ([def objectForKey:@"floatingScale"]) floatingScale = [def floatForKey:@"floatingScale"];
     if ([def objectForKey:@"floatingFontSize"]) floatingFontSize = [def floatForKey:@"floatingFontSize"];
+    if ([def objectForKey:@"autoWindowSizeEnable"]) autoWindowSizeEnable = [def boolForKey:@"autoWindowSizeEnable"];
     
     if ([def objectForKey:@"keyboardAvoidEnable"]) keyboardAvoidEnable = [def boolForKey:@"keyboardAvoidEnable"];
     if ([def objectForKey:@"smartDockEnable"]) smartDockEnable = [def boolForKey:@"smartDockEnable"];
@@ -401,6 +464,7 @@ static void SavePreferencesAndNotify() {
     [def setFloat:floatingAlpha forKey:@"floatingAlpha"];
     [def setFloat:floatingScale forKey:@"floatingScale"];
     [def setFloat:floatingFontSize forKey:@"floatingFontSize"];
+    [def setBool:autoWindowSizeEnable forKey:@"autoWindowSizeEnable"];
     
     [def setBool:keyboardAvoidEnable forKey:@"keyboardAvoidEnable"];
     [def setBool:smartDockEnable forKey:@"smartDockEnable"];
@@ -534,16 +598,21 @@ static void applyFloatingAlpha() {
     });
 }
 
-// 核心：使用 Transform 等比例进行整体等比缩放，文字图标线宽彻底和谐统一！
+// Transform 等比例整体缩放，文字、图标、边框彻底紧凑统一！
 static void updateFloatingSize() {
     if (!floatingView) return;
+
+    [floatingView updateLayoutWithAutoWindowSize:autoWindowSizeEnable
+                              showBatteryPercent:showBatteryPercent
+                                 showBatteryTemp:showBatteryTemperature
+                              showBatteryCurrent:showBatteryCurrent
+                                floatingFontSize:floatingFontSize];
 
     CGAffineTransform transform = CGAffineTransformMakeScale(floatingScale, floatingScale);
     if (!CGAffineTransformEqualToTransform(floatingView.transform, transform)) {
         floatingView.transform = transform;
     }
 
-    // 手势框同步变形后的实时真实 Frame
     if (cpuDragView) {
         cpuDragView.frame = floatingView.frame;
     }
@@ -576,7 +645,7 @@ static void createCPUWindow() {
     cpuWindow.rootViewController.view.backgroundColor = UIColor.clearColor;
     cpuWindow.hidden = NO;
 
-    CGRect initFrame = CGRectMake(20, 160, 210, 105);
+    CGRect initFrame = CGRectMake(20, 160, 180, 92);
     NSString *savedFrame = [[NSUserDefaults standardUserDefaults] stringForKey:@"SBCPU.LastFrame"];
     if (rememberPositionEnable && savedFrame) {
         CGRect parsed = CGRectFromString(savedFrame);
@@ -730,7 +799,7 @@ static void updateCPU() {
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 4; }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     if (section == 0) return 3; // ⚡ 自动控制
-    if (section == 1) return 4; // 🔲 悬浮窗外观 (移除了自动调整选项)
+    if (section == 1) return 5; // 🔲 悬浮窗外观
     if (section == 2) return 3; // 🧠 智能选项
     return 4;                   // 📍 位置与显示
 }
@@ -800,6 +869,12 @@ static void updateCPU() {
             [slider addTarget:self action:@selector(changeFontSlider:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = slider;
             cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0fpt", floatingFontSize];
+        } else if (indexPath.row == 4) {
+            cell.textLabel.text = @"自动调整浮窗大小";
+            UISwitch *sw = [UISwitch new];
+            sw.on = autoWindowSizeEnable;
+            [sw addTarget:self action:@selector(changeAutoWindowSize:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
         }
     } else if (indexPath.section == 2) {
         if (indexPath.row == 0) {
@@ -890,6 +965,7 @@ static void updateCPU() {
 
 - (void)changeLogout:(UISwitch *)sw { autoLogoutEnable = sw.isOn; SavePreferencesAndNotify(); }
 - (void)changeAlphaEnable:(UISwitch *)sw { floatingAlphaEnable = sw.isOn; SavePreferencesAndNotify(); applyFloatingAlpha(); }
+- (void)changeAutoWindowSize:(UISwitch *)sw { autoWindowSizeEnable = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
 - (void)changeKeyboardAvoid:(UISwitch *)sw { keyboardAvoidEnable = sw.isOn; SavePreferencesAndNotify(); }
 - (void)changeSmartDock:(UISwitch *)sw { smartDockEnable = sw.isOn; SavePreferencesAndNotify(); }
 - (void)changeRememberPosition:(UISwitch *)sw { rememberPositionEnable = sw.isOn; SavePreferencesAndNotify(); }
@@ -934,7 +1010,7 @@ static void registerV160Observers() {
             }
         }];
 
-        // 键盘避让逻辑 (基于中线智能判别)
+        // 键盘避让逻辑 (智能判别中线)
         [nc addObserverForName:UIKeyboardWillShowNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
             if (settingsShowing || !keyboardAvoidEnable) return;
 
