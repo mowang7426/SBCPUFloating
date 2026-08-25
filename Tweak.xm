@@ -8,18 +8,17 @@
 #define kIOMainPortDefault kIOMasterPortDefault
 #endif
 
-#pragma mark - 全局变量声明
-static UIWindow *cpuWindow;
+#pragma mark - 全局变量声明 (精简后无冗余)
+static UIWindow *cpuWindow = nil;
 @class SBCPUDragView;
 
-static UILabel *label;
-static UIVisualEffectView *blurEffectView;
-static SBCPUDragView *cpuDragView;
+static UILabel *label = nil;
+static UIVisualEffectView *blurEffectView = nil;
+static SBCPUDragView *cpuDragView = nil;
 
 static CGFloat floatingScale = 1.0;
 static CGFloat floatingFontSize = 14.0;
 static CGFloat landscapeScale = 0.75;
-static CGFloat batteryFontSize = 12.0;
 static CGFloat landscapeFontSize = 12.0;
 
 // SmartCharge 全局参数
@@ -42,30 +41,17 @@ static BOOL logoutCounting = NO;
 static BOOL floatingAlphaEnable = YES;
 static CGFloat floatingAlpha = 0.70f;
 
-// 布局控制配置
-static BOOL smartLayoutEnable = YES;
-static BOOL autoWindowSizeEnable = NO;
+// 显示与吸附控制配置
 static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
-static BOOL keyboardAvoidEnable = YES;
-static BOOL hideControlCenterEnable = YES;
-
-static CGRect lastFloatingFrame;
-static CGRect lastUserFrame;
-static BOOL keyboardShowing = NO;
-static CGRect keyboardBeforeFrame = CGRectZero;
-static BOOL keyboardMoved = NO;
-
-static NSInteger dockSide = 0;
 static BOOL smartDockEnable = YES;
 static NSInteger dockMode = 0; // 0自动 1左 2右 3上 4下
 static BOOL rememberPositionEnable = YES;
 
-// 前置函数声明
+// 前置函数声明 (仅保留有实际使用的声明)
 static void openSettings(void);
 static void checkHighCPU(double cpu);
-static void applySmartLayout(void);
 static void registerV160Observers(void);
 
 @class SBCPUValuePickerController;
@@ -86,12 +72,12 @@ static UIWindowScene *getWindowScene() {
     return nil;
 }
 
-#pragma mark - 精准 SpringBoard 单进程 CPU 占用率计算 (mach_task_self)
+#pragma mark - 精准 SpringBoard 进程 CPU 占用率计算 (mach_task_self)
 static double getCPUUsage() {
     thread_array_t threads;
     mach_msg_type_number_t count = 0;
 
-    // 仅计算当前 SpringBoard 进程的 Task 线程
+    // 仅针对 SpringBoard 进程本身的 Task 线程进行统计
     kern_return_t kr = task_threads(mach_task_self(), &threads, &count);
     if (kr != KERN_SUCCESS) return 0.0;
 
@@ -197,7 +183,6 @@ static void applyFloatingAlpha() {
     if (!label) return;
 
     if (!smartDockEnable) {
-        dockSide = 0;
         if (rememberPositionEnable) {
             [[NSUserDefaults standardUserDefaults] setObject:NSStringFromCGRect(label.frame) forKey:@"SBCPU.LastFrame"];
             [[NSUserDefaults standardUserDefaults] synchronize];
@@ -216,15 +201,14 @@ static void applyFloatingAlpha() {
     CGPoint center = label.center;
 
     if (dockMode > 0) {
-        if (dockMode == 1) { center.x = label.bounds.size.width / 2.0 + 10; dockSide = 1; }
-        else if (dockMode == 2) { center.x = size.width - label.bounds.size.width / 2.0 - 10; dockSide = 2; }
-        else if (dockMode == 3) { center.y = label.bounds.size.height / 2.0 + 10; dockSide = 3; }
-        else if (dockMode == 4) { center.y = size.height - label.bounds.size.height / 2.0 - 10; dockSide = 4; }
-    } else if (minDistance == left) { center.x = label.bounds.size.width / 2.0 + 10; dockSide = 1; }
-    else if (minDistance == right) { center.x = size.width - label.bounds.size.width / 2.0 - 10; dockSide = 2; }
-    else if (minDistance == top) { center.y = label.bounds.size.height / 2.0 + 10; dockSide = 3; }
-    else if (minDistance == bottom) { center.y = size.height - label.bounds.size.height / 2.0 - 10; dockSide = 4; }
-    else { dockSide = 0; }
+        if (dockMode == 1) { center.x = label.bounds.size.width / 2.0 + 10; }
+        else if (dockMode == 2) { center.x = size.width - label.bounds.size.width / 2.0 - 10; }
+        else if (dockMode == 3) { center.y = label.bounds.size.height / 2.0 + 10; }
+        else if (dockMode == 4) { center.y = size.height - label.bounds.size.height / 2.0 - 10; }
+    } else if (minDistance == left) { center.x = label.bounds.size.width / 2.0 + 10; }
+    else if (minDistance == right) { center.x = size.width - label.bounds.size.width / 2.0 - 10; }
+    else if (minDistance == top) { center.y = label.bounds.size.height / 2.0 + 10; }
+    else if (minDistance == bottom) { center.y = size.height - label.bounds.size.height / 2.0 - 10; }
 
     [UIView animateWithDuration:0.25 delay:0 options:UIViewAnimationOptionCurveEaseOut animations:^{
         label.center = center;
@@ -246,7 +230,7 @@ static void applyFloatingAlpha() {
 }
 @end
 
-#pragma mark - 创建精致悬浮窗 UI
+#pragma mark - 创建悬浮窗 UI (无多余底图黑影)
 static void createCPUWindow() {
     if (cpuWindow) return;
 
@@ -263,14 +247,14 @@ static void createCPUWindow() {
     cpuWindow.hidden = NO;
 
     label = [[UILabel alloc] initWithFrame:CGRectMake(30, 200, 150, 75)];
-    label.backgroundColor = UIColor.clearColor; // 父视图背景透明，避免重影虚影
+    label.backgroundColor = UIColor.clearColor; // 清空背景色，防止重影
     label.textAlignment = NSTextAlignmentCenter;
     label.numberOfLines = 0;
     label.textColor = UIColor.whiteColor;
     label.font = [UIFont monospacedDigitSystemFontOfSize:13 weight:UIFontWeightBold];
     label.text = @"SB CPU\n0%";
 
-    // 添加 iOS 极简暗色超薄毛玻璃视图
+    // iOS 极简高透毛玻璃效果
     UIBlurEffect *blurEffect = nil;
     if (@available(iOS 13.0, *)) {
         blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark];
@@ -284,7 +268,7 @@ static void createCPUWindow() {
     blurEffectView.layer.borderWidth = 0.5f;
     blurEffectView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.2f].CGColor;
     
-    // 阴影与圆角路径严格对齐，彻底清除底层多余虚影
+    // 阴影绑定精确 Path，彻底抹除底层虚影
     label.layer.shadowColor = [UIColor blackColor].CGColor;
     label.layer.shadowOpacity = 0.25f;
     label.layer.shadowOffset = CGSizeMake(0, 3);
@@ -465,7 +449,6 @@ static NSString *smartChargeStateText() {
     }
 }
 
-// 设置底层硬件 ChargingEnabled / InhibitCharging 属性
 static void setBatteryChargingEnabled(BOOL enable) {
     io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"));
     if (!service) return;
@@ -476,7 +459,6 @@ static void setBatteryChargingEnabled(BOOL enable) {
     IOObjectRelease(service);
 }
 
-// 设置底层硬件 ChargeCurrentLimit 电流限制 (mA)
 static void setBatteryChargeCurrentLimit(int limitmA) {
     io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"));
     if (!service) return;
@@ -494,7 +476,7 @@ static void updateSmartChargeState(double temperature) {
     if (!sbcpuSmartChargeEnable || temperature <= 0 || !isCharging()) {
         if (smartChargeState != SBCPUSmartChargeNormal) {
             setBatteryChargingEnabled(YES);
-            setBatteryChargeCurrentLimit(3000); // 恢复全速充电
+            setBatteryChargeCurrentLimit(3000);
         }
         smartChargeState = SBCPUSmartChargeNormal;
         return;
@@ -510,7 +492,7 @@ static void updateSmartChargeState(double temperature) {
         smartChargeState = SBCPUSmartChargePause;
     } else if (temperature >= sbcpuChargeTempReduce) {
         setBatteryChargingEnabled(YES);
-        setBatteryChargeCurrentLimit(500); // 限制 500mA 低功率充电
+        setBatteryChargeCurrentLimit(500);
         smartChargeState = SBCPUSmartChargeReduce;
     } else if (temperature <= sbcpuChargeTempFast) {
         setBatteryChargingEnabled(YES);
@@ -521,7 +503,7 @@ static void updateSmartChargeState(double temperature) {
 
 #pragma mark - CPU 与数据定时刷新
 static void updateCPU() {
-    double cpu = getCPUUsage(); // 只针对 SpringBoard 进程计算
+    double cpu = getCPUUsage(); // 专门针对 SpringBoard 进程计算
     checkHighCPU(cpu);
 
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -558,7 +540,7 @@ static void updateCPU() {
     });
 }
 
-#pragma mark - CPU 触发值 Picker 控制器 (Fix 点击保存打勾)
+#pragma mark - CPU 触发值 Picker 控制器
 @interface SBCPUValuePickerController : UITableViewController
 @end
 
@@ -590,7 +572,7 @@ static void updateCPU() {
 }
 @end
 
-#pragma mark - 持续时间 Picker 控制器 (Fix 点击保存打勾)
+#pragma mark - 持续时间 Picker 控制器
 @interface SBCPUTimePickerController : UITableViewController
 @end
 
@@ -641,7 +623,7 @@ static void updateCPU() {
     }];
 }
 
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 18; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 14; }
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { return @"自动注销 / 悬浮窗 / 智能温控"; }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -779,7 +761,6 @@ static void openSettings() {
     }
 
     settingsShowing = YES;
-    keyboardShowing = NO;
 
     SBCPUSettingsController *vc = [[SBCPUSettingsController alloc] initWithStyle:UITableViewStyleInsetGrouped];
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
@@ -804,7 +785,6 @@ static void registerV160Observers() {
                 if (f.origin.y < 0) f.origin.y = 10;
                 label.frame = f;
                 cpuDragView.frame = f;
-                lastFloatingFrame = f;
             }
         }];
     });
