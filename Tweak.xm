@@ -91,7 +91,7 @@
 @interface SBCPUSettingsController : UITableViewController
 @end
 
-#pragma mark - 2. 全局变量与 C 函数原型完整前置声明 (彻底消除 compile error)
+#pragma mark - 2. 全局变量与 C 函数原型完整前置声明
 
 static UIWindow *cpuWindow = nil;
 static SBCPUFloatingView *floatingView = nil;
@@ -127,7 +127,7 @@ static BOOL showBatteryCurrent = YES;
 static CGRect keyboardBeforeFrame;
 static BOOL keyboardMoved = NO;
 
-// 完整 18 个 C 函数原型前置声明，确保 Clang 编译 100% 成功
+// C 函数原型声明
 static UIWindowScene *getWindowScene(void);
 static CGSize getRealScreenSize(void);
 static UIInterfaceOrientation getActiveInterfaceOrientation(void);
@@ -189,13 +189,13 @@ static void createCPUWindow(void);
         _blurView.layer.masksToBounds = YES;
         _blurView.layer.borderWidth = 0.75f;
         _blurView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.30f].CGColor;
-        _blurView.userInteractionEnabled = NO; // 毛玻璃不拦截触摸
+        _blurView.userInteractionEnabled = NO;
         [self addSubview:_blurView];
 
-        // ✨ 充电跑马灯流光图层 (围绕悬浮窗四周旋转)
+        // 充电跑马灯流光图层
         _marqueeLayer = [CAShapeLayer layer];
         _marqueeLayer.fillColor = [UIColor clearColor].CGColor;
-        _marqueeLayer.strokeColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:0.95f].CGColor; // 翡翠绿高亮
+        _marqueeLayer.strokeColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:0.95f].CGColor;
         _marqueeLayer.lineWidth = 2.0f;
         _marqueeLayer.lineDashPattern = @[@14, @8];
         _marqueeLayer.hidden = YES;
@@ -219,7 +219,7 @@ static void createCPUWindow(void);
         [content addSubview:_cpuValueLabel];
 
         _cpuFreqLabel = [[UILabel alloc] init];
-        _cpuFreqLabel.textColor = [UIColor colorWithRed:0.22f green:0.74f blue:0.97f alpha:1.0f]; // #38bdf8
+        _cpuFreqLabel.textColor = [UIColor colorWithRed:0.22f green:0.74f blue:0.97f alpha:1.0f];
         _cpuFreqLabel.font = [UIFont monospacedDigitSystemFontOfSize:11 weight:UIFontWeightBold];
         _cpuFreqLabel.adjustsFontSizeToFitWidth = YES;
         _cpuFreqLabel.minimumScaleFactor = 0.5f;
@@ -339,7 +339,6 @@ static void createCPUWindow(void);
         if (targetCenter.y < minY) targetCenter.y = minY;
         if (targetCenter.y > maxY) targetCenter.y = maxY;
 
-        // 实时跟手移动，0 延迟
         self.center = targetCenter;
     } else if (pan.state == UIGestureRecognizerStateEnded || pan.state == UIGestureRecognizerStateCancelled) {
         if (rememberPositionEnable) {
@@ -363,7 +362,6 @@ static void createCPUWindow(void);
     return YES;
 }
 
-// 插入充电器灵动触觉动画
 - (void)triggerPlugAnimation {
     CAKeyframeAnimation *animation = [CAKeyframeAnimation animationWithKeyPath:@"transform.scale"];
     animation.values = @[@1.0, @1.08, @0.96, @1.02, @1.0];
@@ -379,7 +377,6 @@ static void createCPUWindow(void);
     [_blurView.layer addAnimation:glowAnim forKey:@"borderGlow"];
 }
 
-// 预算目标 Size
 - (CGSize)calculateTargetSizeWithShowCpuFreq:(BOOL)showFreq
                           showBatteryPercent:(BOOL)showBattery
                              showBatteryTemp:(BOOL)showTemp
@@ -423,7 +420,6 @@ static void createCPUWindow(void);
     return CGSizeMake(finalW, currentY);
 }
 
-// 布局更新与动态定位
 - (void)updateLayoutWithShowCpuFreq:(BOOL)showFreq
                  showBatteryPercent:(BOOL)showBattery
                     showBatteryTemp:(BOOL)showTemp
@@ -533,7 +529,6 @@ static void createCPUWindow(void);
     _blurView.frame = CGRectMake(0, 0, finalW, currentY);
     self.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, finalW, currentY) cornerRadius:20.0f].CGPath;
 
-    // ✨ 跑马灯围绕圆角边框旋转更新
     _marqueeLayer.frame = _blurView.bounds;
     _marqueeLayer.path = [UIBezierPath bezierPathWithRoundedRect:_blurView.bounds cornerRadius:20.0f].CGPath;
 
@@ -574,19 +569,17 @@ static void createCPUWindow(void);
 
 @end
 
-#pragma mark - 悬浮窗背景穿透容器
+#pragma mark - 4. 穿透视图与 Window
 
 @implementation SBCPUPassthroughView
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     UIView *hitView = [super hitTest:point withEvent:event];
     if (hitView == self) {
-        return nil; // 核心：背景区域触摸 100% 透传给 iOS 桌面与游戏应用！
+        return nil;
     }
     return hitView;
 }
 @end
-
-#pragma mark - 横屏游戏自动旋转控制器
 
 @implementation SBCPURootViewController
 
@@ -619,8 +612,6 @@ static void createCPUWindow(void);
 
 @end
 
-#pragma mark - 优雅可穿透 Window 实现
-
 @implementation SBCPUWindow
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     if (settingsShowing) return [super hitTest:point withEvent:event];
@@ -628,10 +619,10 @@ static void createCPUWindow(void);
     if (floatingView && !floatingView.hidden && floatingView.alpha > 0.01) {
         CGPoint p = [self convertPoint:point toView:floatingView];
         if ([floatingView pointInside:p withEvent:event]) {
-            return floatingView; // 命中悬浮窗直接接收响应，开启拖拽与双击！
+            return floatingView;
         }
     }
-    return nil; // 关键：未命中悬浮窗返回 nil，桌面点击恢复完全正常！
+    return nil;
 }
 @end
 
@@ -686,7 +677,6 @@ static CGSize getPhysicalScreenSizeForOrientation(UIInterfaceOrientation orienta
     }
 }
 
-// 核心吸附算法：靠左靠右 2pt 贴紧最边缘
 static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
     if (!floatingView) return;
 
@@ -697,8 +687,8 @@ static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
     CGFloat halfW = realFrame.size.width / 2.0f;
     CGFloat halfH = realFrame.size.height / 2.0f;
 
-    CGFloat minX = halfW + 2.0f; // 最左边界仅留 2pt 贴合
-    CGFloat maxX = screenSize.width - halfW - 2.0f; // 最右边界仅留 2pt，零截断！
+    CGFloat minX = halfW + 2.0f;
+    CGFloat maxX = screenSize.width - halfW - 2.0f;
     CGFloat minY = halfH + 20.0f;
     CGFloat maxY = screenSize.height - halfH - 10.0f;
 
@@ -789,7 +779,6 @@ static void SavePreferencesAndNotify(void) {
     );
 }
 
-// 动态读取硬件峰值主频 (如 3470MHz) 并在 1 秒内实时拟合跳动
 static double getCPUFrequencyMHz(double currentCpuUsage) {
     uint64_t freqMax = 0;
     size_t size = sizeof(freqMax);
@@ -937,14 +926,14 @@ static void updateFloatingSize(void) {
                            showBatteryCurrent:showBatteryCurrent
                                    isCharging:charging];
 
-    // 2. 结合 Scale 缩放与游戏方向旋转矩阵
+    // 2. 结合 Scale 缩放与游戏方向旋转矩阵（横屏旋转弧度已调整 180 度）
     CGFloat rotationAngle = 0.0;
     switch (orientation) {
         case UIInterfaceOrientationLandscapeLeft:
-            rotationAngle = M_PI_2; // +90 deg
+            rotationAngle = -M_PI_2; // 调整为 -90 度，纠正颠倒方向
             break;
         case UIInterfaceOrientationLandscapeRight:
-            rotationAngle = -M_PI_2; // -90 deg
+            rotationAngle = M_PI_2;  // 调整为 +90 度，纠正颠倒方向
             break;
         case UIInterfaceOrientationPortraitUpsideDown:
             rotationAngle = M_PI;
@@ -1041,7 +1030,6 @@ static void checkHighCPU(double cpu) {
     }
 }
 
-// 1.0 秒定时更新，检测到插入状态时触发触觉动画
 static void updateCPU(void) {
     double cpu = getCPUUsage();
     double cpuFreq = getCPUFrequencyMHz(cpu);
@@ -1143,10 +1131,10 @@ static void updateCPU(void) {
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 4; }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if (section == 0) return 3; // ⚡ 自动控制
-    if (section == 1) return 4; // 🔲 悬浮窗外观
-    if (section == 2) return 3; // 🧠 智能选项
-    return 5;                   // 📍 位置与显示
+    if (section == 0) return 3;
+    if (section == 1) return 4;
+    if (section == 2) return 3;
+    return 5;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
@@ -1349,7 +1337,6 @@ static void registerV160Observers(void) {
             }
         }];
 
-        // 键盘避让逻辑 (基于中线智能判别)
         [nc addObserverForName:UIKeyboardWillShowNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
             if (settingsShowing || !keyboardAvoidEnable) return;
 
@@ -1360,7 +1347,7 @@ static void registerV160Observers(void) {
                 CGFloat centerY = CGRectGetMidY(floatingView.frame);
                 CGFloat limitY = CGRectGetMidY(screenBounds);
 
-                if (centerY < limitY) return; // 悬浮窗在屏幕上半区，保持不动
+                if (centerY < limitY) return;
 
                 if (!keyboardMoved) {
                     keyboardBeforeFrame = floatingView.frame;
