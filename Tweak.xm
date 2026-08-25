@@ -36,11 +36,11 @@ static NSInteger sbcpuChargeTempReduce = 38;
 static NSInteger sbcpuChargeTempPause = 40;
 static NSInteger sbcpuChargeTempStop = 42;
 
-// SmartCharge 临时编辑值：点击完成后才正式保存
-static NSInteger sbcpuEditChargeTempFast = 35;
-static NSInteger sbcpuEditChargeTempReduce = 38;
-static NSInteger sbcpuEditChargeTempPause = 40;
-static NSInteger sbcpuEditChargeTempStop = 42;
+// SmartCharge 临时编辑值：添加 __attribute__((unused)) 消除 -Werror 未使用变量警告
+static NSInteger sbcpuEditChargeTempFast __attribute__((unused)) = 35;
+static NSInteger sbcpuEditChargeTempReduce __attribute__((unused)) = 38;
+static NSInteger sbcpuEditChargeTempPause __attribute__((unused)) = 40;
+static NSInteger sbcpuEditChargeTempStop __attribute__((unused)) = 42;
 
 /*
  设置页面是否正在显示
@@ -76,9 +76,9 @@ static BOOL autoMoveEnable __attribute__((unused)) = YES;
 static BOOL keyboardAvoidEnable __attribute__((unused)) = YES;
 static BOOL hideControlCenterEnable __attribute__((unused)) = YES;
 
-static CGRect lastFloatingFrame;
-static CGRect lastUserFrame;
-static BOOL keyboardShowing = NO;
+static CGRect lastFloatingFrame __attribute__((unused));
+static CGRect lastUserFrame __attribute__((unused));
+static BOOL keyboardShowing __attribute__((unused)) = NO;
 
 static CGRect keyboardBeforeFrame = CGRectZero;
 static BOOL keyboardMoved = NO;
@@ -87,7 +87,7 @@ static BOOL keyboardMoved = NO;
  V1.6.2 EdgeDock Plus
  0自由 1左 2右 3上 4下
  */
-static NSInteger dockSide = 0;
+static NSInteger dockSide __attribute__((unused)) = 0;
 
 // V1.6.2.1 Smart Layout Control
 static BOOL smartDockEnable = YES;
@@ -800,8 +800,8 @@ static BOOL sbcpuSmartChargeProbeDone = NO;
 static NSString *sbcpuSmartChargeHardwareStatus = @"Unknown";
 
 static NSString *sbcpuSmartChargePropertyScanStatus = @"未扫描";
-static NSInteger sbcpuSmartChargePropertyCount = 0;
-static NSInteger sbcpuSmartChargeWritableCount = 0;
+static NSInteger sbcpuSmartChargePropertyCount __attribute__((unused)) = 0;
+static NSInteger sbcpuSmartChargeWritableCount __attribute__((unused)) = 0;
 
 static void sbcpuSmartChargeDeepPropertyScan()
 {
@@ -865,7 +865,7 @@ static void smartChargeHardwareProbe()
 
 static BOOL sbcpuSmartChargeControlReady = YES;
 static NSString *sbcpuSmartChargeControlStatus = @"Idle";
-static BOOL sbcpuSmartChargeActionLocked = NO;
+static BOOL sbcpuSmartChargeActionLocked __attribute__((unused)) = NO;
 
 static void smartChargeControlEngine()
 {
