@@ -1,4 +1,4 @@
-
+```logos
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 #import <mach/mach.h>
@@ -418,14 +418,13 @@ static void createCPUWindow()
     glassContainer = [[UIView alloc] initWithFrame:CGRectMake(20, 200, 140, 64)];
     glassContainer.backgroundColor = UIColor.clearColor;
     
-    // 平滑连续曲面圆角
     if (@available(iOS 13.0, *)) {
         glassContainer.layer.cornerCurve = kCACornerCurveContinuous;
     }
     glassContainer.layer.cornerRadius = 20;
-    glassContainer.layer.masksToBounds = NO; // 允许高质感外阴影溢出
+    glassContainer.layer.masksToBounds = NO;
 
-    // 1. 高高级立体环境阴影 (Liquid Glass Ambient Shadow)
+    // 1. 高级立体环境阴影 (Liquid Glass Ambient Shadow)
     glassContainer.layer.shadowColor = UIColor.blackColor.CGColor;
     glassContainer.layer.shadowOpacity = 0.28;
     glassContainer.layer.shadowRadius = 18;
@@ -483,7 +482,6 @@ static void createCPUWindow()
     label.font = [UIFont monospacedDigitSystemFontOfSize:14 weight:UIFontWeightMedium];
     label.text = @"SB CPU\n0%";
 
-    // 给文字添加清晰易读的微妙阴影，避免在纯白或亮色背景下失算
     label.layer.shadowColor = UIColor.blackColor.CGColor;
     label.layer.shadowOffset = CGSizeMake(0, 1);
     label.layer.shadowOpacity = 0.5;
@@ -500,7 +498,6 @@ static void createCPUWindow()
 
     [cpuWindow.rootViewController.view addSubview:cpuDragView];
 
-    // 双击手势
     UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:[SBCPUAction class] action:@selector(doubleTapAction)];
     doubleTap.numberOfTapsRequired = 2;
     doubleTap.numberOfTouchesRequired = 1;
@@ -733,7 +730,6 @@ static void updateFloatingSize()
             cpuDragView.frame = targetFrame;
         }
 
-        // 根据浮窗尺寸动态调整圆角半径，保持连续弧度
         CGFloat radius = MIN(targetFrame.size.width, targetFrame.size.height) * 0.35;
         if(radius > 22) radius = 22;
         if(radius < 12) radius = 12;
@@ -750,7 +746,6 @@ static void updateFloatingSize()
     }
 }
 
-// SmartCharge Engine Test9
 typedef NS_ENUM(NSInteger, SBCPUSmartChargeState)
 {
     SBCPUSmartChargeNormal = 0,
@@ -2120,3 +2115,5 @@ static void registerV160Observers()
         }];
     });
 }
+
+```
