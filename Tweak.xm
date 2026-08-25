@@ -22,7 +22,7 @@
 #define kPrefChangedNotification "com.yourname.sbcpufloating.prefschanged"
 #define kToggleNotification "com.yourname.sbcpufloating.toggle"
 
-#pragma mark - 1. QuartzCore 私有类声明 (用于 120Hz 硬件锁)
+#pragma mark - 1. QuartzCore 与 SpringBoard 私有类声明
 
 @interface CAWindowServer : NSObject
 + (id)serverIfRunning;
@@ -37,6 +37,28 @@
 - (float)minimumRefreshRate;
 - (float)maximumRefreshRate;
 - (float)idealRefreshRate;
+- (void)setUserBrightness:(float)brightness;
+@end
+
+@interface SpringBoard : UIApplication
+- (UIInterfaceOrientation)activeInterfaceOrientation;
+@end
+
+@interface SBBacklightController : NSObject
++ (id)sharedInstance;
+- (void)setThermalWarningState:(NSInteger)state;
+- (void)_undimFromSource:(NSInteger)source;
+@end
+
+@interface SBThermalController : NSObject
++ (id)sharedInstance;
+- (void)showThermalAlertIfNecessary;
+- (void)_respondToThermalCondition:(NSInteger)condition;
+- (BOOL)isInSunlight;
+@end
+
+@interface SBThermalWarningAlertItem : NSObject
+- (BOOL)shouldShowInEmergencyCall;
 @end
 
 #pragma mark - 2. 设备规格与 SoC 识别数据结构
@@ -79,10 +101,6 @@ static DeviceSpec getDeviceSpec(void) {
 }
 
 #pragma mark - 3. 前置声明与类定义
-
-@interface SpringBoard : UIApplication
-- (UIInterfaceOrientation)activeInterfaceOrientation;
-@end
 
 @class SBCPUDetailViewController;
 
@@ -174,7 +192,7 @@ static DeviceSpec getDeviceSpec(void) {
 - (void)refreshAllDetailData;
 @end
 
-#pragma mark - 4. 全局状态变量
+#pragma mark - 4. 全局状态变量与 Insulation 配置
 
 static UIWindow *cpuWindow = nil;
 static SBCPUFloatingView *floatingView = nil;
@@ -214,6 +232,14 @@ static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
 
+// 🔥 Insulation (温控绝缘) 5大核心破限变量 🔥
+// 0: 苹果原生温控, 1: 模拟低电频率, 2: 防止温控降频
+static NSInteger cpuMode = 2;                     
+static BOOL disableThermalDimming = YES;          // 屏幕: 温控暗屏
+static BOOL blockThermalAlert = NO;               // 高级功能: 禁温度计弹窗
+static BOOL disablePocketThermal = YES;           // 高级功能: 禁用口袋高温
+static BOOL lockSunlightExposure = YES;           // 高级功能: 锁定阳光暴晒
+
 static CGRect keyboardBeforeFrame;
 static BOOL keyboardMoved = NO;
 
@@ -250,9 +276,69 @@ static void createCPUWindow(void);
 static BOOL isDeviceOverheated(void);
 static void applySystemRefreshRate(void);
 
-#pragma mark - 5. 温控检测与底层 120Hz 全链路 Hook
+#pragma mark - 5. 🔥 Insulation (温控绝缘) 底层 Hooks 破限实现 🔥
+
+// 🛡️ 1. Hook NSProcessInfo：伪造温控状态
+%hook NSProcessInfo
+- (NSProcessInfoThermalState)thermalState {
+    if (cpuMode == 2) { 
+        // 防止温控降频模式：始终返回 Nominal(0)，系统与游戏检测不到任何发热
+        return NSProcessInfoThermalStateNominal; 
+    } else if (cpuMode == 1) { 
+        // 模拟低电频率模式：返回 Fair(1)，迫使 CPU 在低功耗省电频率运行
+        return NSProcessInfoThermalStateFair; 
+    }
+    return %orig; // 苹果原生温控
+}
+%end
+
+// 🛡️ 2. Hook SBThermalController 与温度计弹窗
+%hook SBThermalController
+- (void)showThermalAlertIfNecessary {
+    if (blockThermalAlert) {
+        return; // 彻底拦截“iPhone 需要冷却”全屏警告
+    }
+    %orig;
+}
+
+- (void)_respondToThermalCondition:(NSInteger)condition {
+    if (cpuMode == 2) {
+        %orig(0); // 屏蔽降频指令，强制传递状态 0
+        return;
+    }
+    %orig;
+}
+
+- (BOOL)isInSunlight {
+    if (lockSunlightExposure) {
+        return YES; // 锁定阳光暴晒最高激发状态
+    }
+    return %orig;
+}
+%end
+
+%hook SBThermalWarningAlertItem
+- (BOOL)shouldShowInEmergencyCall {
+    if (blockThermalAlert) return NO;
+    return %orig;
+}
+%end
+
+// 🛡️ 3. Hook SBBacklightController：温控暗屏拦截
+%hook SBBacklightController
+- (void)setThermalWarningState:(NSInteger)state {
+    if (disableThermalDimming) {
+        %orig(0); // 彻底屏蔽温控暗屏
+        return;
+    }
+    %orig;
+}
+%end
+
+#pragma mark - 6. 温控检测与底层 120Hz 全链路 Hook
 
 static BOOL isDeviceOverheated(void) {
+    if (cpuMode == 2) return NO; // 处于“防止温控降频”时，不触发过热保护
     if (@available(iOS 11.0, *)) {
         NSProcessInfoThermalState state = [NSProcessInfo processInfo].thermalState;
         if (state == NSProcessInfoThermalStateSerious || state == NSProcessInfoThermalStateCritical) {
@@ -310,7 +396,7 @@ static BOOL isDeviceOverheated(void) {
 }
 %end
 
-#pragma mark - 6. CADisplayLink 帧率监控与 ProMotion 微驱动引擎
+#pragma mark - 7. CADisplayLink 帧率监控与 ProMotion 微驱动引擎
 
 @interface SBCPUFPSHelper : NSObject
 + (instancetype)sharedInstance;
@@ -455,7 +541,7 @@ static void applySystemRefreshRate(void) {
     [[SBCPUFPSHelper sharedInstance] updateFrameRate];
 }
 
-#pragma mark - 7. SBCPUFloatingView 悬浮窗主控件
+#pragma mark - 8. SBCPUFloatingView 悬浮窗主控件实现
 
 @implementation SBCPUFloatingView
 
@@ -825,7 +911,7 @@ static void applySystemRefreshRate(void) {
     CGFloat expandedHalfH = expandedH / 2.0f;
 
     BOOL isLeft = (self.center.x <= containerBounds.size.width / 2.0f);
-    CGFloat targetX = isLeft ? (expandedHalfW + 4.0f) : (containerBounds.size.width - expandedHalfW - 4.0f);
+    CGFloat targetX = isLeft ? (expandedHalfW + 4.0f) : (containerBounds.size.width - targetHalfW - 4.0f);
     
     CGFloat minY = expandedHalfH + 20.0f;
     CGFloat maxY = containerBounds.size.height - expandedHalfH - 10.0f;
@@ -1134,7 +1220,7 @@ static void applySystemRefreshRate(void) {
 
 @end
 
-#pragma mark - 8. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
+#pragma mark - 9. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
 
 @implementation SBCPUDetailViewController
 
@@ -1254,7 +1340,7 @@ static void applySystemRefreshRate(void) {
     }];
 }
 
-#pragma mark - 9. 真实系统底层 API 数据解析刷新
+#pragma mark - 10. 真实系统底层 API 数据解析刷新
 
 - (void)refreshAllDetailData {
     DeviceSpec spec = getDeviceSpec();
@@ -1380,7 +1466,7 @@ static void applySystemRefreshRate(void) {
     _labelsDict[@"设备运行"].text = [NSString stringWithFormat:@"%ld天 %ld小时 %ld分", (long)days, (long)hours, (long)mins];
 }
 
-#pragma mark - 10. IOKit 电池与网络底层解算
+#pragma mark - 11. IOKit 电池与网络底层解算
 
 static NSDictionary *getRealBatteryDetails(void) {
     NSMutableDictionary *dict = [NSMutableDictionary dictionary];
@@ -1554,7 +1640,7 @@ static double getCPUFrequencyMHz(double currentCpuUsage) {
 
 @end
 
-#pragma mark - 11. 视图穿透与 Window 容器
+#pragma mark - 12. 视图穿透与 Window 容器
 
 @implementation SBCPUPassthroughView
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
@@ -1598,7 +1684,7 @@ static double getCPUFrequencyMHz(double currentCpuUsage) {
 }
 @end
 
-#pragma mark - 12. 逻辑控制与辅助函数
+#pragma mark - 13. 逻辑控制与辅助函数
 
 static UIWindowScene *getWindowScene(void) {
     if (cpuWindow && cpuWindow.windowScene) return cpuWindow.windowScene;
@@ -1699,6 +1785,13 @@ static void LoadPreferences(void) {
     if ([def objectForKey:@"showBatteryTemperature"]) showBatteryTemperature = [def boolForKey:@"showBatteryTemperature"];
     if ([def objectForKey:@"showBatteryCurrent"]) showBatteryCurrent = [def boolForKey:@"showBatteryCurrent"];
 
+    // 🔥 加载 Insulation (温控绝缘) 配置 🔥
+    if ([def objectForKey:@"cpuMode"]) cpuMode = [def integerForKey:@"cpuMode"];
+    if ([def objectForKey:@"disableThermalDimming"]) disableThermalDimming = [def boolForKey:@"disableThermalDimming"];
+    if ([def objectForKey:@"blockThermalAlert"]) blockThermalAlert = [def boolForKey:@"blockThermalAlert"];
+    if ([def objectForKey:@"disablePocketThermal"]) disablePocketThermal = [def boolForKey:@"disablePocketThermal"];
+    if ([def objectForKey:@"lockSunlightExposure"]) lockSunlightExposure = [def boolForKey:@"lockSunlightExposure"];
+
     applyVisibility();
 
     if (showFps || force120HzEnable) {
@@ -1738,6 +1831,13 @@ static void SavePreferencesAndNotify(void) {
     [def setBool:showBatteryPercent forKey:@"showBatteryPercent"];
     [def setBool:showBatteryTemperature forKey:@"showBatteryTemperature"];
     [def setBool:showBatteryCurrent forKey:@"showBatteryCurrent"];
+
+    // 🔥 保存 Insulation 配置 🔥
+    [def setInteger:cpuMode forKey:@"cpuMode"];
+    [def setBool:disableThermalDimming forKey:@"disableThermalDimming"];
+    [def setBool:blockThermalAlert forKey:@"blockThermalAlert"];
+    [def setBool:disablePocketThermal forKey:@"disablePocketThermal"];
+    [def setBool:lockSunlightExposure forKey:@"lockSunlightExposure"];
     [def synchronize];
 
     if (showFps || force120HzEnable) {
@@ -1929,7 +2029,7 @@ static void updateCPU(void) {
     });
 }
 
-#pragma mark - 13. 设置级联控制器选择器实现
+#pragma mark - 14. 设置级联控制器选择器实现
 
 @implementation SBCPUValuePickerController
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { 
@@ -1999,7 +2099,7 @@ static void updateCPU(void) {
 }
 @end
 
-#pragma mark - 14. 完整设置控制器实现（包含说明文本与全部设置分组）
+#pragma mark - 15. 完整设置控制器实现（包含原生 UIMenu 与全部设置分组）
 
 @implementation SBCPUSettingsController
 
@@ -2019,7 +2119,7 @@ static void updateCPU(void) {
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { 
     (void)tableView;
-    return 6; 
+    return 7; // 包含 Insulation 温控绝缘破限分组
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
@@ -2029,6 +2129,7 @@ static void updateCPU(void) {
     if (section == 2) return 4; // 🔲 悬浮窗外观
     if (section == 3) return 3; // 🧠 智能选项
     if (section == 4) return 2; // 🎮 性能与高刷锁定
+    if (section == 5) return 5; // 🔥 Insulation (温控绝缘核心破限)
     return 7;                   // 📍 位置与显示
 }
 
@@ -2039,14 +2140,17 @@ static void updateCPU(void) {
     if (section == 2) return @"🔲 悬浮窗外观";
     if (section == 3) return @"🧠 智能选项";
     if (section == 4) return @"🎮 性能与高刷锁定";
+    if (section == 5) return @"🛡️ Insulation (温控绝缘破限)";
     return @"📍 位置与显示";
 }
 
-// 📝 在 Section 4（图一位置）增加详细的功能说明文字
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     (void)tableView;
     if (section == 4) {
-        return @"💡 功能说明：\n1. 强制 120Hz 高刷模式：通过底层硬件合成器与微像素渲染驱动，全局锁定 120Hz 满帧，彻底杜绝屏幕静止降频。\n2. 智能温控降频保护：开启时若检测到电池温度 ≥43°C 或系统过热警报将自动降频保护；关闭后解除温控限制，发热也强行保持 120Hz。";
+        return @"💡 高刷说明：\n1. 强制 120Hz 高刷模式：通过底层硬件合成器与微像素渲染驱动，全局锁定 120Hz 满帧，彻底杜绝屏幕静止降频。\n2. 智能温控降频保护：开启时若检测到电池温度 ≥43°C 或系统过热警报将自动降频保护；关闭后解除温控限制。";
+    }
+    if (section == 5) {
+        return @"💡 Insulation 说明：\n- CPU 模式：可切换为原生温控、模拟低电频率或防止温控降频；\n- 温控暗屏：发热时屏幕亮度依然锁定最高；\n- 禁温度计弹窗：高温发热不再弹出全屏冷却提示。";
     }
     return nil;
 }
@@ -2063,6 +2167,26 @@ static void updateCPU(void) {
     SavePreferencesAndNotify();
     updateFloatingSize();
     [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:3 inSection:2]] withRowAnimation:UITableViewRowAnimationNone];
+}
+
+// 构建 iOS 14+ 原生 UIMenu 气泡上下文菜单（带 ✓ 选中打勾效果）
+- (UIMenu *)buildCpuModeMenu {
+    NSMutableArray *actions = [NSMutableArray array];
+    NSArray *titles = @[@"苹果原生温控", @"模拟低电频率", @"防止温控降频"];
+    
+    for (NSInteger i = 0; i < titles.count; i++) {
+        NSString *title = titles[i];
+        UIAction *action = [UIAction actionWithTitle:title image:nil identifier:nil handler:^(__kindof UIAction * _Nonnull act) {
+            (void)act;
+            cpuMode = i;
+            SavePreferencesAndNotify();
+            [self.tableView reloadData];
+        }];
+        action.state = (cpuMode == i) ? UIMenuElementStateOn : UIMenuElementStateOff;
+        [actions addObject:action];
+    }
+    
+    return [UIMenu menuWithTitle:@"" children:actions];
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -2157,6 +2281,64 @@ static void updateCPU(void) {
             cell.accessoryView = sw;
         }
     } else if (indexPath.section == 5) {
+        // 🔥 Insulation 专属设置行 🔥
+        if (indexPath.row == 0) {
+            // CPU 模式 (支持原生 UIMenu 气泡弹窗)
+            cell.textLabel.text = @"CPU 模式";
+            cell.textLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
+
+            UIButton *menuBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+            NSArray *titles = @[@"苹果原生温控", @"模拟低电频率", @"防止温控降频"];
+            NSString *currentTitle = (cpuMode >= 0 && cpuMode < titles.count) ? titles[cpuMode] : @"防止温控降频";
+            [menuBtn setTitle:currentTitle forState:UIControlStateNormal];
+            [menuBtn setTitleColor:[UIColor colorWithWhite:0.45 alpha:1.0] forState:UIControlStateNormal];
+            menuBtn.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightBold];
+
+            if (@available(iOS 14.0, *)) {
+                menuBtn.showsMenuAsPrimaryAction = YES;
+                menuBtn.menu = [self buildCpuModeMenu];
+            }
+            [menuBtn sizeToFit];
+            cell.accessoryView = menuBtn;
+
+        } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"温控暗屏";
+            cell.textLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
+            UISwitch *sw = [UISwitch new];
+            sw.onTintColor = [UIColor colorWithRed:0.22 green:0.74 blue:0.97 alpha:1.0];
+            sw.on = disableThermalDimming;
+            [sw addTarget:self action:@selector(changeThermalDimming:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+
+        } else if (indexPath.row == 2) {
+            cell.textLabel.text = @"禁温度计弹窗";
+            cell.textLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
+            UISwitch *sw = [UISwitch new];
+            sw.onTintColor = [UIColor colorWithRed:0.22 green:0.74 blue:0.97 alpha:1.0];
+            sw.on = blockThermalAlert;
+            [sw addTarget:self action:@selector(changeBlockAlert:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+
+        } else if (indexPath.row == 3) {
+            cell.textLabel.text = @"禁用口袋高温";
+            cell.textLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
+            UISwitch *sw = [UISwitch new];
+            sw.onTintColor = [UIColor colorWithRed:0.22 green:0.74 blue:0.97 alpha:1.0];
+            sw.on = disablePocketThermal;
+            [sw addTarget:self action:@selector(changePocketThermal:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+
+        } else if (indexPath.row == 4) {
+            cell.textLabel.text = @"锁定阳光暴晒";
+            cell.textLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
+            UISwitch *sw = [UISwitch new];
+            sw.onTintColor = [UIColor colorWithRed:0.22 green:0.74 blue:0.97 alpha:1.0];
+            sw.on = lockSunlightExposure;
+            [sw addTarget:self action:@selector(changeSunlightLock:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        }
+
+    } else if (indexPath.section == 6) {
         if (indexPath.row == 0) {
             cell.textLabel.text = @"全局启用悬浮窗";
             UISwitch *sw = [UISwitch new];
@@ -2257,6 +2439,23 @@ static void updateCPU(void) {
             SavePreferencesAndNotify();
             [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
         }
+    } else if (indexPath.section == 5 && indexPath.row == 0) {
+        // iOS 13 兼容弹窗回退方案
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"CPU 模式" message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+        NSArray *titles = @[@"苹果原生温控", @"模拟低电频率", @"防止温控降频"];
+        for (NSInteger i = 0; i < titles.count; i++) {
+            NSString *t = titles[i];
+            UIAlertAction *action = [UIAlertAction actionWithTitle:t style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                (void)action;
+                cpuMode = i;
+                SavePreferencesAndNotify();
+                [self.tableView reloadData];
+            }];
+            if (cpuMode == i) [action setValue:@YES forKey:@"checked"];
+            [alert addAction:action];
+        }
+        [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
     }
 }
 
@@ -2294,6 +2493,12 @@ static void updateCPU(void) {
     SavePreferencesAndNotify();
 }
 
+// 🔥 Insulation 事件处理方法 🔥
+- (void)changeThermalDimming:(UISwitch *)sw { disableThermalDimming = sw.isOn; SavePreferencesAndNotify(); }
+- (void)changeBlockAlert:(UISwitch *)sw { blockThermalAlert = sw.isOn; SavePreferencesAndNotify(); }
+- (void)changePocketThermal:(UISwitch *)sw { disablePocketThermal = sw.isOn; SavePreferencesAndNotify(); }
+- (void)changeSunlightLock:(UISwitch *)sw { lockSunlightExposure = sw.isOn; SavePreferencesAndNotify(); }
+
 - (void)changeShowCpuFreq:(UISwitch *)sw { showCpuFrequency = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
 - (void)changeShowFps:(UISwitch *)sw { showFps = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
 - (void)changeShowBattery:(UISwitch *)sw { showBatteryPercent = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
@@ -2302,7 +2507,7 @@ static void updateCPU(void) {
 
 @end
 
-#pragma mark - 15. 通知监听与 Tweak 入口 (%ctor)
+#pragma mark - 16. 通知监听与 Tweak 入口 (%ctor)
 
 static void onCCNotificationReceived(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
     (void)center;
