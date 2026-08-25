@@ -15,11 +15,13 @@
 
 #pragma mark - 1. 前置 Interface 声明 (避免 Clang 编译报错)
 
+// 1:1 精致悬浮窗视图类 (直接内建触摸拖拽与手势响应)
 @interface SBCPUFloatingView : UIView
+@property (nonatomic, assign) CGPoint lastPoint;
 @property (nonatomic, strong) UIVisualEffectView *blurView;
 @property (nonatomic, strong) CAShapeLayer *marqueeLayer; // 充电跑马灯流光图层
 
-// 方案二组件
+// 方案二横向组件
 @property (nonatomic, strong) UILabel *cpuTitleLabel;
 @property (nonatomic, strong) UILabel *cpuValueLabel;
 @property (nonatomic, strong) UILabel *cpuFreqLabel;
@@ -67,14 +69,11 @@
                isCharging:(BOOL)isCharging;
 @end
 
-@interface SBCPUDragView : UIView
-@property (nonatomic, assign) CGPoint lastPoint;
-@end
-
 // 横屏游戏旋转控制器
 @interface SBCPURootViewController : UIViewController
 @end
 
+// 可穿透全屏 Window
 @interface SBCPUWindow : UIWindow
 @end
 
@@ -87,11 +86,10 @@
 @interface SBCPUSettingsController : UITableViewController
 @end
 
-#pragma mark - 2. 全局变量与前置 C 函数完整声明 (彻底解决 use of undeclared identifier 报错)
+#pragma mark - 2. 全局变量与 C 函数原型完整声明
 
 static UIWindow *cpuWindow = nil;
 static SBCPUFloatingView *floatingView = nil;
-static SBCPUDragView *cpuDragView = nil;
 
 static CGFloat floatingScale = 1.0;
 static CGFloat floatingFontSize = 13.0;
@@ -124,7 +122,7 @@ static BOOL showBatteryCurrent = YES;
 static CGRect keyboardBeforeFrame;
 static BOOL keyboardMoved = NO;
 
-// 核心：完整前置 C 函数原型声明，防 Clang 未声明标识符报错
+// 完整原型声明 (彻底排除 undeclared identifier 编译错误)
 static UIWindowScene *getWindowScene(void);
 static CGSize getRealScreenSize(void);
 static double getCPUUsage(void);
@@ -143,7 +141,7 @@ static void SavePreferencesAndNotify(void);
 static void updateCPU(void);
 static void createCPUWindow(void);
 
-#pragma mark - 3. 悬浮窗与跑马灯流光实现
+#pragma mark - 3. SBCPUFloatingView 悬浮窗实现 (内建平滑拖拽与边缘吸附)
 
 @implementation SBCPUFloatingView
 
@@ -151,6 +149,8 @@ static void createCPUWindow(void);
     if (self = [super initWithFrame:frame]) {
         self.backgroundColor = [UIColor clearColor];
         self.layer.masksToBounds = NO;
+        self.userInteractionEnabled = YES;
+        self.multipleTouchEnabled = NO;
         
         // 自然落影
         self.layer.shadowColor = [UIColor blackColor].CGColor;
@@ -171,6 +171,7 @@ static void createCPUWindow(void);
         _blurView.layer.masksToBounds = YES;
         _blurView.layer.borderWidth = 0.75f;
         _blurView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.30f].CGColor;
+        _blurView.userInteractionEnabled = NO; // 将内部毛玻璃设为 NO，由宿主 View 统一接收手势
         [self addSubview:_blurView];
 
         // 2. ✨ 充电跑马灯流光图层 (围绕悬浮窗四周旋转)
@@ -289,6 +290,73 @@ static void createCPUWindow(void);
         [_bottomCapsule addSubview:_statusLabel];
     }
     return self;
+}
+
+#pragma mark - 原生拖拽触摸响应
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    UITouch *touch = touches.anyObject;
+    if (!touch) return;
+    self.lastPoint = [touch locationInView:self.superview];
+    [super touchesBegan:touches withEvent:event];
+}
+
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    UITouch *touch = touches.anyObject;
+    if (!touch) return;
+
+    CGPoint now = [touch locationInView:self.superview];
+    CGFloat dx = now.x - self.lastPoint.x;
+    CGFloat dy = now.y - self.lastPoint.y;
+
+    CGPoint center = self.center;
+    center.x += dx;
+    center.y += dy;
+
+    CGSize size = getRealScreenSize();
+    CGRect realFrame = self.frame;
+    CGFloat halfW = realFrame.size.width / 2.0f;
+    CGFloat halfH = realFrame.size.height / 2.0f;
+
+    CGFloat minX = halfW + 2.0f;
+    CGFloat maxX = size.width - halfW - 2.0f;
+    CGFloat minY = halfH + 20.0f;
+    CGFloat maxY = size.height - halfH - 10.0f;
+
+    if (maxX < minX) maxX = minX;
+    if (maxY < minY) maxY = minY;
+
+    if (center.x < minX) center.x = minX;
+    if (center.x > maxX) center.x = maxX;
+    if (center.y < minY) center.y = minY;
+    if (center.y > maxY) center.y = maxY;
+
+    self.center = center;
+    self.lastPoint = now;
+
+    [super touchesMoved:touches withEvent:event];
+}
+
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [super touchesEnded:touches withEvent:event];
+
+    if (rememberPositionEnable) {
+        [[NSUserDefaults standardUserDefaults] setObject:NSStringFromCGRect(self.frame) forKey:@"SBCPU.LastFrame"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
+
+    clampAndPositionFloatingView(self.center, YES);
+}
+
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [super touchesCancelled:touches withEvent:event];
+
+    if (rememberPositionEnable) {
+        [[NSUserDefaults standardUserDefaults] setObject:NSStringFromCGRect(self.frame) forKey:@"SBCPU.LastFrame"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
+
+    clampAndPositionFloatingView(self.center, YES);
 }
 
 // 插入充电器灵动弹跳动画
@@ -500,69 +568,6 @@ static void createCPUWindow(void);
 
 @end
 
-#pragma mark - 4. 拖动与零空气墙贴边吸附
-
-@implementation SBCPUDragView
-
-- (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event {
-    UITouch *touch = touches.anyObject;
-    if (!touch) return;
-    self.lastPoint = [touch locationInView:self.superview];
-    [super touchesBegan:touches withEvent:event];
-}
-
-- (void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event {
-    UITouch *touch = touches.anyObject;
-    if (!touch) return;
-
-    CGPoint now = [touch locationInView:self.superview];
-    CGFloat dx = now.x - self.lastPoint.x;
-    CGFloat dy = now.y - self.lastPoint.y;
-
-    if (!floatingView) return;
-
-    CGPoint center = floatingView.center;
-    center.x += dx;
-    center.y += dy;
-
-    CGSize size = getRealScreenSize();
-    CGRect realFrame = floatingView.frame;
-    CGFloat halfW = realFrame.size.width / 2.0f;
-    CGFloat halfH = realFrame.size.height / 2.0f;
-
-    CGFloat minX = halfW + 2.0f; // 允许无缝靠紧最左边 2pt
-    CGFloat maxX = size.width - halfW - 2.0f; // 允许无缝靠紧最右边 2pt，零截断
-    CGFloat minY = halfH + 20.0f;
-    CGFloat maxY = size.height - halfH - 10.0f;
-
-    if (maxX < minX) maxX = minX;
-    if (maxY < minY) maxY = minY;
-
-    if (center.x < minX) center.x = minX;
-    if (center.x > maxX) center.x = maxX;
-    if (center.y < minY) center.y = minY;
-    if (center.y > maxY) center.y = maxY;
-
-    floatingView.center = center;
-    self.center = center;
-    self.lastPoint = now;
-
-    [super touchesMoved:touches withEvent:event];
-}
-
-- (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event {
-    [super touchesEnded:touches withEvent:event];
-    if (!floatingView) return;
-
-    if (rememberPositionEnable) {
-        [[NSUserDefaults standardUserDefaults] setObject:NSStringFromCGRect(floatingView.frame) forKey:@"SBCPU.LastFrame"];
-        [[NSUserDefaults standardUserDefaults] synchronize];
-    }
-
-    clampAndPositionFloatingView(floatingView.center, YES);
-}
-@end
-
 #pragma mark - 横屏游戏自动旋转控制器
 
 @implementation SBCPURootViewController
@@ -590,26 +595,19 @@ static void createCPUWindow(void);
 
 @end
 
+#pragma mark - 优雅可穿透 Window 实现 (直连悬浮窗，零手势遮挡)
+
 @implementation SBCPUWindow
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     if (settingsShowing) return [super hitTest:point withEvent:event];
-    UIView *view = [super hitTest:point withEvent:event];
-    if (!view) return nil;
-
-    if (floatingView && ([view isDescendantOfView:floatingView] || view == floatingView)) {
-        return view;
-    }
-
-    UIView *root = self.rootViewController.view;
-    if (root) {
-        for (UIView *subview in root.subviews) {
-            if (subview != floatingView && [subview isKindOfClass:[SBCPUDragView class]]) {
-                CGRect frame = [subview.superview convertRect:subview.frame toView:self];
-                if (CGRectContainsPoint(frame, point)) return subview;
-            }
+    
+    if (floatingView && !floatingView.hidden) {
+        CGPoint pointInFloating = [floatingView convertPoint:point fromView:self];
+        if ([floatingView pointInside:pointInFloating withEvent:event]) {
+            return floatingView; // 命中悬浮窗直接返回悬浮窗，接收拖拽与双击！
         }
     }
-    return nil;
+    return nil; // 命中其他区域直接透传给 iOS 桌面与应用
 }
 @end
 
@@ -641,7 +639,7 @@ static CGSize getRealScreenSize(void) {
     return UIScreen.mainScreen.bounds.size;
 }
 
-// 核心：吸附与对齐算法，贴紧最左/最右 2pt，零截断零缝隙
+// 核心吸附与对齐算法，靠左靠右 2pt 贴紧最边缘
 static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
     if (!floatingView) return;
 
@@ -677,9 +675,6 @@ static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
 
     void (^layoutBlock)(void) = ^{
         floatingView.center = targetCenter;
-        if (cpuDragView) {
-            cpuDragView.frame = floatingView.frame;
-        }
     };
 
     if (animate) {
@@ -746,7 +741,7 @@ static void SavePreferencesAndNotify(void) {
     );
 }
 
-// 核心：读取系统硬件真实最高主频 (如 3470MHz) 并在 1 秒内实时拟合跳动
+// 读取系统硬件真实最高主频 (如 3470MHz) 并在 1 秒内实时拟合跳动
 static double getCPUFrequencyMHz(double currentCpuUsage) {
     uint64_t freqMax = 0;
     size_t size = sizeof(freqMax);
@@ -881,7 +876,7 @@ static void updateFloatingSize(void) {
 
     BOOL charging = isChargingInternal();
 
-    // 关键：在计算 Bounds 前先重置 Transform，保证边界与 Anchor 几限制精准！
+    // 在计算 Bounds 前先重置 Transform，保证边界几何精准
     floatingView.transform = CGAffineTransformIdentity;
 
     [floatingView updateLayoutWithShowCpuFreq:showCpuFrequency
@@ -932,18 +927,16 @@ static void createCPUWindow(void) {
     }
 
     floatingView = [[SBCPUFloatingView alloc] initWithFrame:initFrame];
-
-    cpuDragView = [[SBCPUDragView alloc] initWithFrame:floatingView.frame];
-    cpuDragView.backgroundColor = UIColor.clearColor;
-    cpuDragView.userInteractionEnabled = YES;
-    cpuDragView.multipleTouchEnabled = NO;
+    floatingView.userInteractionEnabled = YES;
+    floatingView.multipleTouchEnabled = NO;
 
     [cpuWindow.rootViewController.view addSubview:floatingView];
-    [cpuWindow.rootViewController.view addSubview:cpuDragView];
 
+    // 直接给悬浮窗添加双击打开设置手势
     UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:[SBCPUAction class] action:@selector(doubleTapAction)];
     doubleTap.numberOfTapsRequired = 2;
-    [cpuDragView addGestureRecognizer:doubleTap];
+    doubleTap.cancelsTouchesInView = NO;
+    [floatingView addGestureRecognizer:doubleTap];
 
     applyFloatingAlpha();
     updateFloatingSize();
@@ -983,7 +976,7 @@ static void checkHighCPU(double cpu) {
     }
 }
 
-// 1.0 秒定时更新主频与各项硬件数据
+// 1.0 秒定时更新，检测到插入状态时触发触觉动画
 static void updateCPU(void) {
     double cpu = getCPUUsage();
     double cpuFreq = getCPUFrequencyMHz(cpu);
@@ -1321,7 +1314,6 @@ static void registerV160Observers(void) {
 
                 [UIView animateWithDuration:0.25 animations:^{
                     floatingView.frame = f;
-                    if (cpuDragView) cpuDragView.frame = f;
                 }];
                 keyboardMoved = YES;
             }
@@ -1331,7 +1323,6 @@ static void registerV160Observers(void) {
             if (!settingsShowing && keyboardMoved && floatingView) {
                 [UIView animateWithDuration:0.25 animations:^{
                     floatingView.frame = keyboardBeforeFrame;
-                    if (cpuDragView) cpuDragView.frame = keyboardBeforeFrame;
                 }];
                 keyboardMoved = NO;
             }
