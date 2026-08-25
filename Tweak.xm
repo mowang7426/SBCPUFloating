@@ -15,7 +15,7 @@
 
 #pragma mark - 1. 前置 Interface 声明 (避免 Clang 编译报错)
 
-// 1:1 精致悬浮窗视图类 (直接内建 UIPan & UITap 原生手势)
+// 悬浮窗主视图 (内建原生 Pan 拖拽与 Tap 双击手势)
 @interface SBCPUFloatingView : UIView <UIGestureRecognizerDelegate>
 @property (nonatomic, assign) CGPoint lastPoint;
 @property (nonatomic, strong) UIVisualEffectView *blurView;
@@ -69,6 +69,10 @@
                isCharging:(BOOL)isCharging;
 @end
 
+// 悬浮窗穿透背景容器 View
+@interface SBCPUPassthroughView : UIView
+@end
+
 // 横屏游戏旋转控制器
 @interface SBCPURootViewController : UIViewController
 @end
@@ -86,7 +90,7 @@
 @interface SBCPUSettingsController : UITableViewController
 @end
 
-#pragma mark - 2. 全局变量与 C 函数原型完整声明
+#pragma mark - 2. 全局变量与 C 函数原型完整声明 (彻底消除 undeclared 编译报错)
 
 static UIWindow *cpuWindow = nil;
 static SBCPUFloatingView *floatingView = nil;
@@ -122,7 +126,7 @@ static BOOL showBatteryCurrent = YES;
 static CGRect keyboardBeforeFrame;
 static BOOL keyboardMoved = NO;
 
-// 完整原型声明 (彻底排除 undeclared identifier 编译错误)
+// 完整 C 原型前置声明
 static UIWindowScene *getWindowScene(void);
 static CGSize getRealScreenSize(void);
 static double getCPUUsage(void);
@@ -141,7 +145,7 @@ static void SavePreferencesAndNotify(void);
 static void updateCPU(void);
 static void createCPUWindow(void);
 
-#pragma mark - 3. SBCPUFloatingView 悬浮窗实现 (内建原生 Pan & Tap 手势)
+#pragma mark - 3. SBCPUFloatingView 悬浮窗实现 (内建流畅拖拽与双击响应)
 
 @implementation SBCPUFloatingView
 
@@ -152,12 +156,12 @@ static void createCPUWindow(void);
         self.userInteractionEnabled = YES;
         self.multipleTouchEnabled = NO;
         
-        // 1. 绑定原生拖拽手势 (UIPanGestureRecognizer)
+        // 1. 绑定原生 UIPanGestureRecognizer 拖拽手势
         UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
         pan.delegate = self;
         [self addGestureRecognizer:pan];
 
-        // 2. 绑定原生双击手势 (UITapGestureRecognizer)
+        // 2. 绑定原生 UITapGestureRecognizer 双击手势
         UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)];
         doubleTap.numberOfTapsRequired = 2;
         doubleTap.delegate = self;
@@ -169,7 +173,7 @@ static void createCPUWindow(void);
         self.layer.shadowOffset = CGSizeMake(0, 5);
         self.layer.shadowRadius = 10.0f;
 
-        // 高透超薄暗色毛玻璃
+        // 3. 高透超薄暗色毛玻璃
         UIBlurEffect *blurEffect = nil;
         if (@available(iOS 13.0, *)) {
             blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark];
@@ -182,7 +186,7 @@ static void createCPUWindow(void);
         _blurView.layer.masksToBounds = YES;
         _blurView.layer.borderWidth = 0.75f;
         _blurView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.30f].CGColor;
-        _blurView.userInteractionEnabled = NO; // 将内部毛玻璃设为 NO，手势由宿主 View 统一处理
+        _blurView.userInteractionEnabled = NO; // 将内部设为 NO，由宿主 View 统一透传处理手势
         [self addSubview:_blurView];
 
         // ✨ 充电跑马灯流光图层 (围绕悬浮窗四周旋转)
@@ -195,6 +199,7 @@ static void createCPUWindow(void);
         [_blurView.layer addSublayer:_marqueeLayer];
 
         UIView *content = _blurView.contentView;
+        content.userInteractionEnabled = NO;
 
         // --- 1. CPU 模块 ---
         _cpuTitleLabel = [[UILabel alloc] init];
@@ -303,7 +308,7 @@ static void createCPUWindow(void);
     return self;
 }
 
-#pragma mark - 原生 UIPan 手势平滑拖拽与双击处理
+#pragma mark - 手势响应函数 (拖拽平滑跟手 & 双击秒开设置)
 
 - (void)handlePan:(UIPanGestureRecognizer *)pan {
     if (pan.state == UIGestureRecognizerStateBegan) {
@@ -330,6 +335,7 @@ static void createCPUWindow(void);
         if (targetCenter.y < minY) targetCenter.y = minY;
         if (targetCenter.y > maxY) targetCenter.y = maxY;
 
+        // 关键：拖拽过程中 0 延迟实时跟手，决不使用加动画延迟，消除卡死错觉！
         self.center = targetCenter;
     } else if (pan.state == UIGestureRecognizerStateEnded || pan.state == UIGestureRecognizerStateCancelled) {
         if (rememberPositionEnable) {
@@ -337,6 +343,7 @@ static void createCPUWindow(void);
             [[NSUserDefaults standardUserDefaults] synchronize];
         }
 
+        // 手指松开时平滑弹簧吸附贴边
         clampAndPositionFloatingView(self.center, YES);
     }
 }
@@ -353,7 +360,7 @@ static void createCPUWindow(void);
     return YES;
 }
 
-// 插入充电器灵动弹跳动画
+// 插入充电器触觉弹跳动画
 - (void)triggerPlugAnimation {
     CAKeyframeAnimation *animation = [CAKeyframeAnimation animationWithKeyPath:@"transform.scale"];
     animation.values = @[@1.0, @1.08, @0.96, @1.02, @1.0];
@@ -541,6 +548,9 @@ static void createCPUWindow(void);
         _marqueeLayer.hidden = YES;
         [_marqueeLayer removeAnimationForKey:@"marqueeDashAnim"];
     }
+
+    // 同设外框 Bounds，确保点按测试极敏感精准
+    self.bounds = CGRectMake(0, 0, finalW, currentY);
 }
 
 - (void)updateDataWithCPU:(double)cpu 
@@ -562,9 +572,27 @@ static void createCPUWindow(void);
 
 @end
 
+#pragma mark - 悬浮窗背景穿透容器
+
+@implementation SBCPUPassthroughView
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hitView = [super hitTest:point withEvent:event];
+    if (hitView == self) {
+        return nil; // 背景区域透传给桌面与后台 App
+    }
+    return hitView; // 命中悬浮窗直接接收响应
+}
+@end
+
 #pragma mark - 横屏游戏自动旋转控制器
 
 @implementation SBCPURootViewController
+
+- (void)loadView {
+    SBCPUPassthroughView *passView = [[SBCPUPassthroughView alloc] initWithFrame:UIScreen.mainScreen.bounds];
+    passView.backgroundColor = UIColor.clearColor;
+    self.view = passView;
+}
 
 - (BOOL)shouldAutorotate {
     return YES;
@@ -589,19 +617,10 @@ static void createCPUWindow(void);
 
 @end
 
-#pragma mark - 优雅可穿透 Window 实现 (直通悬浮窗，绝无遮挡)
-
 @implementation SBCPUWindow
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     if (settingsShowing) return [super hitTest:point withEvent:event];
-    
-    if (floatingView && !floatingView.hidden && floatingView.alpha > 0.01) {
-        CGPoint p = [self convertPoint:point toView:floatingView];
-        if ([floatingView pointInside:p withEvent:event]) {
-            return floatingView; // 命中悬浮窗直接返回，接收原生 Pan 拖拽与 Tap 双击！
-        }
-    }
-    return nil; // 其他区域透传给 iOS 桌面与应用
+    return [super hitTest:point withEvent:event];
 }
 @end
 
@@ -633,7 +652,7 @@ static CGSize getRealScreenSize(void) {
     return UIScreen.mainScreen.bounds.size;
 }
 
-// 核心吸附与对齐算法，靠左靠右 2pt 贴紧最边缘
+// 吸附算法：贴紧边缘 2pt，靠左靠右对齐
 static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
     if (!floatingView) return;
 
@@ -643,8 +662,8 @@ static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
     CGFloat halfW = realFrame.size.width / 2.0f;
     CGFloat halfH = realFrame.size.height / 2.0f;
 
-    CGFloat minX = halfW + 2.0f; // 最左边界仅留 2pt 贴合
-    CGFloat maxX = screenSize.width - halfW - 2.0f; // 最右边界仅留 2pt，零截断！
+    CGFloat minX = halfW + 2.0f;
+    CGFloat maxX = screenSize.width - halfW - 2.0f;
     CGFloat minY = halfH + 20.0f;
     CGFloat maxY = screenSize.height - halfH - 10.0f;
 
@@ -735,7 +754,7 @@ static void SavePreferencesAndNotify(void) {
     );
 }
 
-// 核心：读取系统硬件真实最高主频 (如 3470MHz) 并在 1 秒内实时拟合跳动
+// 读取真实 peak MHz
 static double getCPUFrequencyMHz(double currentCpuUsage) {
     uint64_t freqMax = 0;
     size_t size = sizeof(freqMax);
@@ -870,7 +889,7 @@ static void updateFloatingSize(void) {
 
     BOOL charging = isChargingInternal();
 
-    // 在计算 Bounds 前先重置 Transform，保证边界几何精准
+    // 先重置 Transform 保证布局精确计算
     floatingView.transform = CGAffineTransformIdentity;
 
     [floatingView updateLayoutWithShowCpuFreq:showCpuFrequency
@@ -882,7 +901,7 @@ static void updateFloatingSize(void) {
     CGAffineTransform transform = CGAffineTransformMakeScale(floatingScale, floatingScale);
     floatingView.transform = transform;
 
-    // 重新平滑贴合屏幕边缘吸附
+    // 重新贴紧边缘平滑吸附
     clampAndPositionFloatingView(floatingView.center, YES);
 }
 
@@ -962,7 +981,7 @@ static void checkHighCPU(double cpu) {
     }
 }
 
-// 1.0 秒定时更新，检测到插入状态时触发触觉动画
+// 1.0 秒定时更新主频与硬件信息
 static void updateCPU(void) {
     double cpu = getCPUUsage();
     double cpuFreq = getCPUFrequencyMHz(cpu);
@@ -1333,4 +1352,3 @@ static void registerV160Observers(void) {
         });
     }
 }
-
