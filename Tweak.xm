@@ -12,17 +12,119 @@
 #define kPlistPath @"/var/mobile/Library/Preferences/com.yourname.sbcpufloating.plist"
 #define kPrefChangedNotification "com.yourname.sbcpufloating.prefschanged"
 
-#pragma mark - 全局共享配置变量
+#pragma mark - 私有类前置声明
+@interface PowerUISmartChargingClient : NSObject
+- (instancetype)initWithClientName:(NSString *)clientName;
+- (void)pauseCharging;
+- (void)resumeCharging;
+@end
+
+#pragma mark - 封装精美悬浮窗视图 (解决文字不可见与阴影重影)
+@interface SBCPUFloatingView : UIView
+@property (nonatomic, strong) UIVisualEffectView *blurView;
+@property (nonatomic, strong) UILabel *textLabel;
+@end
+
+@implementation SBCPUFloatingView
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    if (self = [super initWithFrame:frame]) {
+        self.backgroundColor = [UIColor clearColor];
+        self.layer.masksToBounds = NO;
+        
+        // 单层精准外阴影
+        self.layer.shadowColor = [UIColor blackColor].CGColor;
+        self.layer.shadowOpacity = 0.25f;
+        self.layer.shadowOffset = CGSizeMake(0, 3);
+        self.layer.shadowRadius = 5.0f;
+
+        // 高透暗色毛玻璃
+        UIBlurEffect *blurEffect = nil;
+        if (@available(iOS 13.0, *)) {
+            blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark];
+        } else {
+            blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
+        }
+
+        _blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
+        _blurView.layer.cornerRadius = 14.0f;
+        _blurView.layer.masksToBounds = YES; // 内裁切，防止虚影溢出
+        _blurView.layer.borderWidth = 0.5f;
+        _blurView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.25f].CGColor;
+        [self addSubview:_blurView];
+
+        // UILabel 置于毛玻璃 contentView 最上层，保证文字清晰可见
+        _textLabel = [[UILabel alloc] init];
+        _textLabel.numberOfLines = 0;
+        _textLabel.textAlignment = NSTextAlignmentCenter;
+        _textLabel.textColor = [UIColor whiteColor];
+        _textLabel.font = [UIFont monospacedDigitSystemFontOfSize:13 weight:UIFontWeightBold];
+        [_blurView.contentView addSubview:_textLabel];
+    }
+    return self;
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    _blurView.frame = self.bounds;
+    _textLabel.frame = CGRectInset(_blurView.contentView.bounds, 6, 4);
+    self.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:self.bounds cornerRadius:14.0f].CGPath;
+}
+
+@end
+
+#pragma mark - 全局变量声明
+static UIWindow *cpuWindow = nil;
+@class SBCPUDragView;
+
+static SBCPUFloatingView *floatingView = nil;
+static SBCPUDragView *cpuDragView = nil;
+
+static CGFloat floatingScale = 1.0;
+static CGFloat floatingFontSize = 13.0;
+static CGFloat landscapeScale = 0.75;
+static CGFloat landscapeFontSize = 12.0;
+
+// SmartCharge 参数
 static BOOL sbcpuSmartChargeEnable = YES;
 static NSInteger sbcpuChargeTempFast = 35;
 static NSInteger sbcpuChargeTempReduce = 38;
 static NSInteger sbcpuChargeTempPause = 40;
 static NSInteger sbcpuChargeTempStop = 42;
 
-// 全局强制断充状态 (由 powerd 与 SpringBoard 同步)
+static BOOL settingsShowing = NO;
+
+// 自动注销配置
+static BOOL autoLogoutEnable = NO;
+static double logoutCPUThreshold = 100.0;
+static NSInteger logoutDuration = 60;
+static NSDate *cpuHighStartTime = nil;
+static BOOL logoutCounting = NO;
+
+// 透明度配置
+static BOOL floatingAlphaEnable = YES;
+static CGFloat floatingAlpha = 0.70f;
+
+// 布局与吸附控制配置
+static BOOL autoWindowSizeEnable = NO;
+static BOOL showBatteryPercent = YES;
+static BOOL showBatteryTemperature = YES;
+static BOOL showBatteryCurrent = YES;
+static BOOL smartDockEnable = YES;
+static NSInteger dockMode = 0; // 0自动 1左 2右 3上 4下
+static BOOL rememberPositionEnable = YES;
+
 static BOOL g_ForcePauseCharging = NO;
 
-#pragma mark - 读取配置函数
+// 前置函数声明
+static void openSettings(void);
+static void checkHighCPU(double cpu);
+static void registerV160Observers(void);
+
+@class SBCPUValuePickerController;
+@class SBCPUTimePickerController;
+
+#pragma mark - 读取与保存配置
 static void LoadPreferences() {
     NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:kPlistPath];
     if (prefs) {
@@ -34,7 +136,23 @@ static void LoadPreferences() {
     }
 }
 
-#pragma mark - 读取电池温度辅助函数
+static void SavePreferencesAndNotify() {
+    NSMutableDictionary *dict = [NSMutableDictionary dictionaryWithContentsOfFile:kPlistPath] ?: [NSMutableDictionary dictionary];
+    dict[@"sbcpuSmartChargeEnable"] = @(sbcpuSmartChargeEnable);
+    dict[@"sbcpuChargeTempFast"] = @(sbcpuChargeTempFast);
+    dict[@"sbcpuChargeTempReduce"] = @(sbcpuChargeTempReduce);
+    dict[@"sbcpuChargeTempPause"] = @(sbcpuChargeTempPause);
+    dict[@"sbcpuChargeTempStop"] = @(sbcpuChargeTempStop);
+    [dict writeToFile:kPlistPath atomically:YES];
+
+    CFNotificationCenterPostNotification(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        CFSTR(kPrefChangedNotification),
+        NULL, NULL, YES
+    );
+}
+
+#pragma mark - 电池温度获取
 static double getBatteryTemperatureInternal() {
     io_iterator_t iterator = 0;
     io_service_t service = IO_OBJECT_NULL;
@@ -64,18 +182,61 @@ static double getBatteryTemperatureInternal() {
     return -1;
 }
 
+#pragma mark - 充电硬件调控 Engine
+static void applyChargingControl(BOOL pause) {
+    // 1. PowerUI Private Framework
+    Class clientClass = objc_getClass("PowerUISmartChargingClient");
+    if (clientClass) {
+        static id client = nil;
+        static dispatch_once_t onceToken;
+        dispatch_once(&onceToken, ^{
+            if ([clientClass instancesRespondToSelector:@selector(initWithClientName:)]) {
+                client = [[clientClass alloc] initWithClientName:@"SBCPUFloating"];
+            } else {
+                client = [[clientClass alloc] init];
+            }
+        });
+        if (client) {
+            SEL sel = pause ? @selector(pauseCharging) : @selector(resumeCharging);
+            if ([client respondsToSelector:sel]) {
+                IMP imp = [client methodForSelector:sel];
+                void (*func)(id, SEL) = (void *)imp;
+                func(client, sel);
+            }
+        }
+    }
+
+    // 2. IOKit Direct Property
+    io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleSmartBattery"));
+    if (service) {
+        CFBooleanRef boolVal = pause ? kCFBooleanTrue : kCFBooleanFalse;
+        CFBooleanRef invVal = pause ? kCFBooleanFalse : kCFBooleanTrue;
+        IORegistryEntrySetCFProperty(service, CFSTR("InhibitCharging"), boolVal);
+        IORegistryEntrySetCFProperty(service, CFSTR("DisableCharging"), boolVal);
+        IORegistryEntrySetCFProperty(service, CFSTR("ChargingEnabled"), invVal);
+
+        int currentLimit = pause ? 0 : 3000;
+        CFNumberRef numVal = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &currentLimit);
+        if (numVal) {
+            IORegistryEntrySetCFProperty(service, CFSTR("ChargeCurrentLimit"), numVal);
+            IORegistryEntrySetCFProperty(service, CFSTR("CurrentLimit"), numVal);
+            CFRelease(numVal);
+        }
+        IOObjectRelease(service);
+    }
+}
+
 // ============================================================================
-#pragma mark - 后端模块：powerd 核心充电控制 Hook
+#pragma mark - powerd 进程 Hook
 // ============================================================================
 
 %group PowerdHooks
 
-// Hook 系统的 PowerUISmartChargingManager，接管 pauseCharging 逻辑
 %hook PowerUISmartChargingManager
 
 - (BOOL)isChargingPaused {
     if (sbcpuSmartChargeEnable && g_ForcePauseCharging) {
-        return YES; // 强行让系统 powerd 认为当前处于暂停充电状态
+        return YES;
     }
     return %orig;
 }
@@ -89,11 +250,13 @@ static double getBatteryTemperatureInternal() {
 
 %end
 
-// 定时监控 powerd 内部的电池温度并下发控制
 static void powerdCheckTemperatureAndControl() {
     LoadPreferences();
     if (!sbcpuSmartChargeEnable) {
-        g_ForcePauseCharging = NO;
+        if (g_ForcePauseCharging) {
+            g_ForcePauseCharging = NO;
+            applyChargingControl(NO);
+        }
         return;
     }
 
@@ -102,72 +265,18 @@ static void powerdCheckTemperatureAndControl() {
 
     if (temp >= sbcpuChargeTempPause || temp >= sbcpuChargeTempStop) {
         g_ForcePauseCharging = YES;
+        applyChargingControl(YES);
     } else if (temp <= sbcpuChargeTempFast) {
         g_ForcePauseCharging = NO;
-    }
-
-    // 主动刷新 PowerUISmartChargingManager 单例
-    Class managerClass = objc_getClass("PowerUISmartChargingManager");
-    if (managerClass && [managerClass respondsToSelector:@selector(sharedInstance)]) {
-        id manager = [managerClass performSelector:@selector(sharedInstance)];
-        if (manager) {
-            if ([manager respondsToSelector:@selector(setChargingPaused:)]) {
-                typedef void (*SetPausedFunc)(id, SEL, BOOL);
-                SetPausedFunc func = (SetPausedFunc)[manager methodForSelector:@selector(setChargingPaused:)];
-                if (func) func(manager, @selector(setChargingPaused:), g_ForcePauseCharging);
-            }
-        }
+        applyChargingControl(NO);
     }
 }
 
-%end // end group PowerdHooks
-
+%end
 
 // ============================================================================
-#pragma mark - 前端模块：SpringBoard 界面与悬浮窗 UI
+#pragma mark - SpringBoard 前端 UI 模块
 // ============================================================================
-
-static UIWindow *cpuWindow = nil;
-@class SBCPUDragView;
-
-static UIView *containerView = nil;
-static UILabel *label = nil;
-static UIVisualEffectView *blurEffectView = nil;
-static SBCPUDragView *cpuDragView = nil;
-
-static CGFloat floatingScale = 1.0;
-static CGFloat floatingFontSize = 13.0;
-static CGFloat landscapeScale = 0.75;
-static CGFloat landscapeFontSize = 12.0;
-
-static BOOL settingsShowing = NO;
-
-// 自动注销配置
-static BOOL autoLogoutEnable = NO;
-static double logoutCPUThreshold = 100.0;
-static NSInteger logoutDuration = 60;
-static NSDate *cpuHighStartTime = nil;
-static BOOL logoutCounting = NO;
-
-// 透明度配置
-static BOOL floatingAlphaEnable = YES;
-static CGFloat floatingAlpha = 0.70f;
-
-// 布局与吸附控制配置
-static BOOL autoWindowSizeEnable = NO;
-static BOOL showBatteryPercent = YES;
-static BOOL showBatteryTemperature = YES;
-static BOOL showBatteryCurrent = YES;
-static BOOL smartDockEnable = YES;
-static NSInteger dockMode = 0;
-static BOOL rememberPositionEnable = YES;
-
-static void openSettings(void);
-static void checkHighCPU(double cpu);
-static void registerV160Observers(void);
-
-@class SBCPUValuePickerController;
-@class SBCPUTimePickerController;
 
 #pragma mark - WindowScene 抓取
 static UIWindowScene *getWindowScene() {
@@ -184,7 +293,7 @@ static UIWindowScene *getWindowScene() {
     return nil;
 }
 
-#pragma mark - 精准 SpringBoard 进程 CPU 占用率计算 (mach_task_self)
+#pragma mark - 精准 SpringBoard 进程 CPU 占用率计算
 static double getCPUUsage() {
     thread_array_t threads;
     mach_msg_type_number_t count = 0;
@@ -214,8 +323,8 @@ static double getCPUUsage() {
 #pragma mark - 透明度刷新
 static void applyFloatingAlpha() {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (!containerView) return;
-        containerView.alpha = floatingAlphaEnable ? floatingAlpha : 1.0;
+        if (!floatingView) return;
+        floatingView.alpha = floatingAlphaEnable ? floatingAlpha : 1.0;
     });
 }
 
@@ -229,14 +338,14 @@ static void applyFloatingAlpha() {
     UIView *view = [super hitTest:point withEvent:event];
     if (!view) return nil;
 
-    if (containerView && ([view isDescendantOfView:containerView] || view == containerView)) {
+    if (floatingView && ([view isDescendantOfView:floatingView] || view == floatingView)) {
         return view;
     }
 
     UIView *root = self.rootViewController.view;
     if (root) {
         for (UIView *subview in root.subviews) {
-            if (subview != containerView && [subview isKindOfClass:NSClassFromString(@"SBCPUDragView")]) {
+            if (subview != floatingView && [subview isKindOfClass:NSClassFromString(@"SBCPUDragView")]) {
                 CGRect frame = [subview.superview convertRect:subview.frame toView:self];
                 if (CGRectContainsPoint(frame, point)) return subview;
             }
@@ -268,22 +377,22 @@ static void applyFloatingAlpha() {
     CGFloat dx = now.x - self.lastPoint.x;
     CGFloat dy = now.y - self.lastPoint.y;
 
-    if (!containerView) return;
+    if (!floatingView) return;
 
-    CGPoint center = containerView.center;
+    CGPoint center = floatingView.center;
     center.x += dx;
     center.y += dy;
 
     CGSize size = self.superview.bounds.size;
-    CGFloat halfW = containerView.bounds.size.width / 2.0;
-    CGFloat halfH = containerView.bounds.size.height / 2.0;
+    CGFloat halfW = floatingView.bounds.size.width / 2.0;
+    CGFloat halfH = floatingView.bounds.size.height / 2.0;
 
     if (center.x < halfW) center.x = halfW;
     if (center.x > size.width - halfW) center.x = size.width - halfW;
     if (center.y < halfH + 40) center.y = halfH + 40;
     if (center.y > size.height - halfH) center.y = size.height - halfH;
 
-    containerView.center = center;
+    floatingView.center = center;
     self.center = center;
     self.lastPoint = now;
 
@@ -292,38 +401,38 @@ static void applyFloatingAlpha() {
 
 - (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event {
     [super touchesEnded:touches withEvent:event];
-    if (!containerView) return;
+    if (!floatingView) return;
 
     if (!smartDockEnable) {
         if (rememberPositionEnable) {
-            [[NSUserDefaults standardUserDefaults] setObject:NSStringFromCGRect(containerView.frame) forKey:@"SBCPU.LastFrame"];
+            [[NSUserDefaults standardUserDefaults] setObject:NSStringFromCGRect(floatingView.frame) forKey:@"SBCPU.LastFrame"];
             [[NSUserDefaults standardUserDefaults] synchronize];
         }
         return;
     }
 
     CGSize size = self.superview.bounds.size;
-    CGRect frame = containerView.frame;
+    CGRect frame = floatingView.frame;
     CGFloat left = CGRectGetMinX(frame);
     CGFloat right = size.width - CGRectGetMaxX(frame);
     CGFloat top = CGRectGetMinY(frame);
     CGFloat bottom = size.height - CGRectGetMaxY(frame);
 
     CGFloat minDistance = MIN(MIN(left, right), MIN(top, bottom));
-    CGPoint center = containerView.center;
+    CGPoint center = floatingView.center;
 
     if (dockMode > 0) {
-        if (dockMode == 1) { center.x = containerView.bounds.size.width / 2.0 + 10; }
-        else if (dockMode == 2) { center.x = size.width - containerView.bounds.size.width / 2.0 - 10; }
-        else if (dockMode == 3) { center.y = containerView.bounds.size.height / 2.0 + 10; }
-        else if (dockMode == 4) { center.y = size.height - containerView.bounds.size.height / 2.0 - 10; }
-    } else if (minDistance == left) { center.x = containerView.bounds.size.width / 2.0 + 10; }
-    else if (minDistance == right) { center.x = size.width - containerView.bounds.size.width / 2.0 - 10; }
-    else if (minDistance == top) { center.y = containerView.bounds.size.height / 2.0 + 10; }
-    else if (minDistance == bottom) { center.y = size.height - containerView.bounds.size.height / 2.0 - 10; }
+        if (dockMode == 1) { center.x = floatingView.bounds.size.width / 2.0 + 10; }
+        else if (dockMode == 2) { center.x = size.width - floatingView.bounds.size.width / 2.0 - 10; }
+        else if (dockMode == 3) { center.y = floatingView.bounds.size.height / 2.0 + 10; }
+        else if (dockMode == 4) { center.y = size.height - floatingView.bounds.size.height / 2.0 - 10; }
+    } else if (minDistance == left) { center.x = floatingView.bounds.size.width / 2.0 + 10; }
+    else if (minDistance == right) { center.x = size.width - floatingView.bounds.size.width / 2.0 - 10; }
+    else if (minDistance == top) { center.y = floatingView.bounds.size.height / 2.0 + 10; }
+    else if (minDistance == bottom) { center.y = size.height - floatingView.bounds.size.height / 2.0 - 10; }
 
     [UIView animateWithDuration:0.25 delay:0 options:UIViewAnimationOptionCurveEaseOut animations:^{
-        containerView.center = center;
+        floatingView.center = center;
         self.center = center;
     } completion:nil];
 }
@@ -358,45 +467,15 @@ static void createCPUWindow() {
     cpuWindow.rootViewController.view.backgroundColor = UIColor.clearColor;
     cpuWindow.hidden = NO;
 
-    containerView = [[UIView alloc] initWithFrame:CGRectMake(30, 200, 115, 48)];
-    containerView.backgroundColor = UIColor.clearColor;
+    floatingView = [[SBCPUFloatingView alloc] initWithFrame:CGRectMake(30, 200, 115, 48)];
+    floatingView.textLabel.text = @"SB CPU\n0%";
 
-    containerView.layer.shadowColor = [UIColor blackColor].CGColor;
-    containerView.layer.shadowOpacity = 0.25f;
-    containerView.layer.shadowOffset = CGSizeMake(0, 3);
-    containerView.layer.shadowRadius = 6.0f;
-    containerView.layer.masksToBounds = NO;
-    containerView.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:containerView.bounds cornerRadius:14].CGPath;
-
-    UIBlurEffect *blurEffect = nil;
-    if (@available(iOS 13.0, *)) {
-        blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark];
-    } else {
-        blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
-    }
-    blurEffectView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
-    blurEffectView.frame = containerView.bounds;
-    blurEffectView.layer.cornerRadius = 14;
-    blurEffectView.layer.masksToBounds = YES;
-    blurEffectView.layer.borderWidth = 0.5f;
-    blurEffectView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.2f].CGColor;
-    [containerView addSubview:blurEffectView];
-
-    label = [[UILabel alloc] initWithFrame:blurEffectView.contentView.bounds];
-    label.backgroundColor = UIColor.clearColor;
-    label.textAlignment = NSTextAlignmentCenter;
-    label.numberOfLines = 0;
-    label.textColor = UIColor.whiteColor;
-    label.font = [UIFont monospacedDigitSystemFontOfSize:floatingFontSize weight:UIFontWeightBold];
-    label.text = @"SB CPU\n0%";
-    [blurEffectView.contentView addSubview:label];
-
-    cpuDragView = [[SBCPUDragView alloc] initWithFrame:containerView.frame];
+    cpuDragView = [[SBCPUDragView alloc] initWithFrame:floatingView.frame];
     cpuDragView.backgroundColor = UIColor.clearColor;
     cpuDragView.userInteractionEnabled = YES;
     cpuDragView.multipleTouchEnabled = NO;
 
-    [cpuWindow.rootViewController.view addSubview:containerView];
+    [cpuWindow.rootViewController.view addSubview:floatingView];
     [cpuWindow.rootViewController.view addSubview:cpuDragView];
 
     UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:[SBCPUAction class] action:@selector(doubleTapAction)];
@@ -494,29 +573,23 @@ static BOOL isCharging() {
 
 #pragma mark - 浮窗尺寸更新
 static void updateFloatingSize() {
-    if (!containerView || !label || !blurEffectView) return;
+    if (!floatingView) return;
 
     if (autoWindowSizeEnable) {
         CGSize maxSize = CGSizeMake(UIScreen.mainScreen.bounds.size.width - 40, 200);
-        CGSize textSize = [label sizeThatFits:maxSize];
-        CGSize targetSize = CGSizeMake(textSize.width + 24, textSize.height + 16);
+        CGSize textSize = [floatingView.textLabel sizeThatFits:maxSize];
+        CGSize targetSize = CGSizeMake(textSize.width + 24, textSize.height + 14);
 
-        if (targetSize.width < 90) targetSize.width = 90;
-        if (targetSize.height < 42) targetSize.height = 42;
+        if (targetSize.width < 100) targetSize.width = 100;
+        if (targetSize.height < 44) targetSize.height = 44;
 
-        CGPoint center = containerView.center;
-        CGRect frame = containerView.frame;
+        CGPoint center = floatingView.center;
+        CGRect frame = floatingView.frame;
         frame.size = targetSize;
-        containerView.frame = frame;
-        containerView.center = center;
+        floatingView.frame = frame;
+        floatingView.center = center;
 
-        blurEffectView.frame = containerView.bounds;
-        label.frame = blurEffectView.contentView.bounds;
-
-        if (cpuDragView) cpuDragView.frame = containerView.frame;
-
-        containerView.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:containerView.bounds cornerRadius:14].CGPath;
-        [label setNeedsLayout];
+        if (cpuDragView) cpuDragView.frame = floatingView.frame;
         return;
     }
 
@@ -524,20 +597,14 @@ static void updateFloatingSize() {
     CGFloat scale = landscape ? landscapeScale : floatingScale;
     CGSize targetSize = landscape ? CGSizeMake(135 * scale, 58 * scale) : CGSizeMake(115 * scale, 48 * scale);
 
-    if (!CGSizeEqualToSize(containerView.bounds.size, targetSize)) {
-        CGRect frame = containerView.frame;
-        CGPoint center = containerView.center;
+    if (!CGSizeEqualToSize(floatingView.bounds.size, targetSize)) {
+        CGPoint center = floatingView.center;
+        CGRect frame = floatingView.frame;
         frame.size = targetSize;
-        containerView.frame = frame;
-        containerView.center = center;
+        floatingView.frame = frame;
+        floatingView.center = center;
 
-        blurEffectView.frame = containerView.bounds;
-        label.frame = blurEffectView.contentView.bounds;
-
-        if (cpuDragView) cpuDragView.frame = containerView.frame;
-
-        containerView.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:containerView.bounds cornerRadius:14].CGPath;
-        [label setNeedsLayout];
+        if (cpuDragView) cpuDragView.frame = floatingView.frame;
     }
 }
 
@@ -555,9 +622,9 @@ static void updateCPU() {
     checkHighCPU(cpu);
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (!label) return;
+        if (!floatingView || !floatingView.textLabel) return;
 
-        label.font = [UIFont systemFontOfSize:(isLandscapeMode() ? landscapeFontSize : floatingFontSize)];
+        floatingView.textLabel.font = [UIFont systemFontOfSize:(isLandscapeMode() ? landscapeFontSize : floatingFontSize)];
 
         NSInteger battery = getBatteryPercent();
         double temp = getBatteryTemperatureInternal();
@@ -580,8 +647,8 @@ static void updateCPU() {
         if (showBatteryCurrent && currentText.length) [displayLines addObject:[NSString stringWithFormat:@"%@%@", chargeText, currentText]];
         if (sbcpuSmartChargeEnable && charging) [displayLines addObject:smartChargeStateText()];
 
-        label.text = [displayLines componentsJoinedByString:@"\n"];
-        label.textColor = (cpu >= 80.0) ? UIColor.systemRedColor : UIColor.whiteColor;
+        floatingView.textLabel.text = [displayLines componentsJoinedByString:@"\n"];
+        floatingView.textLabel.textColor = (cpu >= 80.0) ? UIColor.systemRedColor : UIColor.whiteColor;
 
         updateFloatingSize();
     });
@@ -663,7 +730,7 @@ static void updateCPU() {
 }
 @end
 
-#pragma mark - CPU 触发值 Picker 控制器
+#pragma mark - CPU 触发值 Picker 控制器 (实时打勾)
 @interface SBCPUValuePickerController : UITableViewController
 @end
 
@@ -695,7 +762,7 @@ static void updateCPU() {
 }
 @end
 
-#pragma mark - 持续时间 Picker 控制器
+#pragma mark - 持续时间 Picker 控制器 (实时打勾)
 @interface SBCPUTimePickerController : UITableViewController
 @end
 
@@ -761,7 +828,7 @@ static void updateCPU() {
     floatingFontSize = slider.value;
     [[NSUserDefaults standardUserDefaults] setFloat:floatingFontSize forKey:@"SBCPU.FloatingFontSize"];
     [[NSUserDefaults standardUserDefaults] synchronize];
-    if (label) label.font = [UIFont systemFontOfSize:floatingFontSize];
+    if (floatingView && floatingView.textLabel) floatingView.textLabel.font = [UIFont systemFontOfSize:floatingFontSize];
     [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:6 inSection:0]] withRowAnimation:UITableViewRowAnimationNone];
 }
 
@@ -862,22 +929,6 @@ static void updateCPU() {
     return cell;
 }
 
-- (void)savePreferencesAndNotify() {
-    NSMutableDictionary *dict = [NSMutableDictionary dictionaryWithContentsOfFile:kPlistPath] ?: [NSMutableDictionary dictionary];
-    dict[@"sbcpuSmartChargeEnable"] = @(sbcpuSmartChargeEnable);
-    dict[@"sbcpuChargeTempFast"] = @(sbcpuChargeTempFast);
-    dict[@"sbcpuChargeTempReduce"] = @(sbcpuChargeTempReduce);
-    dict[@"sbcpuChargeTempPause"] = @(sbcpuChargeTempPause);
-    dict[@"sbcpuChargeTempStop"] = @(sbcpuChargeTempStop);
-    [dict writeToFile:kPlistPath atomically:YES];
-
-    CFNotificationCenterPostNotification(
-        CFNotificationCenterGetDarwinNotifyCenter(),
-        CFSTR(kPrefChangedNotification),
-        NULL, NULL, YES
-    );
-}
-
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 
@@ -927,7 +978,7 @@ static void updateCPU() {
             if (type == 1) sbcpuChargeTempReduce = value;
             if (type == 2) sbcpuChargeTempPause = value;
             if (type == 3) sbcpuChargeTempStop = value;
-            [self savePreferencesAndNotify];
+            SavePreferencesAndNotify();
             [self.tableView reloadData];
         };
         [self.navigationController pushViewController:vc animated:YES];
@@ -983,7 +1034,7 @@ static void updateCPU() {
 
 - (void)changeSmartCharge:(UISwitch *)sw {
     sbcpuSmartChargeEnable = sw.isOn;
-    [self savePreferencesAndNotify];
+    SavePreferencesAndNotify();
 }
 @end
 
@@ -1012,14 +1063,14 @@ static void registerV160Observers() {
         NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
 
         [nc addObserverForName:UIDeviceOrientationDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
-            if (cpuWindow && containerView) {
-                CGRect f = containerView.frame;
+            if (cpuWindow && floatingView) {
+                CGRect f = floatingView.frame;
                 CGSize s = cpuWindow.bounds.size;
                 if (CGRectGetMaxX(f) > s.width) f.origin.x = s.width - f.size.width - 10;
                 if (CGRectGetMaxY(f) > s.height) f.origin.y = s.height - f.size.height - 10;
                 if (f.origin.x < 0) f.origin.x = 10;
                 if (f.origin.y < 0) f.origin.y = 10;
-                containerView.frame = f;
+                floatingView.frame = f;
                 if (cpuDragView) cpuDragView.frame = f;
             }
         }];
@@ -1027,19 +1078,16 @@ static void registerV160Observers() {
 }
 
 // ============================================================================
-#pragma mark - 构造函数 (%ctor)
+#pragma mark - 入口 (%ctor)
 // ============================================================================
 
 %ctor {
     NSString *processName = [NSProcessInfo processInfo].processName;
 
-    // 1. 如果注入在 powerd 进程：运行后台精准断充 Hook 引擎
     if ([processName isEqualToString:@"powerd"]) {
         %init(PowerdHooks);
-        
         LoadPreferences();
-        
-        // 监听来自 SpringBoard 设置改动的 Darwin 通知
+
         CFNotificationCenterAddObserver(
             CFNotificationCenterGetDarwinNotifyCenter(),
             NULL,
@@ -1049,14 +1097,12 @@ static void registerV160Observers() {
             CFNotificationSuspensionBehaviorCoalesce
         );
 
-        // 每 2 秒轮询监测电池温度并驱动断充
         [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:YES block:^(NSTimer *timer) {
             powerdCheckTemperatureAndControl();
         }];
         return;
     }
 
-    // 2. 如果注入在 SpringBoard 进程：运行悬浮窗与 UI 控制面板
     if ([processName isEqualToString:@"SpringBoard"]) {
         LoadPreferences();
 
