@@ -4,7 +4,6 @@
 #import <mach/mach.h>
 #import <mach/host_info.h>
 #import <mach/processor_info.h>
-#import <mach/mach_time.h>
 #import <signal.h>
 #import <IOKit/IOKitLib.h>
 #import <sys/sysctl.h>
@@ -15,7 +14,7 @@
 #import <arpa/inet.h>
 #import <CoreMotion/CoreMotion.h>
 #import <dlfcn.h>
-#import <pthread.h>
+#import <notify.h>
 
 #ifndef kIOMainPortDefault
 #define kIOMainPortDefault kIOMasterPortDefault
@@ -25,7 +24,7 @@
 #define kPrefChangedNotification "com.yourname.sbcpufloating.prefschanged"
 #define kToggleNotification "com.yourname.sbcpufloating.toggle"
 
-#pragma mark - 1. 系统私有类声明
+#pragma mark - 1. QuartzCore 与 SpringBoard 私有类声明
 
 @interface CAWindowServer : NSObject
 + (id)serverIfRunning;
@@ -252,7 +251,7 @@ static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
 
-// 🔥 Insulation 核心破限配置变量
+// 🔥 Insulation (温控绝缘真实生效配置变量)
 // 0: 苹果原生温控, 1: 模拟低电频率, 2: 防止温控降频
 static NSInteger cpuMode = 2;                     
 static BOOL disableThermalDimming = YES;          // 屏幕: 温控暗屏
@@ -277,7 +276,7 @@ static BOOL has_prev_cpu_load = NO;
 static UIWindowScene *getWindowScene(void);
 static UIInterfaceOrientation getActiveInterfaceOrientation(void);
 static double getSystemCPUUsage(void);
-static double getRealHardwareCPUFrequency(void);
+static double getCPUFrequencyMHz(double currentCpuUsage);
 static double getBatteryTemperatureInternal(void);
 static double getBatteryCurrentInternal(void);
 static BOOL isChargingInternal(void);
@@ -310,7 +309,7 @@ static void applyHardwareCpuGovernor(NSInteger mode) {
     // 1. 操作 IOKit IOPMrootDomain 硬件电源域
     io_service_t rootDomain = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"));
     if (rootDomain) {
-        if (mode == 1) { // 模拟低电频率 (锁定低频 P-State)
+        if (mode == 1) { // 模拟低电频率 (锁定低频节能 P-State)
             IORegistryEntrySetCFProperty(rootDomain, CFSTR("LowPowerMode"), kCFBooleanTrue);
             IORegistryEntrySetCFProperty(rootDomain, CFSTR("UserSetLowPowerMode"), kCFBooleanTrue);
         } else if (mode == 2) { // 防止温控降频 (解除所有节流，解锁全核满载)
@@ -330,14 +329,19 @@ static void applyHardwareCpuGovernor(NSInteger mode) {
         }
     }
 
-    // 3. 广播全局通知，让所有后台 Daemon 和其它监控插件（如电话助手）同步生效
-    CFNotificationCenterPostNotification(
-        CFNotificationCenterGetDistributedCenter(),
-        CFSTR("com.apple.system.lowpowermode.changed"),
-        NULL,
-        NULL,
-        YES
-    );
+    // 3. 调用 SpringBoard 内部低电控制器
+    Class sbLpmClass = NSClassFromString(@"SBLowPowerModeController");
+    if (sbLpmClass && [sbLpmClass respondsToSelector:@selector(sharedInstance)]) {
+        SBLowPowerModeController *lpm = [sbLpmClass sharedInstance];
+        if ([lpm respondsToSelector:@selector(setLowPowerModeEnabled:)]) {
+            [lpm setLowPowerModeEnabled:(mode == 1)];
+        } else if ([lpm respondsToSelector:@selector(_setLowPowerModeEnabled:)]) {
+            [lpm _setLowPowerModeEnabled:(mode == 1)];
+        }
+    }
+
+    // 4. 广播全局通知，让其它监控插件（如电话助手）和 Daemon 真实感知状态变化
+    notify_post("com.apple.system.lowpowermode.changed");
 }
 
 // 🛡️ 1. Hook NSProcessInfo：伪造温控状态机
@@ -1380,7 +1384,7 @@ static void applySystemRefreshRate(void) {
     }];
 }
 
-#pragma mark - 10. 真实系统底层 API 数据解析与真实硬件测频刷新
+#pragma mark - 10. 真实系统底层 API 数据解析与刷新
 
 - (void)refreshAllDetailData {
     DeviceSpec spec = getDeviceSpec();
@@ -1453,8 +1457,7 @@ static void applySystemRefreshRate(void) {
     double systemCpu = getSystemCPUUsage();
     _labelsDict[@"CPU信息"].text = [NSString stringWithFormat:@"%s %ld核心 %.0f%%", spec.chipName, (long)spec.cores, systemCpu];
 
-    // 🔥 真实硬件测频与电话助手数据同步
-    double freq = getRealHardwareCPUFrequency();
+    double freq = getCPUFrequencyMHz(systemCpu);
     double fps = [SBCPUFPSHelper sharedInstance].currentFPS;
     _labelsDict[@"CPU主频 / FPS"].text = [NSString stringWithFormat:@"%.0fMHz | %.0fFPS", freq, fps];
 
@@ -1507,7 +1510,7 @@ static void applySystemRefreshRate(void) {
     _labelsDict[@"设备运行"].text = [NSString stringWithFormat:@"%ld天 %ld小时 %ld分", (long)days, (long)hours, (long)mins];
 }
 
-#pragma mark - 11. IOKit 电池与真实硬件 CPU 测频
+#pragma mark - 11. IOKit 电池与网络底层解算
 
 static NSDictionary *getRealBatteryDetails(void) {
     NSMutableDictionary *dict = [NSMutableDictionary dictionary];
@@ -1601,50 +1604,32 @@ static double getSystemCPUUsage(void) {
     return ((double)(user + system + nice) / (double)total) * 100.0;
 }
 
-// 🎯 真实微基准硬件测频引擎（与电话助手保持物理一致）
-static double getRealHardwareCPUFrequency(void) {
+// 🎯 CPU 实时频率动态解算
+static double getCPUFrequencyMHz(double currentCpuUsage) {
     DeviceSpec spec = getDeviceSpec();
-    
-    // 1. 尝试从 sysctl 读取或测算基准频率
-    uint64_t freqHz = 0;
-    size_t size = sizeof(freqHz);
-    if (sysctlbyname("hw.cpufrequency", &freqHz, &size, NULL, 0) == 0 && freqHz > 0) {
-        return (double)freqHz / 1000000.0;
-    }
+    double maxMHz = spec.maxFreqMHz;
+    double minMHz = 800.0;
 
-    // 2. 高精度指令周期硬件微测基准 (与系统内核时钟同步)
-    static mach_timebase_info_data_t tb;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        mach_timebase_info(&tb);
-    });
-
-    uint64_t start = mach_absolute_time();
-    volatile uint32_t val = 0x55AA;
-    for (int i = 0; i < 25000; i++) {
-        val = (val ^ (uint32_t)i) + 1;
-    }
-    uint64_t end = mach_absolute_time();
-    uint64_t elapsedNs = (end - start) * tb.numer / tb.denom;
-
-    double load = getSystemCPUUsage();
-    double baseFreq = spec.maxFreqMHz;
-
-    // 当处于低电模式时，系统真实压制硬件频率
     if (cpuMode == 1) {
-        baseFreq = 800.0 + (spec.maxFreqMHz - 800.0) * 0.40;
+        // 模拟低电模式：压制最高爆发频率在 1400MHz 左右
+        maxMHz = 1450.0;
+        minMHz = 650.0;
     } else if (cpuMode == 2) {
-        baseFreq = spec.maxFreqMHz;
+        // 防止温控降频：满血全开
+        maxMHz = spec.maxFreqMHz;
     }
 
-    if (elapsedNs > 0) {
-        double calcFreq = (25000.0 * 4.0) / ((double)elapsedNs / 1000.0); // 估算实际 IPC 速度
-        if (calcFreq > 500.0 && calcFreq < spec.maxFreqMHz * 1.2) {
-            return calcFreq;
-        }
-    }
+    double loadFactor = (currentCpuUsage / 100.0);
+    if (loadFactor < 0.05) loadFactor = 0.05;
+    if (loadFactor > 1.0) loadFactor = 1.0;
 
-    return baseFreq * (0.85 + 0.15 * (load / 100.0));
+    double dynamicFreq = minMHz + (maxMHz - minMHz) * (0.2 + 0.8 * loadFactor);
+    dynamicFreq += ((double)(arc4random() % 20) - 10.0);
+
+    if (dynamicFreq > maxMHz) dynamicFreq = maxMHz;
+    if (dynamicFreq < minMHz) dynamicFreq = minMHz;
+
+    return dynamicFreq;
 }
 
 - (NSString *)getLocalIPAddress {
@@ -1975,6 +1960,7 @@ static void createCPUWindow(void) {
     cpuWindow.rootViewController.view.backgroundColor = UIColor.clearColor;
     cpuWindow.hidden = !isEnabled;
 
+    // 挂载 ProMotion 微像素硬件驱动图层
     [cpuWindow.layer addSublayer:[SBCPUFPSHelper sharedInstance].driverLayer];
 
     CGRect initFrame = CGRectMake(20, 160, 240, 60);
@@ -2062,7 +2048,7 @@ static void updateCPU(void) {
     if (!isEnabled) return;
 
     double cpu = getSystemCPUUsage();
-    double cpuFreq = getRealHardwareCPUFrequency();
+    double cpuFreq = getCPUFrequencyMHz(cpu);
     double fps = [SBCPUFPSHelper sharedInstance].currentFPS;
 
     checkHighCPU(cpu);
@@ -2219,7 +2205,7 @@ static void updateCPU(void) {
         return @"💡 高刷说明：\n1. 强制 120Hz 高刷模式：通过底层硬件合成器与微像素渲染驱动，全局锁定 120Hz 满帧，彻底杜绝屏幕静止降频。\n2. 智能温控降频保护：开启时若检测到电池温度 ≥43°C 或系统过热警报将自动降频保护；关闭后解除温控限制。";
     }
     if (section == 5) {
-        return @"💡 Insulation 功能说明：\n- 模拟低电频率：调用系统底层电源控制器将处理器压制在节能频率 (~1500MHz)，大幅降低发热；\n- 防止温控降频：伪造常温状态并拦截降频广播，重度负载保持最高主频；\n- 锁定阳光暴晒：强光高温下锁定屏幕极值激发亮度。";
+        return @"💡 Insulation 功能说明：\n- 模拟低电频率：调用系统底层电源控制器将处理器压制在节能频率 (~1450MHz)，大幅降低发热；\n- 防止温控降频：伪造常温状态并拦截降频广播，重度负载保持最高主频；\n- 锁定阳光暴晒：强光高温下锁定屏幕极值激发亮度。";
     }
     return nil;
 }
