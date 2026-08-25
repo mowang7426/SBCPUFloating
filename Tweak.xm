@@ -61,7 +61,7 @@ static DeviceSpec getDeviceSpec(void) {
     return (DeviceSpec){machine, "iPhone", "Apple Silicon", activeCores, 3460.0, 4000};
 }
 
-#pragma mark - 2. 前置声明与类定义
+#pragma mark - 2. 前置声明
 
 @interface SpringBoard : UIApplication
 - (UIInterfaceOrientation)activeInterfaceOrientation;
@@ -162,7 +162,7 @@ static UIWindow *cpuWindow = nil;
 static SBCPUFloatingView *floatingView = nil;
 static SBCPUDetailViewController *detailVC = nil;
 
-static BOOL isEnabled = YES; 
+static BOOL isEnabled = YES; // 全局开关
 static CGFloat floatingScale = 1.0;
 static CGFloat floatingFontSize = 13.0;
 
@@ -189,8 +189,8 @@ static BOOL rememberPositionEnable = YES;
 
 static BOOL showCpuFrequency = YES;
 static BOOL showFps = YES;                       // 📊 显示 FPS 帧率开关
-static BOOL force120HzEnable = NO;               // 🎮 强制 120Hz 高刷模式
-static BOOL thermalProtectionEnable = YES;       // 🛡️ 智能温控降频保护开关（可关闭解除限制）
+static BOOL force120HzEnable = NO;               // 🎮 强制 120Hz 高刷
+static BOOL thermalProtectionEnable = YES;       // 🛡️ 智能温控降频保护开关（可关闭以解除限制）
 
 static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
@@ -276,7 +276,6 @@ static void createCPUWindow(void);
     if (!_displayLink) return;
 
     BOOL shouldThrottle = NO;
-    // 仅当开启“智能温控降频保护”时才检测硬件发热
     if (thermalProtectionEnable) {
         if (@available(iOS 11.0, *)) {
             NSProcessInfoThermalState state = [NSProcessInfo processInfo].thermalState;
@@ -290,7 +289,6 @@ static void createCPUWindow(void);
         }
     }
 
-    // 若未触发温控限制（或温控已被用户手动关闭），且开启了高刷模式，则强制锁 120Hz
     BOOL applyHighRefresh = force120HzEnable && !shouldThrottle;
 
     if (@available(iOS 15.0, *)) {
@@ -309,7 +307,7 @@ static void createCPUWindow(void);
     }
     _frameCount++;
     CFTimeInterval delta = link.timestamp - _lastTimestamp;
-    if (delta >= 0.5) { // 每 0.5 秒更新计算一次 FPS
+    if (delta >= 0.5) {
         self.currentFPS = (double)_frameCount / delta;
         _frameCount = 0;
         _lastTimestamp = link.timestamp;
@@ -1761,7 +1759,7 @@ static void updateCPU(void) {
 
 #pragma mark - 10. 设置级联控制器选择器实现
 
-@implementation SBCPUValuePickerController
+@implementation SBCCPUValuePickerController
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { 
     (void)tableView;
     (void)section;
@@ -1849,7 +1847,7 @@ static void updateCPU(void) {
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { 
     (void)tableView;
-    return 6; // 保留全部 6 个设置分组
+    return 6; 
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
@@ -1857,9 +1855,9 @@ static void updateCPU(void) {
     if (section == 0) return 2; // 📱 智能缩进与侧边吸附
     if (section == 1) return 3; // ⚡ 自动控制与防护
     if (section == 2) return 4; // 🔲 悬浮窗外观
-    if (section == 3) return 3; // 🧠 智能选项 (已恢复: 键盘避让, 智能吸附, 吸附模式)
-    if (section == 4) return 2; // 🎮 性能与高刷锁定 (新功能: 强制 120Hz, 智能温控降频保护)
-    return 7;                   // 📍 位置与显示 (已恢复: 全局开关, 记忆位置, CPU频率, FPS, 电量, 温度, 电流)
+    if (section == 3) return 3; // 🧠 智能选项 (键盘避让, 智能吸附, 吸附模式)
+    if (section == 4) return 2; // 🎮 性能与高刷锁定 (强制 120Hz, 智能温控降频保护)
+    return 7;                   // 📍 位置与显示 (全局开关, 记忆位置, CPU频率, FPS, 电量, 温度, 电流)
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
@@ -1944,7 +1942,7 @@ static void updateCPU(void) {
             cell.accessoryView = slider;
             cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0fpt", floatingFontSize];
         }
-    } else if (indexPath.section == 3) { // 已完整还原智能选项分组
+    } else if (indexPath.section == 3) {
         if (indexPath.row == 0) {
             cell.textLabel.text = @"键盘避让";
             UISwitch *sw = [UISwitch new];
@@ -1963,7 +1961,7 @@ static void updateCPU(void) {
             cell.detailTextLabel.text = (dockMode >= 0 && dockMode < modes.count) ? modes[dockMode] : @"自动";
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         }
-    } else if (indexPath.section == 4) { // 新增性能与高刷分组
+    } else if (indexPath.section == 4) {
         if (indexPath.row == 0) {
             cell.textLabel.text = @"强制 120Hz 高刷模式";
             UISwitch *sw = [UISwitch new];
@@ -1977,7 +1975,7 @@ static void updateCPU(void) {
             [sw addTarget:self action:@selector(changeThermalProtection:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
         }
-    } else if (indexPath.section == 5) { // 完整位置与显示分组
+    } else if (indexPath.section == 5) {
         if (indexPath.row == 0) {
             cell.textLabel.text = @"全局启用悬浮窗";
             UISwitch *sw = [UISwitch new];
@@ -2127,6 +2125,16 @@ static void updateCPU(void) {
 
 #pragma mark - 12. 通知监听与 Tweak 入口 (%ctor)
 
+// 定义符合 C 语言标准签名的通知回调函数，避免 ARC 下将 Block 强转函数指针导致的编译报错
+static void onCCNotificationReceived(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
+    (void)center;
+    (void)observer;
+    (void)name;
+    (void)object;
+    (void)userInfo;
+    LoadPreferences();
+}
+
 static void registerV160Observers(void) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
@@ -2169,13 +2177,11 @@ static void registerV160Observers(void) {
             }
         }];
 
-        // 监听 CCSupport 控制中心开关通知
+        // 使用标准的 C 函数指针注册控制中心 Darwin 广播
         CFNotificationCenterAddObserver(
             CFNotificationCenterGetDarwinNotifyCenter(),
             NULL,
-            (CFNotificationCallback)^(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
-                LoadPreferences();
-            },
+            onCCNotificationReceived,
             CFSTR(kToggleNotification),
             NULL,
             CFNotificationSuspensionBehaviorDeliverImmediately
