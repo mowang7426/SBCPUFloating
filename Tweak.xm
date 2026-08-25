@@ -3,9 +3,9 @@
 #pragma clang diagnostic ignored "-Wunguarded-availability-new"
 #pragma clang diagnostic ignored "-Wunguarded-availability"
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#pragma clang diagnostic ignored "-Wmodules-import-nested-in-extern-c"
 #pragma clang diagnostic ignored "-Wunused-variable"
 #pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wunknown-warning-option"
 
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
@@ -28,7 +28,7 @@
 #define kPrefChangedNotification "com.yourname.sbcpufloating.prefschanged"
 #define kToggleNotification "com.yourname.sbcpufloating.toggle"
 
-#pragma mark - 1. IOKit 纯净接口声明 (避免 Theos 头文件模块化冲突)
+#pragma mark - 1. IOKit 纯净 C 接口声明 (杜绝 Theos IOKitLib 符号冲突)
 
 typedef mach_port_t io_object_t;
 typedef io_object_t io_service_t;
@@ -48,25 +48,7 @@ extern kern_return_t IORegistryEntryCreateCFProperties(io_registry_entry_t entry
 extern kern_return_t IORegistryEntrySetCFProperty(io_registry_entry_t entry, CFStringRef key, CFTypeRef property);
 extern kern_return_t IOObjectRelease(io_object_t object);
 
-#pragma mark - 2. CAFrameRateRange 跨版本兼容宏
-
-#ifndef CAFrameRateRangeMake
-typedef struct {
-    float minimum;
-    float maximum;
-    float preferred;
-} CAFrameRateRange;
-
-static inline CAFrameRateRange CAFrameRateRangeMake(float minimum, float maximum, float preferred) {
-    CAFrameRateRange range;
-    range.minimum = minimum;
-    range.maximum = maximum;
-    range.preferred = preferred;
-    return range;
-}
-#endif
-
-#pragma mark - 3. 系统与私有类声明
+#pragma mark - 2. 系统与私有类声明
 
 @interface CAWindowServer : NSObject
 + (id)serverIfRunning;
@@ -119,7 +101,7 @@ static inline CAFrameRateRange CAFrameRateRangeMake(float minimum, float maximum
 - (BOOL)shouldShowInEmergencyCall;
 @end
 
-#pragma mark - 4. 设备规格与 SoC 识别数据结构
+#pragma mark - 3. 设备规格与 SoC 识别数据结构
 
 typedef struct {
     const char *platform;
@@ -158,7 +140,7 @@ static DeviceSpec getDeviceSpec(void) {
     return (DeviceSpec){machine, "iPhone", "Apple Silicon", activeCores, 3460.0, 4000};
 }
 
-#pragma mark - 5. 类接口前置声明
+#pragma mark - 4. 类接口前置声明
 
 @class SBCPUDetailViewController;
 
@@ -191,7 +173,7 @@ static DeviceSpec getDeviceSpec(void) {
 @property (nonatomic, strong) UILabel *currentSubLabel;
 
 @property (nonatomic, strong) UIView *bottomCapsule;
-@property (nonatomic, strong) UIView *batteryProgressView;
+@property (nonatomic, strong) UIView *batteryProgressView; // 🔋 充电进度条
 @property (nonatomic, strong) UILabel *statusLabel;
 
 @property (nonatomic, strong) UIView *collapsedContainerView;
@@ -250,7 +232,7 @@ static DeviceSpec getDeviceSpec(void) {
 - (void)refreshAllDetailData;
 @end
 
-#pragma mark - 6. 全局状态变量与配置定义
+#pragma mark - 5. 全局状态变量与配置定义
 
 static UIWindow *cpuWindow = nil;
 static SBCPUFloatingView *floatingView = nil;
@@ -282,15 +264,15 @@ static NSInteger dockMode = 0;
 static BOOL rememberPositionEnable = YES;
 
 static BOOL showCpuFrequency = YES;
-static BOOL showFps = YES;
-static BOOL force120HzEnable = NO;
-static BOOL thermalProtectionEnable = YES;
+static BOOL showFps = YES;                       // 📊 显示 FPS 帧率开关
+static BOOL force120HzEnable = NO;               // 🎮 强制 120Hz 高刷模式
+static BOOL thermalProtectionEnable = YES;       // 🛡️ 智能温控降频保护开关
 
 static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
 
-// 🔥 Insulation (温控绝缘) 5大核心变量
+// 🔥 Insulation (温控绝缘) 5大真实生效破限变量 🔥
 // 0: 苹果原生温控, 1: 模拟低电频率, 2: 防止温控降频
 static NSInteger cpuMode = 2;                     
 static BOOL disableThermalDimming = YES;          // 屏幕: 温控暗屏
@@ -335,50 +317,7 @@ static BOOL isDeviceOverheated(void);
 static void applySystemRefreshRate(void);
 static void applyHardwareCpuGovernor(NSInteger mode);
 
-#pragma mark - 7. 🔥 thermalmonitord 与 SpringBoard 双进程 Hook 组 🔥
-
-%group ThermalMonitorHooks
-
-%hook ContextAwareMitigationManager
-- (int)currentMitigationLevel {
-    if (cpuMode == 2) return 0; // 防止温控降频
-    if (cpuMode == 1) return 1; // 模拟低电频率
-    return %orig;
-}
-- (BOOL)isLowPowerModeActive {
-    if (cpuMode == 1) return YES;
-    if (cpuMode == 2) return NO;
-    return %orig;
-}
-%end
-
-%hook ComponentControl
-- (int)calculateMitigationLevel {
-    if (cpuMode == 2) return 0;
-    if (cpuMode == 1) return 1;
-    return %orig;
-}
-- (BOOL)isInPocket {
-    if (disablePocketThermal) return NO;
-    return %orig;
-}
-- (BOOL)isInSunlight {
-    if (lockSunlightExposure) return YES;
-    return %orig;
-}
-%end
-
-%hook CPUPowerControl
-- (int)getMitigationLevel {
-    if (cpuMode == 2) return 0;
-    if (cpuMode == 1) return 1;
-    return %orig;
-}
-%end
-
-%end // ThermalMonitorHooks
-
-%group SpringBoardHooks
+#pragma mark - 6. 🔥 系统温控与调频 Hook 组 🔥
 
 %hook NSProcessInfo
 - (NSProcessInfoThermalState)thermalState {
@@ -462,9 +401,7 @@ static void applyHardwareCpuGovernor(NSInteger mode);
 }
 %end
 
-%end // SpringBoardHooks
-
-#pragma mark - 8. 系统调频下发引擎
+#pragma mark - 7. 真实系统级 CPU 调频与能耗调度
 
 static void applyHardwareCpuGovernor(NSInteger mode) {
     static dispatch_once_t onceToken;
@@ -473,6 +410,7 @@ static void applyHardwareCpuGovernor(NSInteger mode) {
         dlopen("/System/Library/PrivateFrameworks/BatterySaver.framework/BatterySaver", RTLD_NOW);
     });
 
+    // 1. 设置 IOPMrootDomain 硬件电源域
     io_service_t rootDomain = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"));
     if (rootDomain) {
         if (mode == 1) {
@@ -486,6 +424,7 @@ static void applyHardwareCpuGovernor(NSInteger mode) {
         IOObjectRelease(rootDomain);
     }
 
+    // 2. 调用 _CDBatterySaver
     Class cdSaverClass = NSClassFromString(@"_CDBatterySaver");
     if (cdSaverClass && [cdSaverClass respondsToSelector:@selector(batterySaver)]) {
         _CDBatterySaver *saver = [cdSaverClass batterySaver];
@@ -494,6 +433,7 @@ static void applyHardwareCpuGovernor(NSInteger mode) {
         }
     }
 
+    // 3. 联动 SpringBoard 低电控制器
     Class sbLpmClass = NSClassFromString(@"SBLowPowerModeController");
     if (sbLpmClass && [sbLpmClass respondsToSelector:@selector(sharedInstance)]) {
         SBLowPowerModeController *lpm = [sbLpmClass sharedInstance];
@@ -504,6 +444,7 @@ static void applyHardwareCpuGovernor(NSInteger mode) {
         }
     }
 
+    // 4. 广播 Darwin 通知
     notify_post("com.apple.system.lowpowermode.changed");
 }
 
@@ -517,7 +458,7 @@ static BOOL isDeviceOverheated(void) {
     return (temp >= 43.0);
 }
 
-#pragma mark - 9. CADisplayLink 帧率监控与 ProMotion 微驱动
+#pragma mark - 8. CADisplayLink 帧率监控与 ProMotion 微驱动
 
 @interface SBCPUFPSHelper : NSObject
 + (instancetype)sharedInstance;
@@ -647,7 +588,7 @@ static void applySystemRefreshRate(void) {
     [[SBCPUFPSHelper sharedInstance] updateFrameRate];
 }
 
-#pragma mark - 10. 悬浮窗控件实现 (SBCPUFloatingView)
+#pragma mark - 9. SBCPUFloatingView 悬浮窗控件实现
 
 @implementation SBCPUFloatingView
 
@@ -806,6 +747,7 @@ static void applySystemRefreshRate(void) {
         _currentSubLabel.font = [UIFont systemFontOfSize:8.5f weight:UIFontWeightMedium];
         [content addSubview:_currentSubLabel];
 
+        // 充电状态胶囊背景容器
         _bottomCapsule = [[UIView alloc] init];
         _bottomCapsule.backgroundColor = [UIColor colorWithWhite:1.0f alpha:0.10f];
         _bottomCapsule.layer.cornerRadius = 10.0f;
@@ -814,11 +756,13 @@ static void applySystemRefreshRate(void) {
         _bottomCapsule.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.12f].CGColor;
         [content addSubview:_bottomCapsule];
 
+        // 🔋 与电量严格同步的绿色进度指示条
         _batteryProgressView = [[UIView alloc] init];
         _batteryProgressView.backgroundColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:0.32f];
         _batteryProgressView.layer.cornerRadius = 10.0f;
         [_bottomCapsule addSubview:_batteryProgressView];
 
+        // 充电状态文字（悬浮在进度条上层）
         _statusLabel = [[UILabel alloc] init];
         _statusLabel.textColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
         _statusLabel.font = [UIFont systemFontOfSize:10 weight:UIFontWeightMedium];
@@ -955,7 +899,10 @@ static void applySystemRefreshRate(void) {
 }
 
 - (void)expandFromEdgeAnimated:(BOOL)animated {
-    if (!_isCollapsed) { [self resetInactivityTimer]; return; }
+    if (!_isCollapsed) {
+        [self resetInactivityTimer];
+        return;
+    }
     _isCollapsed = NO;
 
     BOOL charging = isChargingInternal();
@@ -1100,7 +1047,7 @@ static void applySystemRefreshRate(void) {
     }
 }
 
-- (BOOL)gestureRecognizer:(UIGestureRecognizer *)g1 shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)g2 {
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
     return YES;
 }
 
@@ -1303,7 +1250,7 @@ static void applySystemRefreshRate(void) {
 
 @end
 
-#pragma mark - 11. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
+#pragma mark - 10. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
 
 @implementation SBCPUDetailViewController
 
@@ -1423,7 +1370,7 @@ static void applySystemRefreshRate(void) {
     }];
 }
 
-#pragma mark - 12. 真实系统底层 API 数据解析刷新
+#pragma mark - 11. 真实系统底层 API 数据解析刷新
 
 - (void)refreshAllDetailData {
     DeviceSpec spec = getDeviceSpec();
@@ -1549,7 +1496,7 @@ static void applySystemRefreshRate(void) {
     _labelsDict[@"设备运行"].text = [NSString stringWithFormat:@"%ld天 %ld小时 %ld分", (long)days, (long)hours, (long)mins];
 }
 
-#pragma mark - 13. IOKit 电池与网络底层解算
+#pragma mark - 12. IOKit 电池与网络底层解算
 
 static NSDictionary *getRealBatteryDetails(void) {
     NSMutableDictionary *dict = [NSMutableDictionary dictionary];
@@ -1730,7 +1677,7 @@ static double getCPUFrequencyMHz(double currentCpuUsage) {
 
 @end
 
-#pragma mark - 14. 视图穿透与 Window 容器
+#pragma mark - 13. 视图穿透与 Window 容器
 
 @implementation SBCPUPassthroughView
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
@@ -1774,7 +1721,7 @@ static double getCPUFrequencyMHz(double currentCpuUsage) {
 }
 @end
 
-#pragma mark - 15. 逻辑控制与辅助函数
+#pragma mark - 14. 逻辑控制与辅助函数
 
 static UIWindowScene *getWindowScene(void) {
     if (cpuWindow && cpuWindow.windowScene) return cpuWindow.windowScene;
@@ -2119,7 +2066,7 @@ static void updateCPU(void) {
     });
 }
 
-#pragma mark - 16. 设置级联控制器选择器实现
+#pragma mark - 15. 设置级联控制器选择器实现
 
 @implementation SBCPUValuePickerController
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { 
@@ -2189,7 +2136,7 @@ static void updateCPU(void) {
 }
 @end
 
-#pragma mark - 17. 完整设置控制器实现（包含原生 UIMenu 与全部 7 大设置分组）
+#pragma mark - 16. 完整设置控制器实现（包含全部 7 大设置分组与原生 UIMenu）
 
 @implementation SBCPUSettingsController
 
@@ -2209,7 +2156,7 @@ static void updateCPU(void) {
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { 
     (void)tableView;
-    return 7; // 包含 0~6 全部 7 个完整分区
+    return 7; 
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
@@ -2219,7 +2166,7 @@ static void updateCPU(void) {
     if (section == 2) return 4; // 🔲 悬浮窗外观
     if (section == 3) return 3; // 🧠 智能选项
     if (section == 4) return 2; // 🎮 性能与高刷锁定
-    if (section == 5) return 5; // 🛡️ INSULATION (温控绝缘真实破限)
+    if (section == 5) return 5; // 🛡️ INSULATION (温控绝缘)
     return 7;                   // 📍 位置与显示
 }
 
@@ -2594,7 +2541,7 @@ static void updateCPU(void) {
 
 @end
 
-#pragma mark - 18. 通知监听与 Tweak 入口 (%ctor)
+#pragma mark - 17. 通知监听与 Tweak 入口 (%ctor)
 
 static void onCCNotificationReceived(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
     (void)center;
@@ -2660,10 +2607,9 @@ static void registerV160Observers(void) {
 
 %ctor {
     NSString *processName = [NSProcessInfo processInfo].processName;
-    LoadPreferences();
-
     if ([processName isEqualToString:@"SpringBoard"]) {
-        %init(SpringBoardHooks);
+        LoadPreferences();
+
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             createCPUWindow();
             registerV160Observers();
@@ -2672,8 +2618,6 @@ static void registerV160Observers(void) {
                 updateCPU();
             }];
         });
-    } else if ([processName isEqualToString:@"thermalmonitord"]) {
-        %init(ThermalMonitorHooks);
     }
 }
 
