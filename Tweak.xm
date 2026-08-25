@@ -13,9 +13,13 @@
 #define kPlistPath @"/var/mobile/Library/Preferences/com.yourname.sbcpufloating.plist"
 #define kPrefChangedNotification "com.yourname.sbcpufloating.prefschanged"
 
-#pragma mark - 1. 前置 Interface 声明 (避免 Clang 编译报错)
+#pragma mark - 1. SpringBoard 与 Interface 前置声明
 
-// 悬浮窗主视图 (内建原生 Pan 拖拽与 Tap 双击手势)
+@interface SpringBoard : UIApplication
+- (UIInterfaceOrientation)activeInterfaceOrientation;
+@end
+
+// 悬浮窗主视图
 @interface SBCPUFloatingView : UIView <UIGestureRecognizerDelegate>
 @property (nonatomic, assign) CGPoint lastPoint;
 @property (nonatomic, strong) UIVisualEffectView *blurView;
@@ -69,15 +73,12 @@
                isCharging:(BOOL)isCharging;
 @end
 
-// 悬浮窗穿透背景容器 View
 @interface SBCPUPassthroughView : UIView
 @end
 
-// 横屏游戏旋转控制器
 @interface SBCPURootViewController : UIViewController
 @end
 
-// 可穿透全屏 Window
 @interface SBCPUWindow : UIWindow
 @end
 
@@ -90,7 +91,7 @@
 @interface SBCPUSettingsController : UITableViewController
 @end
 
-#pragma mark - 2. 全局变量与 C 函数原型完整声明 (彻底消除 undeclared 编译报错)
+#pragma mark - 2. 全局变量与 C 函数原型完整前置声明 (彻底解决 undeclared identifier 编译报错)
 
 static UIWindow *cpuWindow = nil;
 static SBCPUFloatingView *floatingView = nil;
@@ -126,9 +127,11 @@ static BOOL showBatteryCurrent = YES;
 static CGRect keyboardBeforeFrame;
 static BOOL keyboardMoved = NO;
 
-// 完整 C 原型前置声明
+// 完整 18 个 C 函数原型前置声明，彻底消除编译报错
 static UIWindowScene *getWindowScene(void);
 static CGSize getRealScreenSize(void);
+static UIInterfaceOrientation getActiveInterfaceOrientation(void);
+static CGSize getPhysicalScreenSizeForOrientation(UIInterfaceOrientation orientation);
 static double getCPUUsage(void);
 static double getCPUFrequencyMHz(double currentCpuUsage);
 static double getBatteryTemperatureInternal(void);
@@ -145,7 +148,7 @@ static void SavePreferencesAndNotify(void);
 static void updateCPU(void);
 static void createCPUWindow(void);
 
-#pragma mark - 3. SBCPUFloatingView 悬浮窗实现 (内建流畅拖拽与双击响应)
+#pragma mark - 3. SBCPUFloatingView 悬浮窗实现
 
 @implementation SBCPUFloatingView
 
@@ -186,7 +189,7 @@ static void createCPUWindow(void);
         _blurView.layer.masksToBounds = YES;
         _blurView.layer.borderWidth = 0.75f;
         _blurView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.30f].CGColor;
-        _blurView.userInteractionEnabled = NO; // 将内部设为 NO，由宿主 View 统一透传处理手势
+        _blurView.userInteractionEnabled = NO; // 毛玻璃不拦截手势，全由宿主统一响应
         [self addSubview:_blurView];
 
         // ✨ 充电跑马灯流光图层 (围绕悬浮窗四周旋转)
@@ -308,7 +311,7 @@ static void createCPUWindow(void);
     return self;
 }
 
-#pragma mark - 手势响应函数 (拖拽平滑跟手 & 双击秒开设置)
+#pragma mark - 原生 UIPan 手势平滑跟手拖拽与双击响应
 
 - (void)handlePan:(UIPanGestureRecognizer *)pan {
     if (pan.state == UIGestureRecognizerStateBegan) {
@@ -317,7 +320,8 @@ static void createCPUWindow(void);
         CGPoint translation = [pan translationInView:self.superview];
         CGPoint targetCenter = CGPointMake(self.lastPoint.x + translation.x, self.lastPoint.y + translation.y);
 
-        CGSize size = getRealScreenSize();
+        UIInterfaceOrientation orientation = getActiveInterfaceOrientation();
+        CGSize size = getPhysicalScreenSizeForOrientation(orientation);
         CGRect realFrame = self.frame;
         CGFloat halfW = realFrame.size.width / 2.0f;
         CGFloat halfH = realFrame.size.height / 2.0f;
@@ -335,7 +339,7 @@ static void createCPUWindow(void);
         if (targetCenter.y < minY) targetCenter.y = minY;
         if (targetCenter.y > maxY) targetCenter.y = maxY;
 
-        // 关键：拖拽过程中 0 延迟实时跟手，决不使用加动画延迟，消除卡死错觉！
+        // 实时跟手移动，0 延迟
         self.center = targetCenter;
     } else if (pan.state == UIGestureRecognizerStateEnded || pan.state == UIGestureRecognizerStateCancelled) {
         if (rememberPositionEnable) {
@@ -343,7 +347,6 @@ static void createCPUWindow(void);
             [[NSUserDefaults standardUserDefaults] synchronize];
         }
 
-        // 手指松开时平滑弹簧吸附贴边
         clampAndPositionFloatingView(self.center, YES);
     }
 }
@@ -360,7 +363,7 @@ static void createCPUWindow(void);
     return YES;
 }
 
-// 插入充电器触觉弹跳动画
+// 插入充电器灵动弹跳动画
 - (void)triggerPlugAnimation {
     CAKeyframeAnimation *animation = [CAKeyframeAnimation animationWithKeyPath:@"transform.scale"];
     animation.values = @[@1.0, @1.08, @0.96, @1.02, @1.0];
@@ -549,7 +552,6 @@ static void createCPUWindow(void);
         [_marqueeLayer removeAnimationForKey:@"marqueeDashAnim"];
     }
 
-    // 同设外框 Bounds，确保点按测试极敏感精准
     self.bounds = CGRectMake(0, 0, finalW, currentY);
 }
 
@@ -578,9 +580,9 @@ static void createCPUWindow(void);
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     UIView *hitView = [super hitTest:point withEvent:event];
     if (hitView == self) {
-        return nil; // 背景区域透传给桌面与后台 App
+        return nil; // 背景触摸彻底透传给手机桌面和全屏游戏
     }
-    return hitView; // 命中悬浮窗直接接收响应
+    return hitView;
 }
 @end
 
@@ -652,18 +654,43 @@ static CGSize getRealScreenSize(void) {
     return UIScreen.mainScreen.bounds.size;
 }
 
-// 吸附算法：贴紧边缘 2pt，靠左靠右对齐
+// 精确抓取 SpringBoard 与游戏当前运行的方向
+static UIInterfaceOrientation getActiveInterfaceOrientation(void) {
+    UIApplication *app = [UIApplication sharedApplication];
+    if ([app isKindOfClass:NSClassFromString(@"SpringBoard")] && [app respondsToSelector:@selector(activeInterfaceOrientation)]) {
+        return [(SpringBoard *)app activeInterfaceOrientation];
+    }
+    UIWindowScene *scene = getWindowScene();
+    if (scene) {
+        return scene.interfaceOrientation;
+    }
+    return UIInterfaceOrientationPortrait;
+}
+
+static CGSize getPhysicalScreenSizeForOrientation(UIInterfaceOrientation orientation) {
+    CGSize sz = getRealScreenSize();
+    CGFloat w = sz.width;
+    CGFloat h = sz.height;
+    if (UIInterfaceOrientationIsLandscape(orientation)) {
+        return CGSizeMake(MAX(w, h), MIN(w, h));
+    } else {
+        return CGSizeMake(MIN(w, h), MAX(w, h));
+    }
+}
+
+// 核心吸附与对齐算法，靠左靠右 2pt 贴紧最边缘
 static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
     if (!floatingView) return;
 
-    CGSize screenSize = getRealScreenSize();
+    UIInterfaceOrientation orientation = getActiveInterfaceOrientation();
+    CGSize screenSize = getPhysicalScreenSizeForOrientation(orientation);
     CGRect realFrame = floatingView.frame;
 
     CGFloat halfW = realFrame.size.width / 2.0f;
     CGFloat halfH = realFrame.size.height / 2.0f;
 
-    CGFloat minX = halfW + 2.0f;
-    CGFloat maxX = screenSize.width - halfW - 2.0f;
+    CGFloat minX = halfW + 2.0f; // 最左边界仅留 2pt 贴合
+    CGFloat maxX = screenSize.width - halfW - 2.0f; // 最右边界仅留 2pt，零截断！
     CGFloat minY = halfH + 20.0f;
     CGFloat maxY = screenSize.height - halfH - 10.0f;
 
@@ -754,7 +781,7 @@ static void SavePreferencesAndNotify(void) {
     );
 }
 
-// 读取真实 peak MHz
+// 读取系统硬件真实最高主频 (如 3470MHz) 并在 1 秒内实时拟合跳动
 static double getCPUFrequencyMHz(double currentCpuUsage) {
     uint64_t freqMax = 0;
     size_t size = sizeof(freqMax);
@@ -844,7 +871,7 @@ static BOOL isChargingInternal(void) {
     CFTypeRef value = IORegistryEntryCreateCFProperty(service, CFSTR("IsCharging"), kCFAllocatorDefault, 0);
     BOOL charging = NO;
     if (value) {
-        if (CFGetTypeID(value) == CFBooleanGetTypeID()) charging = CFBooleanGetValue((CFBooleanRef)value);
+        if (CFGetTypeID(value) == CFBooleanGetValue((CFBooleanRef)value));
         CFRelease(value);
     }
     IOObjectRelease(service);
@@ -884,12 +911,14 @@ static void applyFloatingAlpha(void) {
     });
 }
 
+// 核心自适应引擎：根据游戏/系统的当前方向自动施加旋转并布局
 static void updateFloatingSize(void) {
     if (!floatingView) return;
 
     BOOL charging = isChargingInternal();
+    UIInterfaceOrientation orientation = getActiveInterfaceOrientation();
 
-    // 先重置 Transform 保证布局精确计算
+    // 1. 重置 Transform 确保布局尺寸计算准确
     floatingView.transform = CGAffineTransformIdentity;
 
     [floatingView updateLayoutWithShowCpuFreq:showCpuFrequency
@@ -898,10 +927,31 @@ static void updateFloatingSize(void) {
                            showBatteryCurrent:showBatteryCurrent
                                    isCharging:charging];
 
-    CGAffineTransform transform = CGAffineTransformMakeScale(floatingScale, floatingScale);
-    floatingView.transform = transform;
+    // 2. 结合 Scale 缩放与游戏方向旋转 Transform
+    CGFloat rotationAngle = 0.0;
+    switch (orientation) {
+        case UIInterfaceOrientationLandscapeLeft:
+            rotationAngle = M_PI_2;
+            break;
+        case UIInterfaceOrientationLandscapeRight:
+            rotationAngle = -M_PI_2;
+            break;
+        case UIInterfaceOrientationPortraitUpsideDown:
+            rotationAngle = M_PI;
+            break;
+        case UIInterfaceOrientationPortrait:
+        default:
+            rotationAngle = 0.0;
+            break;
+    }
 
-    // 重新贴紧边缘平滑吸附
+    CGAffineTransform scaleTransform = CGAffineTransformMakeScale(floatingScale, floatingScale);
+    CGAffineTransform rotateTransform = CGAffineTransformMakeRotation(rotationAngle);
+    CGAffineTransform finalTransform = CGAffineTransformConcat(scaleTransform, rotateTransform);
+
+    floatingView.transform = finalTransform;
+
+    // 3. 重新校准对齐吸附至当前方向下的屏幕边缘
     clampAndPositionFloatingView(floatingView.center, YES);
 }
 
@@ -981,7 +1031,7 @@ static void checkHighCPU(double cpu) {
     }
 }
 
-// 1.0 秒定时更新主频与硬件信息
+// 1.0 秒定时更新，检测到插入状态时触发触觉动画
 static void updateCPU(void) {
     double cpu = getCPUUsage();
     double cpuFreq = getCPUFrequencyMHz(cpu);
@@ -1352,3 +1402,4 @@ static void registerV160Observers(void) {
         });
     }
 }
+
