@@ -19,6 +19,9 @@ static UIWindow *cpuWindow;
 @class SBCPUDragView;
 
 static UILabel *label;
+static UIView *glassContainer;
+static UIView *glassTintView;
+static UIVisualEffectView *glassBlurView;
 static CGFloat floatingScale = 1.0;
 static CGFloat floatingFontSize = 14.0;
 static CGFloat landscapeScale = 0.75;
@@ -764,20 +767,69 @@ static void createCPUWindow()
 
 
 
+    /*
+     Liquid Glass Floating UI
+     */
+    glassContainer =
+    [[UIView alloc]
+     initWithFrame:CGRectMake(20, 200, 180, 90)];
+
+    glassContainer.layer.cornerRadius = 26;
+    glassContainer.layer.masksToBounds = YES;
+
+    UIBlurEffect *blur =
+    [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterial];
+
+    glassBlurView =
+    [[UIVisualEffectView alloc] initWithEffect:blur];
+
+    glassBlurView.frame =
+    glassContainer.bounds;
+
+    glassBlurView.layer.cornerRadius = 26;
+    glassBlurView.clipsToBounds = YES;
+
+    [glassContainer addSubview:glassBlurView];
+
+
+    glassTintView =
+    [[UIView alloc]
+     initWithFrame:glassContainer.bounds];
+
+    glassTintView.layer.cornerRadius = 26;
+    glassTintView.clipsToBounds = YES;
+
+    glassTintView.backgroundColor =
+    [[UIColor whiteColor]
+     colorWithAlphaComponent:0.08];
+
+    [glassContainer addSubview:glassTintView];
+
+
+    glassContainer.layer.borderWidth = 1.0;
+
+    glassContainer.layer.borderColor =
+    [[UIColor whiteColor]
+     colorWithAlphaComponent:0.25].CGColor;
+
+
+    glassContainer.layer.shadowColor =
+    UIColor.blackColor.CGColor;
+
+    glassContainer.layer.shadowOpacity = 0.20;
+    glassContainer.layer.shadowRadius = 20;
+    glassContainer.layer.shadowOffset = CGSizeMake(0,8);
+
+
+
     label =
     [[UILabel alloc]
      initWithFrame:
-     CGRectMake(
-        30,
-        200,
-        150,
-        85
-     )];
+     CGRectMake(15,10,150,70)];
 
 
     label.backgroundColor =
-    [[UIColor blackColor]
-     colorWithAlphaComponent:0.70];
+    UIColor.clearColor;
 
 
     label.textAlignment =
@@ -786,14 +838,6 @@ static void createCPUWindow()
 
     label.numberOfLines =
     0;
-
-
-    label.layer.cornerRadius =
-    12;
-
-
-    label.clipsToBounds =
-    YES;
 
 
     label.textColor =
@@ -818,7 +862,7 @@ static void createCPUWindow()
     cpuDragView =
     [[SBCPUDragView alloc]
      initWithFrame:
-     label.frame];
+     glassContainer.frame];
 
     SBCPUDragView *drag = cpuDragView;
 
