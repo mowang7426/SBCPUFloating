@@ -19,7 +19,7 @@
 @property (nonatomic, strong) UIVisualEffectView *blurView;
 @property (nonatomic, strong) CAShapeLayer *marqueeLayer; // 充电跑马灯流光图层
 
-// 方案二横向组件
+// 方案二组件
 @property (nonatomic, strong) UILabel *cpuTitleLabel;
 @property (nonatomic, strong) UILabel *cpuValueLabel;
 @property (nonatomic, strong) UILabel *cpuFreqLabel;
@@ -87,7 +87,7 @@
 @interface SBCPUSettingsController : UITableViewController
 @end
 
-#pragma mark - 2. 全局变量声明
+#pragma mark - 2. 全局变量与前置 C 函数声明 (彻底解决 getWindowScene 未声明报错)
 
 static UIWindow *cpuWindow = nil;
 static SBCPUFloatingView *floatingView = nil;
@@ -124,13 +124,14 @@ static BOOL showBatteryCurrent = YES;
 static CGRect keyboardBeforeFrame;
 static BOOL keyboardMoved = NO;
 
-// 前置函数声明
+// 前置 C 函数声明 (防编译报错)
+static UIWindowScene *getWindowScene(void);
+static CGSize getRealScreenSize(void);
+static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate);
 static void openSettings(void);
 static void checkHighCPU(double cpu);
 static void registerV160Observers(void);
 static void updateFloatingSize(void);
-static CGSize getRealScreenSize(void);
-static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate);
 
 #pragma mark - 3. 悬浮窗与跑马灯流光实现
 
@@ -519,8 +520,8 @@ static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate);
     CGFloat halfW = realFrame.size.width / 2.0f;
     CGFloat halfH = realFrame.size.height / 2.0f;
 
-    CGFloat minX = halfW + 2.0f; // 核心修复：允许无缝靠紧最左边 2pt 处，彻底消灭空气墙！
-    CGFloat maxX = size.width - halfW - 2.0f; // 允许无缝靠紧最右边 2pt 处
+    CGFloat minX = halfW + 2.0f; // 允许无缝靠紧最左边 2pt
+    CGFloat maxX = size.width - halfW - 2.0f; // 允许无缝靠紧最右边 2pt，零截断
     CGFloat minY = halfH + 20.0f;
     CGFloat maxY = size.height - halfH - 10.0f;
 
@@ -604,6 +605,20 @@ static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate);
 
 #pragma mark - 5. 逻辑与辅助函数
 
+static UIWindowScene *getWindowScene() {
+    if (cpuWindow && cpuWindow.windowScene) return cpuWindow.windowScene;
+    UIApplication *app = UIApplication.sharedApplication;
+    for (UIScene *scene in app.connectedScenes) {
+        if ([scene isKindOfClass:UIWindowScene.class]) {
+            UIWindowScene *ws = (UIWindowScene *)scene;
+            if (ws.activationState != UISceneActivationStateUnattached) {
+                return ws;
+            }
+        }
+    }
+    return nil;
+}
+
 static CGSize getRealScreenSize() {
     if (cpuWindow && cpuWindow.rootViewController && cpuWindow.rootViewController.view) {
         CGSize s = cpuWindow.rootViewController.view.bounds.size;
@@ -616,7 +631,7 @@ static CGSize getRealScreenSize() {
     return UIScreen.mainScreen.bounds.size;
 }
 
-// 核心修复：重算吸附边界，无论拔插充电器还是改大小，均平滑贴紧边缘！
+// 核心修复：重算吸附边界，贴紧左/右边缘 2pt，零截断零缝隙！
 static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
     if (!floatingView) return;
 
@@ -626,7 +641,7 @@ static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
     CGFloat halfW = realFrame.size.width / 2.0f;
     CGFloat halfH = realFrame.size.height / 2.0f;
 
-    CGFloat minX = halfW + 2.0f; // 最左边界（仅留 2pt）
+    CGFloat minX = halfW + 2.0f; // 最左边界（仅留 2pt 贴合）
     CGFloat maxX = screenSize.width - halfW - 2.0f; // 最右边界（仅留 2pt，零截断！）
     CGFloat minY = halfH + 20.0f;
     CGFloat maxY = screenSize.height - halfH - 10.0f;
@@ -638,9 +653,9 @@ static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
         CGFloat distLeft = targetCenter.x - halfW;
         CGFloat distRight = screenSize.width - (targetCenter.x + halfW);
 
-        if (dockMode == 1 || (dockMode == 0 && distLeft <= distRight && distLeft < 60.0f)) {
+        if (dockMode == 1 || (dockMode == 0 && distLeft <= distRight && distLeft < 80.0f)) {
             targetCenter.x = minX;
-        } else if (dockMode == 2 || (dockMode == 0 && distRight < distLeft && distRight < 60.0f)) {
+        } else if (dockMode == 2 || (dockMode == 0 && distRight < distLeft && distRight < 80.0f)) {
             targetCenter.x = maxX;
         }
     }
@@ -721,7 +736,7 @@ static void SavePreferencesAndNotify() {
     );
 }
 
-// 核心：读取系统硬件真实最高主频 (如 3460MHz / 3470MHz) 并在 1 秒内实时拟合跳动
+// 核心：读取系统硬件真实最高主频 (如 3470MHz) 并在 1 秒内实时拟合跳动
 static double getCPUFrequencyMHz(double currentCpuUsage) {
     uint64_t freqMax = 0;
     size_t size = sizeof(freqMax);
@@ -729,16 +744,19 @@ static double getCPUFrequencyMHz(double currentCpuUsage) {
         sysctlbyname("hw.cpufrequency", &freqMax, &size, NULL, 0);
     }
     
-    double maxMHz = (freqMax > 0) ? ((double)freqMax / 1000000.0) : 3460.0;
-    if (maxMHz < 1000.0) maxMHz = 3460.0;
+    double maxMHz = (freqMax > 0) ? ((double)freqMax / 1000000.0) : 3470.0;
+    if (maxMHz < 1000.0) maxMHz = 3470.0;
     
-    double minMHz = 600.0;
+    double minMHz = 800.0;
 
     double loadFactor = (currentCpuUsage / 100.0);
-    double freqFactor = 0.5 + 0.5 * sqrt(loadFactor);
+    if (loadFactor < 0.05) loadFactor = 0.05;
+    if (loadFactor > 1.0) loadFactor = 1.0;
+
+    double freqFactor = 0.3 + 0.7 * loadFactor;
     double dynamicFreq = minMHz + (maxMHz - minMHz) * freqFactor;
 
-    double jitter = ((double)(arc4random() % 30) - 15.0);
+    double jitter = ((double)(arc4random() % 40) - 20.0);
     dynamicFreq += jitter;
 
     if (dynamicFreq > maxMHz) dynamicFreq = maxMHz;
@@ -815,57 +833,13 @@ static BOOL isChargingInternal() {
     return charging;
 }
 
-static UIWindowScene *getWindowScene() {
-    if (cpuWindow && cpuWindow.windowScene) return cpuWindow.windowScene;
-    UIApplication *app = UIApplication.sharedApplication;
-    for (UIScene *scene in app.connectedScenes) {
-        if ([scene isKindOfClass:UIWindowScene.class]) {
-            UIWindowScene *ws = (UIWindowScene *)scene;
-            if (ws.activationState != UISceneActivationStateUnattached) {
-                return ws;
-            }
-        }
-    }
-    return nil;
-}
-
-static double getCPUUsage() {
-    thread_array_t threads;
-    mach_msg_type_number_t count = 0;
-
-    kern_return_t kr = task_threads(mach_task_self(), &threads, &count);
-    if (kr != KERN_SUCCESS) return 0.0;
-
-    double totalCPU = 0.0;
-
-    for (mach_msg_type_number_t i = 0; i < count; i++) {
-        thread_info_data_t info;
-        mach_msg_type_number_t infoCount = THREAD_INFO_MAX;
-
-        kr = thread_info(threads[i], THREAD_BASIC_INFO, (thread_info_t)info, &infoCount);
-        if (kr == KERN_SUCCESS) {
-            thread_basic_info_t basic = (thread_basic_info_t)info;
-            if (!(basic->flags & TH_FLAGS_IDLE)) {
-                totalCPU += ((double)basic->cpu_usage / (double)TH_USAGE_SCALE) * 100.0;
-            }
-        }
-    }
-
-    vm_deallocate(mach_task_self(), (vm_address_t)threads, count * sizeof(thread_t));
-    return totalCPU;
-}
-
-static void applyFloatingAlpha() {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (!floatingView) return;
-        floatingView.alpha = floatingAlphaEnable ? floatingAlpha : 1.0;
-    });
-}
-
 static void updateFloatingSize() {
     if (!floatingView) return;
 
     BOOL charging = isChargingInternal();
+
+    // 核心：在计算 bounds 前，先清空 transform，防止边界错位
+    floatingView.transform = CGAffineTransformIdentity;
 
     [floatingView updateLayoutWithShowCpuFreq:showCpuFrequency
                            showBatteryPercent:showBatteryPercent
@@ -874,11 +848,9 @@ static void updateFloatingSize() {
                                    isCharging:charging];
 
     CGAffineTransform transform = CGAffineTransformMakeScale(floatingScale, floatingScale);
-    if (!CGAffineTransformEqualToTransform(floatingView.transform, transform)) {
-        floatingView.transform = transform;
-    }
+    floatingView.transform = transform;
 
-    // 重新平滑贴合屏幕边缘吸附
+    // 重新校准并对齐吸附至边缘
     clampAndPositionFloatingView(floatingView.center, YES);
 }
 
@@ -968,7 +940,7 @@ static void checkHighCPU(double cpu) {
     }
 }
 
-// 1.0 秒定时刷新数据，检测到插入充电器时触发灵动动画
+// 1.0 秒定时更新，检测到插入状态时触发触觉动画
 static void updateCPU() {
     double cpu = getCPUUsage();
     double cpuFreq = getCPUFrequencyMHz(cpu);
