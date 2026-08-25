@@ -87,7 +87,7 @@
 @interface SBCPUSettingsController : UITableViewController
 @end
 
-#pragma mark - 2. 全局变量与前置 C 函数声明 (彻底解决 getWindowScene 未声明报错)
+#pragma mark - 2. 全局变量与前置 C 函数完整声明 (彻底解决 use of undeclared identifier 报错)
 
 static UIWindow *cpuWindow = nil;
 static SBCPUFloatingView *floatingView = nil;
@@ -124,14 +124,24 @@ static BOOL showBatteryCurrent = YES;
 static CGRect keyboardBeforeFrame;
 static BOOL keyboardMoved = NO;
 
-// 前置 C 函数声明 (防编译报错)
+// 核心：完整前置 C 函数原型声明，防 Clang 未声明标识符报错
 static UIWindowScene *getWindowScene(void);
 static CGSize getRealScreenSize(void);
+static double getCPUUsage(void);
+static double getCPUFrequencyMHz(double currentCpuUsage);
+static double getBatteryTemperatureInternal(void);
+static double getBatteryCurrentInternal(void);
+static BOOL isChargingInternal(void);
+static void applyFloatingAlpha(void);
+static void updateFloatingSize(void);
 static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate);
 static void openSettings(void);
 static void checkHighCPU(double cpu);
 static void registerV160Observers(void);
-static void updateFloatingSize(void);
+static void LoadPreferences(void);
+static void SavePreferencesAndNotify(void);
+static void updateCPU(void);
+static void createCPUWindow(void);
 
 #pragma mark - 3. 悬浮窗与跑马灯流光实现
 
@@ -603,9 +613,9 @@ static void updateFloatingSize(void);
 }
 @end
 
-#pragma mark - 5. 逻辑与辅助函数
+#pragma mark - 5. 逻辑与辅助函数实现
 
-static UIWindowScene *getWindowScene() {
+static UIWindowScene *getWindowScene(void) {
     if (cpuWindow && cpuWindow.windowScene) return cpuWindow.windowScene;
     UIApplication *app = UIApplication.sharedApplication;
     for (UIScene *scene in app.connectedScenes) {
@@ -619,7 +629,7 @@ static UIWindowScene *getWindowScene() {
     return nil;
 }
 
-static CGSize getRealScreenSize() {
+static CGSize getRealScreenSize(void) {
     if (cpuWindow && cpuWindow.rootViewController && cpuWindow.rootViewController.view) {
         CGSize s = cpuWindow.rootViewController.view.bounds.size;
         if (s.width > 0 && s.height > 0) return s;
@@ -631,7 +641,7 @@ static CGSize getRealScreenSize() {
     return UIScreen.mainScreen.bounds.size;
 }
 
-// 核心修复：重算吸附边界，贴紧左/右边缘 2pt，零截断零缝隙！
+// 核心：吸附与对齐算法，贴紧最左/最右 2pt，零截断零缝隙
 static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
     if (!floatingView) return;
 
@@ -641,8 +651,8 @@ static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
     CGFloat halfW = realFrame.size.width / 2.0f;
     CGFloat halfH = realFrame.size.height / 2.0f;
 
-    CGFloat minX = halfW + 2.0f; // 最左边界（仅留 2pt 贴合）
-    CGFloat maxX = screenSize.width - halfW - 2.0f; // 最右边界（仅留 2pt，零截断！）
+    CGFloat minX = halfW + 2.0f; // 最左边界仅留 2pt 贴合
+    CGFloat maxX = screenSize.width - halfW - 2.0f; // 最右边界仅留 2pt，零截断！
     CGFloat minY = halfH + 20.0f;
     CGFloat maxY = screenSize.height - halfH - 10.0f;
 
@@ -685,7 +695,7 @@ static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
     }
 }
 
-static void LoadPreferences() {
+static void LoadPreferences(void) {
     NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
     if ([def objectForKey:@"autoLogoutEnable"]) autoLogoutEnable = [def boolForKey:@"autoLogoutEnable"];
     if ([def objectForKey:@"logoutCPUThreshold"]) logoutCPUThreshold = [def doubleForKey:@"logoutCPUThreshold"];
@@ -707,7 +717,7 @@ static void LoadPreferences() {
     if ([def objectForKey:@"showBatteryCurrent"]) showBatteryCurrent = [def boolForKey:@"showBatteryCurrent"];
 }
 
-static void SavePreferencesAndNotify() {
+static void SavePreferencesAndNotify(void) {
     NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
     [def setBool:autoLogoutEnable forKey:@"autoLogoutEnable"];
     [def setDouble:logoutCPUThreshold forKey:@"logoutCPUThreshold"];
@@ -765,7 +775,7 @@ static double getCPUFrequencyMHz(double currentCpuUsage) {
     return dynamicFreq;
 }
 
-static double getBatteryTemperatureInternal() {
+static double getBatteryTemperatureInternal(void) {
     io_iterator_t iterator = 0;
     io_service_t service = IO_OBJECT_NULL;
     CFMutableDictionaryRef matching = IOServiceMatching("AppleSmartBattery");
@@ -794,7 +804,7 @@ static double getBatteryTemperatureInternal() {
     return -1;
 }
 
-static double getBatteryCurrentInternal() {
+static double getBatteryCurrentInternal(void) {
     io_iterator_t iterator = 0;
     io_service_t service = IO_OBJECT_NULL;
     CFMutableDictionaryRef matching = IOServiceMatching("AppleSmartBattery");
@@ -820,7 +830,7 @@ static double getBatteryCurrentInternal() {
     return -1;
 }
 
-static BOOL isChargingInternal() {
+static BOOL isChargingInternal(void) {
     io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleSmartBattery"));
     if (!service) return NO;
     CFTypeRef value = IORegistryEntryCreateCFProperty(service, CFSTR("IsCharging"), kCFAllocatorDefault, 0);
@@ -833,12 +843,45 @@ static BOOL isChargingInternal() {
     return charging;
 }
 
-static void updateFloatingSize() {
+static double getCPUUsage(void) {
+    thread_array_t threads;
+    mach_msg_type_number_t count = 0;
+
+    kern_return_t kr = task_threads(mach_task_self(), &threads, &count);
+    if (kr != KERN_SUCCESS) return 0.0;
+
+    double totalCPU = 0.0;
+
+    for (mach_msg_type_number_t i = 0; i < count; i++) {
+        thread_info_data_t info;
+        mach_msg_type_number_t infoCount = THREAD_INFO_MAX;
+
+        kr = thread_info(threads[i], THREAD_BASIC_INFO, (thread_info_t)info, &infoCount);
+        if (kr == KERN_SUCCESS) {
+            thread_basic_info_t basic = (thread_basic_info_t)info;
+            if (!(basic->flags & TH_FLAGS_IDLE)) {
+                totalCPU += ((double)basic->cpu_usage / (double)TH_USAGE_SCALE) * 100.0;
+            }
+        }
+    }
+
+    vm_deallocate(mach_task_self(), (vm_address_t)threads, count * sizeof(thread_t));
+    return totalCPU;
+}
+
+static void applyFloatingAlpha(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!floatingView) return;
+        floatingView.alpha = floatingAlphaEnable ? floatingAlpha : 1.0;
+    });
+}
+
+static void updateFloatingSize(void) {
     if (!floatingView) return;
 
     BOOL charging = isChargingInternal();
 
-    // 核心：在计算 bounds 前，先清空 transform，防止边界错位
+    // 关键：在计算 Bounds 前先重置 Transform，保证边界与 Anchor 几限制精准！
     floatingView.transform = CGAffineTransformIdentity;
 
     [floatingView updateLayoutWithShowCpuFreq:showCpuFrequency
@@ -850,7 +893,7 @@ static void updateFloatingSize() {
     CGAffineTransform transform = CGAffineTransformMakeScale(floatingScale, floatingScale);
     floatingView.transform = transform;
 
-    // 重新校准并对齐吸附至边缘
+    // 重新平滑贴合屏幕边缘吸附
     clampAndPositionFloatingView(floatingView.center, YES);
 }
 
@@ -866,7 +909,7 @@ static void updateFloatingSize() {
 }
 @end
 
-static void createCPUWindow() {
+static void createCPUWindow(void) {
     if (cpuWindow) return;
 
     UIWindowScene *scene = getWindowScene();
@@ -940,8 +983,8 @@ static void checkHighCPU(double cpu) {
     }
 }
 
-// 1.0 秒定时更新，检测到插入状态时触发触觉动画
-static void updateCPU() {
+// 1.0 秒定时更新主频与各项硬件数据
+static void updateCPU(void) {
     double cpu = getCPUUsage();
     double cpuFreq = getCPUFrequencyMHz(cpu);
     checkHighCPU(cpu);
@@ -1220,7 +1263,7 @@ static void updateCPU() {
 
 @end
 
-static void openSettings() {
+static void openSettings(void) {
     if (settingsShowing || !cpuWindow || !cpuWindow.rootViewController) return;
 
     UIViewController *root = cpuWindow.rootViewController;
@@ -1237,7 +1280,7 @@ static void openSettings() {
     [root presentViewController:nav animated:YES completion:nil];
 }
 
-static void registerV160Observers() {
+static void registerV160Observers(void) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
