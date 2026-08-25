@@ -9,8 +9,9 @@ TWEAK_NAME = SBCPUFloating
 SBCPUFloating_FILES = Tweak.xm
 SBCPUFloating_CFLAGS = -fobjc-arc
 SBCPUFloating_FRAMEWORKS = UIKit Foundation
-SBCPUFloating_PRIVATE_FRAMEWORKS = PowerUI IOKit
+SBCPUFloating_PRIVATE_FRAMEWORKS = PowerUI IOKit IOPowerSources
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
-INSTALL_TARGET_PROCESSES = SpringBoard powerd
+INSTALL_TARGET_PROCESSES = SpringBoard powerd smartchargingd thermalmonitord
+
