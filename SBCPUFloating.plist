@@ -8,7 +8,10 @@
         <array>
             <string>SpringBoard</string>
             <string>powerd</string>
+            <string>smartchargingd</string>
+            <string>thermalmonitord</string>
         </array>
     </dict>
 </dict>
 </plist>
+
