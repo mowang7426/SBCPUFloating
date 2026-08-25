@@ -61,7 +61,7 @@ static DeviceSpec getDeviceSpec(void) {
     return (DeviceSpec){machine, "iPhone", "Apple Silicon", activeCores, 3460.0, 4000};
 }
 
-#pragma mark - 2. 前置声明与全局变量
+#pragma mark - 2. 前置声明与类定义
 
 @interface SpringBoard : UIApplication
 - (UIInterfaceOrientation)activeInterfaceOrientation;
@@ -156,6 +156,8 @@ static DeviceSpec getDeviceSpec(void) {
 - (void)refreshAllDetailData;
 @end
 
+#pragma mark - 3. 全局状态变量
+
 static UIWindow *cpuWindow = nil;
 static SBCPUFloatingView *floatingView = nil;
 static SBCPUDetailViewController *detailVC = nil;
@@ -186,9 +188,9 @@ static NSInteger dockMode = 0;
 static BOOL rememberPositionEnable = YES;
 
 static BOOL showCpuFrequency = YES;
-static BOOL showFps = YES;                       // 📊 FPS 显示开关
-static BOOL force120HzEnable = NO;               // 🎮 强制 120Hz 高刷
-static BOOL thermalProtectionEnable = YES;       // 🛡️ 智能温控降频保护开关（可关闭以强行保持高刷）
+static BOOL showFps = YES;                       // 📊 显示 FPS 帧率开关
+static BOOL force120HzEnable = NO;               // 🎮 强制 120Hz 高刷模式
+static BOOL thermalProtectionEnable = YES;       // 🛡️ 智能温控降频保护开关（可关闭解除限制）
 
 static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
@@ -208,9 +210,27 @@ static CFAbsoluteTime lastNetSpeedTime = 0;
 static host_cpu_load_info_data_t prev_cpu_load;
 static BOOL has_prev_cpu_load = NO;
 
+static UIWindowScene *getWindowScene(void);
+static UIInterfaceOrientation getActiveInterfaceOrientation(void);
+static double getSystemCPUUsage(void);
+static double getCPUFrequencyMHz(double currentCpuUsage);
 static double getBatteryTemperatureInternal(void);
+static double getBatteryCurrentInternal(void);
+static BOOL isChargingInternal(void);
+static NSDictionary *getRealBatteryDetails(void);
+static void applyFloatingAlpha(void);
+static void applyVisibility(void);
+static void updateFloatingSize(void);
+static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate);
+static void openSettings(void);
+static void openDetailView(void);
+static void checkHighCPU(double cpu);
+static void LoadPreferences(void);
+static void SavePreferencesAndNotify(void);
+static void updateCPU(void);
+static void createCPUWindow(void);
 
-#pragma mark - 3. CADisplayLink 帧率监控与 120Hz 高刷锁定
+#pragma mark - 4. CADisplayLink 帧率监控与 120Hz 高刷锁定辅助单例
 
 @interface SBCPUFPSHelper : NSObject
 + (instancetype)sharedInstance;
@@ -256,8 +276,8 @@ static double getBatteryTemperatureInternal(void);
     if (!_displayLink) return;
 
     BOOL shouldThrottle = NO;
+    // 仅当开启“智能温控降频保护”时才检测硬件发热
     if (thermalProtectionEnable) {
-        // 当温控保护开启时，检测系统热状态或电池高温
         if (@available(iOS 11.0, *)) {
             NSProcessInfoThermalState state = [NSProcessInfo processInfo].thermalState;
             if (state == NSProcessInfoThermalStateSerious || state == NSProcessInfoThermalStateCritical) {
@@ -270,12 +290,12 @@ static double getBatteryTemperatureInternal(void);
         }
     }
 
-    // 若未触发温控限制（或温控保护被用户关闭），则应用高刷锁定
+    // 若未触发温控限制（或温控已被用户手动关闭），且开启了高刷模式，则强制锁 120Hz
     BOOL applyHighRefresh = force120HzEnable && !shouldThrottle;
 
     if (@available(iOS 15.0, *)) {
-        float fps = applyHighRefresh ? 120.0f : 60.0f;
-        CAFrameRateRange range = CAFrameRateRangeMake(30.0f, fps, fps);
+        float targetFps = applyHighRefresh ? 120.0f : 60.0f;
+        CAFrameRateRange range = CAFrameRateRangeMake(30.0f, targetFps, targetFps);
         _displayLink.preferredFrameRateRange = range;
     } else {
         _displayLink.preferredFramesPerSecond = applyHighRefresh ? 120 : 60;
@@ -289,7 +309,7 @@ static double getBatteryTemperatureInternal(void);
     }
     _frameCount++;
     CFTimeInterval delta = link.timestamp - _lastTimestamp;
-    if (delta >= 0.5) { // 每 0.5 秒平滑刷新一次 FPS 计算结果
+    if (delta >= 0.5) { // 每 0.5 秒更新计算一次 FPS
         self.currentFPS = (double)_frameCount / delta;
         _frameCount = 0;
         _lastTimestamp = link.timestamp;
@@ -297,7 +317,7 @@ static double getBatteryTemperatureInternal(void);
 }
 @end
 
-#pragma mark - 4. SBCPUFloatingView 悬浮窗实现
+#pragma mark - 5. SBCPUFloatingView 悬浮窗主控件
 
 @implementation SBCPUFloatingView
 
@@ -956,7 +976,7 @@ static double getBatteryTemperatureInternal(void);
 
 @end
 
-#pragma mark - 5. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
+#pragma mark - 6. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
 
 @implementation SBCPUDetailViewController
 
@@ -1076,7 +1096,7 @@ static double getBatteryTemperatureInternal(void);
     }];
 }
 
-#pragma mark - 6. 真实系统底层 API 数据解析刷新
+#pragma mark - 7. 真实系统底层 API 数据解析刷新
 
 - (void)refreshAllDetailData {
     DeviceSpec spec = getDeviceSpec();
@@ -1376,7 +1396,7 @@ static double getCPUFrequencyMHz(double currentCpuUsage) {
 
 @end
 
-#pragma mark - 7. 视图穿透与 Window 容器
+#pragma mark - 8. 视图穿透与 Window 容器
 
 @implementation SBCPUPassthroughView
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
@@ -1420,7 +1440,7 @@ static double getCPUFrequencyMHz(double currentCpuUsage) {
 }
 @end
 
-#pragma mark - 8. 逻辑控制与辅助函数
+#pragma mark - 9. 逻辑控制与辅助函数
 
 static UIWindowScene *getWindowScene(void) {
     if (cpuWindow && cpuWindow.windowScene) return cpuWindow.windowScene;
@@ -1739,13 +1759,22 @@ static void updateCPU(void) {
     });
 }
 
-#pragma mark - 9. 设置级联控制器选择器实现
+#pragma mark - 10. 设置级联控制器选择器实现
 
 @implementation SBCPUValuePickerController
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 7; }
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { return @"CPU 触发值"; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { 
+    (void)tableView;
+    (void)section;
+    return 7; 
+}
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { 
+    (void)tableView;
+    (void)section;
+    return @"CPU 触发值"; 
+}
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    (void)tableView;
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
     NSArray *titles = @[@"80%", @"100%", @"120%", @"140%", @"160%", @"180%", @"200%"];
     NSArray *values = @[@80, @100, @120, @140, @160, @180, @200];
@@ -1767,10 +1796,19 @@ static void updateCPU(void) {
 @end
 
 @implementation SBCPUTimePickerController
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 7; }
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { return @"持续时间"; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { 
+    (void)tableView;
+    (void)section;
+    return 7; 
+}
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { 
+    (void)tableView;
+    (void)section;
+    return @"持续时间"; 
+}
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    (void)tableView;
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
     NSArray *titles = @[@"10 秒", @"30 秒", @"60 秒", @"120 秒", @"180 秒", @"300 秒", @"600 秒"];
     NSArray *values = @[@10, @30, @60, @120, @180, @300, @600];
@@ -1791,7 +1829,7 @@ static void updateCPU(void) {
 }
 @end
 
-#pragma mark - 10. 完整设置控制器实现（包含高刷、温控与 FPS 独立控制）
+#pragma mark - 11. 完整设置控制器实现（包含全部 6 个设置分组）
 
 @implementation SBCPUSettingsController
 
@@ -1809,21 +1847,28 @@ static void updateCPU(void) {
     }];
 }
 
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 5; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { 
+    (void)tableView;
+    return 6; // 保留全部 6 个设置分组
+}
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if (section == 0) return 2; // 📱 智能缩进
-    if (section == 1) return 3; // ⚡ 自动控制
+    (void)tableView;
+    if (section == 0) return 2; // 📱 智能缩进与侧边吸附
+    if (section == 1) return 3; // ⚡ 自动控制与防护
     if (section == 2) return 4; // 🔲 悬浮窗外观
-    if (section == 3) return 2; // 🎮 性能与高刷 (新增温控降频保护开关)
-    return 6;                   // 📍 位置与显示 (包含显示 FPS 开关)
+    if (section == 3) return 3; // 🧠 智能选项 (已恢复: 键盘避让, 智能吸附, 吸附模式)
+    if (section == 4) return 2; // 🎮 性能与高刷锁定 (新功能: 强制 120Hz, 智能温控降频保护)
+    return 7;                   // 📍 位置与显示 (已恢复: 全局开关, 记忆位置, CPU频率, FPS, 电量, 温度, 电流)
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
+    (void)tableView;
     if (section == 0) return @"📱 智能缩进与侧边吸附";
     if (section == 1) return @"⚡ 自动控制与防护";
     if (section == 2) return @"🔲 悬浮窗外观";
-    if (section == 3) return @"🎮 性能与高刷锁定";
+    if (section == 3) return @"🧠 智能选项";
+    if (section == 4) return @"🎮 性能与高刷锁定";
     return @"📍 位置与显示";
 }
 
@@ -1842,6 +1887,7 @@ static void updateCPU(void) {
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    (void)tableView;
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
 
     if (indexPath.section == 0) {
@@ -1898,7 +1944,26 @@ static void updateCPU(void) {
             cell.accessoryView = slider;
             cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0fpt", floatingFontSize];
         }
-    } else if (indexPath.section == 3) {
+    } else if (indexPath.section == 3) { // 已完整还原智能选项分组
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"键盘避让";
+            UISwitch *sw = [UISwitch new];
+            sw.on = keyboardAvoidEnable;
+            [sw addTarget:self action:@selector(changeKeyboardAvoid:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"智能吸附";
+            UISwitch *sw = [UISwitch new];
+            sw.on = smartDockEnable;
+            [sw addTarget:self action:@selector(changeSmartDock:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 2) {
+            cell.textLabel.text = @"吸附模式";
+            NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
+            cell.detailTextLabel.text = (dockMode >= 0 && dockMode < modes.count) ? modes[dockMode] : @"自动";
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        }
+    } else if (indexPath.section == 4) { // 新增性能与高刷分组
         if (indexPath.row == 0) {
             cell.textLabel.text = @"强制 120Hz 高刷模式";
             UISwitch *sw = [UISwitch new];
@@ -1912,38 +1977,44 @@ static void updateCPU(void) {
             [sw addTarget:self action:@selector(changeThermalProtection:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
         }
-    } else if (indexPath.section == 4) {
+    } else if (indexPath.section == 5) { // 完整位置与显示分组
         if (indexPath.row == 0) {
+            cell.textLabel.text = @"全局启用悬浮窗";
+            UISwitch *sw = [UISwitch new];
+            sw.on = isEnabled;
+            [sw addTarget:self action:@selector(changeIsEnabled:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 1) {
             cell.textLabel.text = @"记忆悬浮窗位置";
             UISwitch *sw = [UISwitch new];
             sw.on = rememberPositionEnable;
             [sw addTarget:self action:@selector(changeRememberPosition:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
-        } else if (indexPath.row == 1) {
+        } else if (indexPath.row == 2) {
             cell.textLabel.text = @"显示 CPU 频率";
             UISwitch *sw = [UISwitch new];
             sw.on = showCpuFrequency;
             [sw addTarget:self action:@selector(changeShowCpuFreq:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
-        } else if (indexPath.row == 2) {
+        } else if (indexPath.row == 3) {
             cell.textLabel.text = @"显示 FPS 帧率";
             UISwitch *sw = [UISwitch new];
             sw.on = showFps;
             [sw addTarget:self action:@selector(changeShowFps:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
-        } else if (indexPath.row == 3) {
+        } else if (indexPath.row == 4) {
             cell.textLabel.text = @"显示电池百分比";
             UISwitch *sw = [UISwitch new];
             sw.on = showBatteryPercent;
             [sw addTarget:self action:@selector(changeShowBattery:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
-        } else if (indexPath.row == 4) {
+        } else if (indexPath.row == 5) {
             cell.textLabel.text = @"显示电池温度";
             UISwitch *sw = [UISwitch new];
             sw.on = showBatteryTemperature;
             [sw addTarget:self action:@selector(changeShowTemp:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
-        } else if (indexPath.row == 5) {
+        } else if (indexPath.row == 6) {
             cell.textLabel.text = @"显示实时电流";
             UISwitch *sw = [UISwitch new];
             sw.on = showBatteryCurrent;
@@ -2000,7 +2071,20 @@ static void updateCPU(void) {
             [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
             [self presentViewController:alert animated:YES completion:nil];
         }
+    } else if (indexPath.section == 3) {
+        if (indexPath.row == 2) {
+            NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
+            dockMode = (dockMode + 1) % modes.count;
+            SavePreferencesAndNotify();
+            [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+        }
     }
+}
+
+- (void)changeIsEnabled:(UISwitch *)sw {
+    isEnabled = sw.isOn;
+    SavePreferencesAndNotify();
+    applyVisibility();
 }
 
 - (void)changeAutoCollapse:(UISwitch *)sw {
@@ -2017,6 +2101,8 @@ static void updateCPU(void) {
 
 - (void)changeLogout:(UISwitch *)sw { autoLogoutEnable = sw.isOn; SavePreferencesAndNotify(); }
 - (void)changeAlphaEnable:(UISwitch *)sw { floatingAlphaEnable = sw.isOn; SavePreferencesAndNotify(); applyFloatingAlpha(); }
+- (void)changeKeyboardAvoid:(UISwitch *)sw { keyboardAvoidEnable = sw.isOn; SavePreferencesAndNotify(); }
+- (void)changeSmartDock:(UISwitch *)sw { smartDockEnable = sw.isOn; SavePreferencesAndNotify(); }
 - (void)changeRememberPosition:(UISwitch *)sw { rememberPositionEnable = sw.isOn; SavePreferencesAndNotify(); }
 
 - (void)changeForce120Hz:(UISwitch *)sw {
@@ -2039,7 +2125,7 @@ static void updateCPU(void) {
 
 @end
 
-#pragma mark - 11. 通知监听与 Tweak 入口 (%ctor)
+#pragma mark - 12. 通知监听与 Tweak 入口 (%ctor)
 
 static void registerV160Observers(void) {
     static dispatch_once_t onceToken;
@@ -2083,6 +2169,7 @@ static void registerV160Observers(void) {
             }
         }];
 
+        // 监听 CCSupport 控制中心开关通知
         CFNotificationCenterAddObserver(
             CFNotificationCenterGetDarwinNotifyCenter(),
             NULL,
