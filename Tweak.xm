@@ -1426,7 +1426,7 @@ static double getCPUFrequencyMHz(double currentCpuUsage) {
 
 @end
 
-@implementation SBCCPUWindow
+@implementation SBCPUWindow
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     if (settingsShowing || detailShowing) return [super hitTest:point withEvent:event];
 
