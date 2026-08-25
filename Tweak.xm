@@ -144,9 +144,8 @@ static BOOL showBatteryCurrent = YES;
 static CGRect keyboardBeforeFrame;
 static BOOL keyboardMoved = NO;
 
-// C 函数原型声明
+// C 函数原型声明（仅保留被实际调用的函数）
 static UIWindowScene *getWindowScene(void);
-static CGSize getRealScreenSize(void);
 static UIInterfaceOrientation getActiveInterfaceOrientation(void);
 static double getCPUUsage(void);
 static double getCPUFrequencyMHz(double currentCpuUsage);
@@ -386,7 +385,6 @@ static void createCPUWindow(void);
     CGFloat targetW = 64.0f;
     CGFloat targetH = 28.0f;
 
-    // 计算贴近父视图坐标系的左侧还是右侧，彻底消除越界
     BOOL isLeft = (self.center.x <= containerBounds.size.width / 2.0f);
     CGFloat targetX = isLeft ? (targetW / 2.0f + 2.0f) : (containerBounds.size.width - targetW / 2.0f - 2.0f);
     
@@ -544,7 +542,6 @@ static void createCPUWindow(void);
         CGPoint translation = [pan translationInView:self.superview];
         CGPoint targetCenter = CGPointMake(self.lastPoint.x + translation.x, self.lastPoint.y + translation.y);
 
-        // 基于父视图 bounds 严密控制拖拽边界，彻底规避横屏越界 Bug
         CGRect containerBounds = self.superview ? self.superview.bounds : [UIScreen mainScreen].bounds;
         CGRect realFrame = self.frame;
         CGFloat halfW = realFrame.size.width / 2.0f;
@@ -882,18 +879,6 @@ static UIWindowScene *getWindowScene(void) {
     return nil;
 }
 
-static CGSize getRealScreenSize(void) {
-    if (cpuWindow && cpuWindow.rootViewController && cpuWindow.rootViewController.view) {
-        CGSize s = cpuWindow.rootViewController.view.bounds.size;
-        if (s.width > 0 && s.height > 0) return s;
-    }
-    UIWindowScene *scene = getWindowScene();
-    if (scene) {
-        return scene.coordinateSpace.bounds.size;
-    }
-    return UIScreen.mainScreen.bounds.size;
-}
-
 static UIInterfaceOrientation getActiveInterfaceOrientation(void) {
     UIApplication *app = [UIApplication sharedApplication];
     if ([app isKindOfClass:NSClassFromString(@"SpringBoard")] && [app respondsToSelector:@selector(activeInterfaceOrientation)]) {
@@ -909,7 +894,6 @@ static UIInterfaceOrientation getActiveInterfaceOrientation(void) {
 static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
     if (!floatingView || !floatingView.superview) return;
 
-    // 直接采用父视图 bounds 进行精确范围校验，规避横屏越界 Bug
     CGRect containerBounds = floatingView.superview.bounds;
     if (CGRectIsEmpty(containerBounds)) {
         containerBounds = [UIScreen mainScreen].bounds;
@@ -1148,11 +1132,11 @@ static void applyFloatingAlpha(void) {
     });
 }
 
+// 自动适应屏幕尺寸，依赖原生 ViewController 旋转，解决 180 度翻转 bug
 static void updateFloatingSize(void) {
     if (!floatingView) return;
 
     BOOL charging = isChargingInternal();
-    UIInterfaceOrientation orientation = getActiveInterfaceOrientation();
 
     floatingView.transform = CGAffineTransformIdentity;
 
@@ -1164,28 +1148,9 @@ static void updateFloatingSize(void) {
                                        isCharging:charging];
     }
 
-    CGFloat rotationAngle = 0.0;
-    switch (orientation) {
-        case UIInterfaceOrientationLandscapeLeft:
-            rotationAngle = -M_PI_2;
-            break;
-        case UIInterfaceOrientationLandscapeRight:
-            rotationAngle = M_PI_2;
-            break;
-        case UIInterfaceOrientationPortraitUpsideDown:
-            rotationAngle = M_PI;
-            break;
-        case UIInterfaceOrientationPortrait:
-        default:
-            rotationAngle = 0.0;
-            break;
-    }
+    // 仅应用缩放矩阵，无需叠加手动旋转角度，完全遵从系统原生自动旋转
+    floatingView.transform = CGAffineTransformMakeScale(floatingScale, floatingScale);
 
-    CGAffineTransform scaleTransform = CGAffineTransformMakeScale(floatingScale, floatingScale);
-    CGAffineTransform rotateTransform = CGAffineTransformMakeRotation(rotationAngle);
-    CGAffineTransform finalTransform = CGAffineTransformConcat(scaleTransform, rotateTransform);
-
-    floatingView.transform = finalTransform;
     clampAndPositionFloatingView(floatingView.center, YES);
 }
 
