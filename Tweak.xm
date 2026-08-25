@@ -22,7 +22,24 @@
 #define kPrefChangedNotification "com.yourname.sbcpufloating.prefschanged"
 #define kToggleNotification "com.yourname.sbcpufloating.toggle"
 
-#pragma mark - 1. 设备规格与 SoC 识别数据结构
+#pragma mark - 1. QuartzCore 私有类声明 (用于 120Hz 硬件锁)
+
+@interface CAWindowServer : NSObject
++ (id)serverIfRunning;
+- (NSArray *)displays;
+@end
+
+@interface CAWindowServerDisplay : NSObject
+- (void)setAllowsVirtualModes:(BOOL)allows;
+- (void)setMinimumRefreshRate:(float)rate;
+- (void)setMaximumRefreshRate:(float)rate;
+- (void)setIdealRefreshRate:(float)rate;
+- (float)minimumRefreshRate;
+- (float)maximumRefreshRate;
+- (float)idealRefreshRate;
+@end
+
+#pragma mark - 2. 设备规格与 SoC 识别数据结构
 
 typedef struct {
     const char *platform;
@@ -61,7 +78,7 @@ static DeviceSpec getDeviceSpec(void) {
     return (DeviceSpec){machine, "iPhone", "Apple Silicon", activeCores, 3460.0, 4000};
 }
 
-#pragma mark - 2. 前置声明与类定义
+#pragma mark - 3. 前置声明与类定义
 
 @interface SpringBoard : UIApplication
 - (UIInterfaceOrientation)activeInterfaceOrientation;
@@ -156,13 +173,13 @@ static DeviceSpec getDeviceSpec(void) {
 - (void)refreshAllDetailData;
 @end
 
-#pragma mark - 3. 全局状态变量
+#pragma mark - 4. 全局状态变量
 
 static UIWindow *cpuWindow = nil;
 static SBCPUFloatingView *floatingView = nil;
 static SBCPUDetailViewController *detailVC = nil;
 
-static BOOL isEnabled = YES; // 全局开关
+static BOOL isEnabled = YES; 
 static CGFloat floatingScale = 1.0;
 static CGFloat floatingFontSize = 13.0;
 
@@ -190,7 +207,7 @@ static BOOL rememberPositionEnable = YES;
 static BOOL showCpuFrequency = YES;
 static BOOL showFps = YES;                       // 📊 显示 FPS 帧率开关
 static BOOL force120HzEnable = NO;               // 🎮 强制 120Hz 高刷模式
-static BOOL thermalProtectionEnable = YES;       // 🛡️ 智能温控降频保护开关（可关闭解除限制）
+static BOOL thermalProtectionEnable = YES;       // 🛡️ 智能温控降频保护开关
 
 static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
@@ -229,8 +246,60 @@ static void LoadPreferences(void);
 static void SavePreferencesAndNotify(void);
 static void updateCPU(void);
 static void createCPUWindow(void);
+static BOOL isDeviceOverheated(void);
+static void applySystemRefreshRate(void);
 
-#pragma mark - 4. CADisplayLink 帧率监控与 120Hz 高刷锁定辅助单例
+#pragma mark - 5. 温控状态检测与底层 120Hz 高刷锁定 Hook
+
+static BOOL isDeviceOverheated(void) {
+    if (@available(iOS 11.0, *)) {
+        NSProcessInfoThermalState state = [NSProcessInfo processInfo].thermalState;
+        if (state == NSProcessInfoThermalStateSerious || state == NSProcessInfoThermalStateCritical) {
+            return YES;
+        }
+    }
+    double temp = getBatteryTemperatureInternal();
+    if (temp >= 43.0) {
+        return YES;
+    }
+    return NO;
+}
+
+// Hook 系统底层显示服务器，实现全局真正的 120Hz 硬件锁
+%hook CAWindowServerDisplay
+- (float)minimumRefreshRate {
+    if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
+        return 120.0f;
+    }
+    return %orig;
+}
+
+- (float)maximumRefreshRate {
+    if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
+        return 120.0f;
+    }
+    return %orig;
+}
+
+- (float)idealRefreshRate {
+    if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
+        return 120.0f;
+    }
+    return %orig;
+}
+%end
+
+// Hook 屏幕最大帧率，防止低电量模式或系统降频
+%hook UIScreen
+- (NSInteger)maximumFramesPerSecond {
+    if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
+        return 120;
+    }
+    return %orig;
+}
+%end
+
+#pragma mark - 6. CADisplayLink 帧率监控与 120Hz 驱动器
 
 @interface SBCPUFPSHelper : NSObject
 + (instancetype)sharedInstance;
@@ -275,28 +344,15 @@ static void createCPUWindow(void);
 - (void)updateFrameRate {
     if (!_displayLink) return;
 
-    BOOL shouldThrottle = NO;
-    if (thermalProtectionEnable) {
-        if (@available(iOS 11.0, *)) {
-            NSProcessInfoThermalState state = [NSProcessInfo processInfo].thermalState;
-            if (state == NSProcessInfoThermalStateSerious || state == NSProcessInfoThermalStateCritical) {
-                shouldThrottle = YES;
-            }
-        }
-        double temp = getBatteryTemperatureInternal();
-        if (temp >= 43.0) {
-            shouldThrottle = YES;
-        }
-    }
-
-    BOOL applyHighRefresh = force120HzEnable && !shouldThrottle;
+    BOOL apply120 = force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated());
 
     if (@available(iOS 15.0, *)) {
-        float targetFps = applyHighRefresh ? 120.0f : 60.0f;
-        CAFrameRateRange range = CAFrameRateRangeMake(30.0f, targetFps, targetFps);
+        float fps = apply120 ? 120.0f : 60.0f;
+        // 将 min, max, preferred 全部锁死在 120，阻止 VRR 降频
+        CAFrameRateRange range = CAFrameRateRangeMake(fps, fps, fps);
         _displayLink.preferredFrameRateRange = range;
     } else {
-        _displayLink.preferredFramesPerSecond = applyHighRefresh ? 120 : 60;
+        _displayLink.preferredFramesPerSecond = apply120 ? 120 : 60;
     }
 }
 
@@ -315,7 +371,27 @@ static void createCPUWindow(void);
 }
 @end
 
-#pragma mark - 5. SBCPUFloatingView 悬浮窗主控件
+static void applySystemRefreshRate(void) {
+    BOOL apply120 = force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated());
+    
+    Class serverClass = NSClassFromString(@"CAWindowServer");
+    if (serverClass && [serverClass respondsToSelector:@selector(serverIfRunning)]) {
+        CAWindowServer *server = [serverClass serverIfRunning];
+        if (server) {
+            for (CAWindowServerDisplay *display in [server displays]) {
+                if (apply120) {
+                    if ([display respondsToSelector:@selector(setMinimumRefreshRate:)]) [display setMinimumRefreshRate:120.0f];
+                    if ([display respondsToSelector:@selector(setMaximumRefreshRate:)]) [display setMaximumRefreshRate:120.0f];
+                    if ([display respondsToSelector:@selector(setIdealRefreshRate:)]) [display setIdealRefreshRate:120.0f];
+                }
+            }
+        }
+    }
+
+    [[SBCPUFPSHelper sharedInstance] updateFrameRate];
+}
+
+#pragma mark - 7. SBCPUFloatingView 悬浮窗主控件
 
 @implementation SBCPUFloatingView
 
@@ -974,7 +1050,7 @@ static void createCPUWindow(void);
 
 @end
 
-#pragma mark - 6. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
+#pragma mark - 8. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
 
 @implementation SBCPUDetailViewController
 
@@ -1094,7 +1170,7 @@ static void createCPUWindow(void);
     }];
 }
 
-#pragma mark - 7. 真实系统底层 API 数据解析刷新
+#pragma mark - 9. 真实系统底层 API 数据解析刷新
 
 - (void)refreshAllDetailData {
     DeviceSpec spec = getDeviceSpec();
@@ -1220,7 +1296,7 @@ static void createCPUWindow(void);
     _labelsDict[@"设备运行"].text = [NSString stringWithFormat:@"%ld天 %ld小时 %ld分", (long)days, (long)hours, (long)mins];
 }
 
-#pragma mark - IOKit 电池与网络底层解算
+#pragma mark - 10. IOKit 电池与网络底层解算
 
 static NSDictionary *getRealBatteryDetails(void) {
     NSMutableDictionary *dict = [NSMutableDictionary dictionary];
@@ -1394,7 +1470,7 @@ static double getCPUFrequencyMHz(double currentCpuUsage) {
 
 @end
 
-#pragma mark - 8. 视图穿透与 Window 容器
+#pragma mark - 11. 视图穿透与 Window 容器
 
 @implementation SBCPUPassthroughView
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
@@ -1438,7 +1514,7 @@ static double getCPUFrequencyMHz(double currentCpuUsage) {
 }
 @end
 
-#pragma mark - 9. 逻辑控制与辅助函数
+#pragma mark - 12. 逻辑控制与辅助函数
 
 static UIWindowScene *getWindowScene(void) {
     if (cpuWindow && cpuWindow.windowScene) return cpuWindow.windowScene;
@@ -1546,6 +1622,8 @@ static void LoadPreferences(void) {
     } else {
         [[SBCPUFPSHelper sharedInstance] stopMonitoring];
     }
+
+    applySystemRefreshRate();
 }
 
 static void SavePreferencesAndNotify(void) {
@@ -1583,6 +1661,8 @@ static void SavePreferencesAndNotify(void) {
     } else {
         [[SBCPUFPSHelper sharedInstance] stopMonitoring];
     }
+
+    applySystemRefreshRate();
 
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR(kPrefChangedNotification), NULL, NULL, YES);
 }
@@ -1757,7 +1837,7 @@ static void updateCPU(void) {
     });
 }
 
-#pragma mark - 10. 设置级联控制器选择器实现
+#pragma mark - 13. 设置级联控制器选择器实现
 
 @implementation SBCPUValuePickerController
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { 
@@ -1827,7 +1907,7 @@ static void updateCPU(void) {
 }
 @end
 
-#pragma mark - 11. 完整设置控制器实现（包含全部 6 个设置分组）
+#pragma mark - 14. 完整设置控制器实现（包含全部 6 个设置分组）
 
 @implementation SBCPUSettingsController
 
@@ -1855,9 +1935,9 @@ static void updateCPU(void) {
     if (section == 0) return 2; // 📱 智能缩进与侧边吸附
     if (section == 1) return 3; // ⚡ 自动控制与防护
     if (section == 2) return 4; // 🔲 悬浮窗外观
-    if (section == 3) return 3; // 🧠 智能选项 (键盘避让, 智能吸附, 吸附模式)
-    if (section == 4) return 2; // 🎮 性能与高刷锁定 (强制 120Hz, 智能温控降频保护)
-    return 7;                   // 📍 位置与显示 (全局开关, 记忆位置, CPU频率, FPS, 电量, 温度, 电流)
+    if (section == 3) return 3; // 🧠 智能选项
+    if (section == 4) return 2; // 🎮 性能与高刷锁定
+    return 7;                   // 📍 位置与显示
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
@@ -2106,13 +2186,11 @@ static void updateCPU(void) {
 - (void)changeForce120Hz:(UISwitch *)sw {
     force120HzEnable = sw.isOn;
     SavePreferencesAndNotify();
-    [[SBCPUFPSHelper sharedInstance] updateFrameRate];
 }
 
 - (void)changeThermalProtection:(UISwitch *)sw {
     thermalProtectionEnable = sw.isOn;
     SavePreferencesAndNotify();
-    [[SBCPUFPSHelper sharedInstance] updateFrameRate];
 }
 
 - (void)changeShowCpuFreq:(UISwitch *)sw { showCpuFrequency = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
@@ -2123,7 +2201,7 @@ static void updateCPU(void) {
 
 @end
 
-#pragma mark - 12. 通知监听与 Tweak 入口 (%ctor)
+#pragma mark - 15. 通知监听与 Tweak 入口 (%ctor)
 
 static void onCCNotificationReceived(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
     (void)center;
