@@ -483,7 +483,7 @@ static void createCPUWindow()
     label.font = [UIFont monospacedDigitSystemFontOfSize:14 weight:UIFontWeightMedium];
     label.text = @"SB CPU\n0%";
 
-    // 给文字添加清晰易读的微妙阴影，避免在纯白或亮色背景下失真
+    // 给文字添加清晰易读的微妙阴影，避免在纯白或亮色背景下失算
     label.layer.shadowColor = UIColor.blackColor.CGColor;
     label.layer.shadowOffset = CGSizeMake(0, 1);
     label.layer.shadowOpacity = 0.5;
@@ -1880,7 +1880,7 @@ static void sbcpuSmartChargeControlPropertyProbe()
 {
     [[NSUserDefaults standardUserDefaults] setInteger:sbcpuChargeTempFast forKey:@"SBCPU.ChargeFastTemp"];
     [[NSUserDefaults standardUserDefaults] setInteger:sbcpuChargeTempReduce forKey:@"SBCPU.ChargeReduceTemp"];
-    [[NSUserDefaults standardUserDefaults] setInteger:sbcpuChargePauseTemp forKey:@"SBCPU.ChargePauseTemp"];
+    [[NSUserDefaults standardUserDefaults] setInteger:sbcpuChargeTempPause forKey:@"SBCPU.ChargePauseTemp"];
     [[NSUserDefaults standardUserDefaults] setInteger:sbcpuChargeTempStop forKey:@"SBCPU.ChargeStopTemp"];
     [[NSUserDefaults standardUserDefaults] synchronize];
     [self.tableView reloadData];
