@@ -9,6 +9,23 @@
 #define kIOMainPortDefault kIOMasterPortDefault
 #endif
 
+#pragma mark - 私有类接口前置声明 (解决 initWithClientName 编译报错)
+@interface PowerUISmartChargingClient : NSObject
+- (instancetype)initWithClientName:(NSString *)clientName;
+- (void)setChargingStatus:(id)status;
+- (void)pauseCharging;
+- (void)resumeCharging;
+- (void)enterMitigationMode;
+- (void)exitMitigationMode;
+- (void)temporarilyDisableSmartCharging;
+@end
+
+@interface PowerUISmartChargingManager : NSObject
++ (instancetype)sharedInstance;
+- (void)setChargingPaused:(BOOL)paused;
+- (void)setOverrideChargingEnabled:(BOOL)enabled;
+@end
+
 #pragma mark - 全局变量声明
 static UIWindow *cpuWindow = nil;
 @class SBCPUDragView;
@@ -60,8 +77,8 @@ static void registerV160Observers(void);
 @class SBCPUValuePickerController;
 @class SBCPUTimePickerController;
 
-#pragma mark - PowerUI 私有框架接入 (解决 iOS 充电控制核心)
-static id powerUIClient = nil;
+#pragma mark - PowerUI 私有框架接入
+static PowerUISmartChargingClient *powerUIClient = nil;
 
 static void initPowerUIFramework() {
     static dispatch_once_t onceToken;
@@ -73,11 +90,7 @@ static void initPowerUIFramework() {
         
         Class clientClass = objc_getClass("PowerUISmartChargingClient");
         if (clientClass) {
-            if ([clientClass instancesRespondToSelector:@selector(initWithClientName:)]) {
-                powerUIClient = [[clientClass alloc] initWithClientName:@"SBCPUFloating"];
-            } else {
-                powerUIClient = [[clientClass alloc] init];
-            }
+            powerUIClient = [[clientClass alloc] initWithClientName:@"SBCPUFloating"];
         }
     });
 }
@@ -114,7 +127,7 @@ static void applyPowerUIChargingPause(BOOL pause) {
         }
     }
     
-    // 2. 调用 PowerUISmartChargingManager / PowerUIManager 单例
+    // 2. 调用 PowerUISmartChargingManager 单例
     Class managerClass = objc_getClass("PowerUISmartChargingManager") ?: objc_getClass("PowerUIManager");
     if (managerClass && [managerClass respondsToSelector:@selector(sharedInstance)]) {
         id manager = [managerClass performSelector:@selector(sharedInstance)];
@@ -148,7 +161,7 @@ static UIWindowScene *getWindowScene() {
     return nil;
 }
 
-#pragma mark - 精准 SpringBoard 进程 CPU 占用率计算
+#pragma mark - 精准 SpringBoard 进程 CPU 占用率计算 (mach_task_self)
 static double getCPUUsage() {
     thread_array_t threads;
     mach_msg_type_number_t count = 0;
@@ -569,7 +582,7 @@ static void updateSmartChargeState(double temperature) {
         applyPowerUIChargingPause(YES); // 触发原生暂停充电
         smartChargeState = SBCPUSmartChargePause;
     } else if (temperature >= sbcpuChargeTempReduce) {
-        applyPowerUIChargingPause(YES); // 降低功率（通过短时间交替触发温控限流）
+        applyPowerUIChargingPause(YES); // 降低功率
         smartChargeState = SBCPUSmartChargeReduce;
     } else if (temperature <= sbcpuChargeTempFast) {
         applyPowerUIChargingPause(NO); // 恢复正常全速充电
@@ -1044,7 +1057,7 @@ static void registerV160Observers() {
 #pragma mark - Tweak 入口
 %ctor {
     NSString *process = NSProcessInfo.processInfo.processName;
-    if (![process isEqualToString:@"SpringBoard"]) return;
+    if (![process isEqualToString:@"SpringBoard"] && ![process isEqualToString:@"powerd"]) return;
 
     NSUserDefaults *def = NSUserDefaults.standardUserDefaults;
     autoWindowSizeEnable = [def boolForKey:@"SBCPU.AutoWindowSize"];
@@ -1079,12 +1092,14 @@ static void registerV160Observers() {
     // 初始化 PowerUI 私有框架
     initPowerUIFramework();
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        createCPUWindow();
-        registerV160Observers();
+    if ([process isEqualToString:@"SpringBoard"]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            createCPUWindow();
+            registerV160Observers();
 
-        [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *timer) {
-            updateCPU();
-        }];
-    });
+            [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *timer) {
+                updateCPU();
+            }];
+        });
+    }
 }
