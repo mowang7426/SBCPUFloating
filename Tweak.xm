@@ -103,7 +103,6 @@ static DeviceSpec getDeviceSpec(void) {
 @property (nonatomic, strong) UILabel *miniCpuLabel;
 
 @property (nonatomic, assign) BOOL isCollapsed;
-@property (nonatomic, assign) BOOL isAnimating; // 防刷新抖动标志位
 @property (nonatomic, strong) NSTimer *inactivityTimer;
 @property (nonatomic, strong) UITapGestureRecognizer *singleTapGesture;
 @property (nonatomic, strong) UILongPressGestureRecognizer *longPressGesture;
@@ -112,12 +111,6 @@ static DeviceSpec getDeviceSpec(void) {
 - (void)collapseToEdgeAnimated:(BOOL)animated;
 - (void)expandFromEdgeAnimated:(BOOL)animated;
 - (void)triggerPlugAnimation;
-
-- (CGSize)calculateTargetSizeWithShowCpuFreq:(BOOL)showFreq
-                          showBatteryPercent:(BOOL)showBattery
-                             showBatteryTemp:(BOOL)showTemp
-                          showBatteryCurrent:(BOOL)showCurrent
-                                  isCharging:(BOOL)isCharging;
 
 - (void)updateLayoutWithShowCpuFreq:(BOOL)showFreq
                  showBatteryPercent:(BOOL)showBattery
@@ -238,7 +231,6 @@ static void createCPUWindow(void);
         self.userInteractionEnabled = YES;
         self.multipleTouchEnabled = NO;
         _isCollapsed = NO;
-        _isAnimating = NO;
         
         UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
         pan.delegate = self;
@@ -421,7 +413,7 @@ static void createCPUWindow(void);
         [_inactivityTimer invalidate];
         _inactivityTimer = nil;
     }
-    if (autoCollapseEnable && !_isCollapsed && !settingsShowing && !detailShowing && !_isAnimating) {
+    if (autoCollapseEnable && !_isCollapsed && !settingsShowing && !detailShowing) {
         _inactivityTimer = [NSTimer scheduledTimerWithTimeInterval:autoCollapseDelay
                                                              target:self
                                                            selector:@selector(inactivityTimerFired)
@@ -431,15 +423,13 @@ static void createCPUWindow(void);
 }
 
 - (void)inactivityTimerFired {
-    if (!settingsShowing && !detailShowing && !_isCollapsed && !_isAnimating) {
+    if (!settingsShowing && !detailShowing && !_isCollapsed) {
         [self collapseToEdgeAnimated:YES];
     }
 }
 
-// ✨ 灵动岛平滑缩回动画
 - (void)collapseToEdgeAnimated:(BOOL)animated {
-    if (_isCollapsed || _isAnimating) return;
-    _isAnimating = YES;
+    if (_isCollapsed) return;
     _isCollapsed = YES;
 
     UIView *parent = self.superview;
@@ -447,28 +437,23 @@ static void createCPUWindow(void);
 
     CGFloat targetW = 64.0f;
     CGFloat targetH = 28.0f;
+    CGFloat targetHalfW = targetW / 2.0f;
+    CGFloat targetHalfH = targetH / 2.0f;
 
-    CGRect realFrame = self.frame;
-    CGFloat halfW = realFrame.size.width / 2.0f;
-    CGFloat halfH = realFrame.size.height / 2.0f;
-
+    // 根据中心位置计算自动吸附靠左还是靠右（收起状态距离边缘4pt）
     BOOL isLeft = (self.center.x <= containerBounds.size.width / 2.0f);
-    CGFloat targetX = isLeft ? (targetW / 2.0f + 2.0f) : (containerBounds.size.width - targetW / 2.0f - 2.0f);
-
-    if (smartDockEnable) {
-        if (dockMode == 1) targetX = targetW / 2.0f + 2.0f;
-        else if (dockMode == 2) targetX = containerBounds.size.width - targetW / 2.0f - 2.0f;
-    }
-
-    CGFloat targetY = self.center.y;
-    if (targetY < targetH / 2.0f + 20.0f) targetY = targetH / 2.0f + 20.0f;
-    if (targetY > containerBounds.size.height - targetH / 2.0f - 10.0f) targetY = containerBounds.size.height - targetH / 2.0f - 10.0f;
+    CGFloat targetX = isLeft ? (targetHalfW + 4.0f) : (containerBounds.size.width - targetHalfW - 4.0f);
+    
+    CGFloat minY = targetHalfH + 20.0f;
+    CGFloat maxY = containerBounds.size.height - targetHalfH - 10.0f;
+    CGFloat targetY = MIN(MAX(self.center.y, minY), maxY);
 
     CGPoint targetCenter = CGPointMake(targetX, targetY);
 
     self.collapsedContainerView.hidden = NO;
 
     void (^animationsBlock)(void) = ^{
+        // 渐隐展开态图层
         self.cpuTitleLabel.alpha = 0.0;
         self.cpuValueLabel.alpha = 0.0;
         self.cpuFreqLabel.alpha = 0.0;
@@ -486,9 +471,11 @@ static void createCPUWindow(void);
         self.currentSubLabel.alpha = 0.0;
         self.bottomCapsule.alpha = 0.0;
 
+        // 渐显折叠态小胶囊
         self.collapsedContainerView.alpha = 1.0;
         self.collapsedContainerView.frame = CGRectMake(0, 0, targetW, targetH);
 
+        // 灵动岛弹性形变
         self.blurView.frame = CGRectMake(0, 0, targetW, targetH);
         self.blurView.layer.cornerRadius = 14.0f;
         self.bounds = CGRectMake(0, 0, targetW, targetH);
@@ -501,108 +488,122 @@ static void createCPUWindow(void);
 
     void (^completionBlock)(BOOL) = ^(BOOL finished) {
         (void)finished;
-        self.isAnimating = NO;
+        if (self.isCollapsed) {
+            self.cpuTitleLabel.hidden = YES;
+            self.cpuValueLabel.hidden = YES;
+            self.cpuFreqLabel.hidden = YES;
+            self.div1.hidden = YES;
+            self.batteryIconLabel.hidden = YES;
+            self.batteryValueLabel.hidden = YES;
+            self.batterySubLabel.hidden = YES;
+            self.div2.hidden = YES;
+            self.tempIconLabel.hidden = YES;
+            self.tempValueLabel.hidden = YES;
+            self.tempSubLabel.hidden = YES;
+            self.div3.hidden = YES;
+            self.currentIconLabel.hidden = YES;
+            self.currentValueLabel.hidden = YES;
+            self.currentSubLabel.hidden = YES;
+            self.bottomCapsule.hidden = YES;
+        }
     };
 
     if (animated) {
-        [UIView animateWithDuration:0.42
-                              delay:0
-             usingSpringWithDamping:0.75
-              initialSpringVelocity:0.5
-                            options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState
-                         animations:animationsBlock
-                         completion:completionBlock];
+        // 使用 iOS 灵动岛 Spring 动画参数，阻尼 0.75，带来流畅有弹性的收缩效果
+        [UIView animateWithDuration:0.45 delay:0 usingSpringWithDamping:0.75 initialSpringVelocity:0.4 options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState animations:animationsBlock completion:completionBlock];
     } else {
         animationsBlock();
         completionBlock(YES);
     }
 }
 
-// ✨ 灵动岛平滑展开弹性动画
 - (void)expandFromEdgeAnimated:(BOOL)animated {
-    if (_isCollapsed && !_isAnimating) {
-        _isAnimating = YES;
-        _isCollapsed = NO;
-
-        BOOL charging = isChargingInternal();
-        CGSize fullSize = [self calculateTargetSizeWithShowCpuFreq:showCpuFrequency
-                                                showBatteryPercent:showBatteryPercent
-                                                   showBatteryTemp:showBatteryTemperature
-                                                showBatteryCurrent:showBatteryCurrent
-                                                        isCharging:charging];
-
-        UIView *parent = self.superview;
-        CGRect containerBounds = parent ? parent.bounds : [UIScreen mainScreen].bounds;
-
-        CGFloat halfW = fullSize.width / 2.0f;
-        CGFloat halfH = fullSize.height / 2.0f;
-
-        CGFloat currentX = self.center.x;
-        CGFloat currentY = self.center.y;
-
-        if (smartDockEnable) {
-            BOOL isLeft = (currentX <= containerBounds.size.width / 2.0f);
-            if (dockMode == 1 || (dockMode == 0 && isLeft)) currentX = halfW + 2.0f;
-            else if (dockMode == 2 || (dockMode == 0 && !isLeft)) currentX = containerBounds.size.width - halfW - 2.0f;
-        }
-
-        if (currentX < halfW + 2.0f) currentX = halfW + 2.0f;
-        if (currentX > containerBounds.size.width - halfW - 2.0f) currentX = containerBounds.size.width - halfW - 2.0f;
-        if (currentY < halfH + 20.0f) currentY = halfH + 20.0f;
-        if (currentY > containerBounds.size.height - halfH - 10.0f) currentY = containerBounds.size.height - halfH - 10.0f;
-
-        CGPoint targetCenter = CGPointMake(currentX, currentY);
-
-        void (^animationsBlock)(void) = ^{
-            self.collapsedContainerView.alpha = 0.0;
-
-            self.cpuTitleLabel.alpha = 1.0;
-            self.cpuValueLabel.alpha = 1.0;
-            self.cpuFreqLabel.alpha = 1.0;
-            self.div1.alpha = 1.0;
-            self.batteryIconLabel.alpha = 1.0;
-            self.batteryValueLabel.alpha = 1.0;
-            self.batterySubLabel.alpha = 1.0;
-            self.div2.alpha = 1.0;
-            self.tempIconLabel.alpha = 1.0;
-            self.tempValueLabel.alpha = 1.0;
-            self.tempSubLabel.alpha = 1.0;
-            self.div3.alpha = 1.0;
-            self.currentIconLabel.alpha = 1.0;
-            self.currentValueLabel.alpha = 1.0;
-            self.currentSubLabel.alpha = 1.0;
-            self.bottomCapsule.alpha = 1.0;
-
-            [self updateLayoutWithShowCpuFreq:showCpuFrequency
-                           showBatteryPercent:showBatteryPercent
-                              showBatteryTemp:showBatteryTemperature
-                           showBatteryCurrent:showBatteryCurrent
-                                   isCharging:charging];
-
-            self.center = targetCenter;
-        };
-
-        void (^completionBlock)(BOOL) = ^(BOOL finished) {
-            (void)finished;
-            self.collapsedContainerView.hidden = YES;
-            self.isAnimating = NO;
-            [self resetInactivityTimer];
-        };
-
-        if (animated) {
-            [UIView animateWithDuration:0.42
-                                  delay:0
-                 usingSpringWithDamping:0.72
-                  initialSpringVelocity:0.6
-                                options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState
-                             animations:animationsBlock
-                             completion:completionBlock];
-        } else {
-            animationsBlock();
-            completionBlock(YES);
-        }
-    } else {
+    if (!_isCollapsed) {
         [self resetInactivityTimer];
+        return;
+    }
+    _isCollapsed = NO;
+
+    BOOL charging = isChargingInternal();
+    UIView *parent = self.superview;
+    CGRect containerBounds = parent ? parent.bounds : [UIScreen mainScreen].bounds;
+
+    // 先显示子控件，准备布局计算
+    self.cpuTitleLabel.hidden = NO;
+    self.cpuValueLabel.hidden = NO;
+    self.cpuFreqLabel.hidden = !showCpuFrequency;
+    self.div1.hidden = NO;
+    self.batteryIconLabel.hidden = !showBatteryPercent;
+    self.batteryValueLabel.hidden = !showBatteryPercent;
+    self.batterySubLabel.hidden = !showBatteryPercent;
+    self.tempIconLabel.hidden = !showBatteryTemperature;
+    self.tempValueLabel.hidden = !showBatteryTemperature;
+    self.tempSubLabel.hidden = !showBatteryTemperature;
+    BOOL actualShowCurrent = showBatteryCurrent && charging;
+    self.currentIconLabel.hidden = !actualShowCurrent;
+    self.currentValueLabel.hidden = !actualShowCurrent;
+    self.currentSubLabel.hidden = !actualShowCurrent;
+    self.bottomCapsule.hidden = !charging;
+
+    // 预先更新展开后的 Frame & Bounds 布局
+    [self updateLayoutWithShowCpuFreq:showCpuFrequency
+                   showBatteryPercent:showBatteryPercent
+                      showBatteryTemp:showBatteryTemperature
+                   showBatteryCurrent:showBatteryCurrent
+                           isCharging:charging];
+
+    CGFloat expandedW = self.bounds.size.width;
+    CGFloat expandedH = self.bounds.size.height;
+    CGFloat expandedHalfW = expandedW / 2.0f;
+    CGFloat expandedHalfH = expandedH / 2.0f;
+
+    // 计算展开后的中心坐标，使其顺滑向屏幕内部弹开
+    BOOL isLeft = (self.center.x <= containerBounds.size.width / 2.0f);
+    CGFloat targetX = isLeft ? (expandedHalfW + 4.0f) : (containerBounds.size.width - expandedHalfW - 4.0f);
+    
+    CGFloat minY = expandedHalfH + 20.0f;
+    CGFloat maxY = containerBounds.size.height - expandedHalfH - 10.0f;
+    CGFloat targetY = MIN(MAX(self.center.y, minY), maxY);
+
+    CGPoint targetCenter = CGPointMake(targetX, targetY);
+
+    void (^animationsBlock)(void) = ^{
+        self.collapsedContainerView.alpha = 0.0;
+
+        self.cpuTitleLabel.alpha = 1.0;
+        self.cpuValueLabel.alpha = 1.0;
+        self.cpuFreqLabel.alpha = 1.0;
+        self.div1.alpha = 1.0;
+        self.batteryIconLabel.alpha = 1.0;
+        self.batteryValueLabel.alpha = 1.0;
+        self.batterySubLabel.alpha = 1.0;
+        self.div2.alpha = 1.0;
+        self.tempIconLabel.alpha = 1.0;
+        self.tempValueLabel.alpha = 1.0;
+        self.tempSubLabel.alpha = 1.0;
+        self.div3.alpha = 1.0;
+        self.currentIconLabel.alpha = 1.0;
+        self.currentValueLabel.alpha = 1.0;
+        self.currentSubLabel.alpha = 1.0;
+        self.bottomCapsule.alpha = 1.0;
+
+        self.center = targetCenter;
+    };
+
+    void (^completionBlock)(BOOL) = ^(BOOL finished) {
+        (void)finished;
+        if (!self.isCollapsed) {
+            self.collapsedContainerView.hidden = YES;
+        }
+        [self resetInactivityTimer];
+    };
+
+    if (animated) {
+        // 灵动岛展开弹簧动画
+        [UIView animateWithDuration:0.45 delay:0 usingSpringWithDamping:0.75 initialSpringVelocity:0.5 options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState animations:animationsBlock completion:completionBlock];
+    } else {
+        animationsBlock();
+        completionBlock(YES);
     }
 }
 
@@ -678,49 +679,6 @@ static void createCPUWindow(void);
     glowAnim.toValue = (id)[UIColor colorWithWhite:1.0f alpha:0.30f].CGColor;
     glowAnim.duration = 0.7;
     [_blurView.layer addAnimation:glowAnim forKey:@"borderGlow"];
-}
-
-- (CGSize)calculateTargetSizeWithShowCpuFreq:(BOOL)showFreq
-                          showBatteryPercent:(BOOL)showBattery
-                             showBatteryTemp:(BOOL)showTemp
-                          showBatteryCurrent:(BOOL)showCurrent
-                                  isCharging:(BOOL)isCharging {
-    CGFloat currentX = 10.0f;
-    CGFloat padY = 8.0f;
-
-    CGFloat cpuW = 68.0f;
-    currentX += cpuW + 6.0f;
-
-    BOOL actualShowCurrent = showBatteryCurrent && isCharging;
-
-    if (showBattery || showTemp || actualShowCurrent) {
-        currentX += 6.5f;
-    }
-
-    if (showBattery) {
-        currentX += 48.0f + 6.0f;
-        if (showTemp || actualShowCurrent) currentX += 6.5f;
-    }
-
-    if (showTemp) {
-        currentX += 52.0f + 6.0f;
-        if (actualShowCurrent) currentX += 6.5f;
-    }
-
-    if (actualShowCurrent) {
-        currentX += 58.0f + 6.0f;
-    }
-
-    CGFloat finalW = currentX + 4.0f;
-    CGFloat currentY = padY + 28.0f;
-
-    if (isCharging) {
-        currentY += 6.0f + 22.0f;
-    }
-
-    currentY += 6.0f;
-
-    return CGSizeMake(finalW, currentY);
 }
 
 - (void)updateLayoutWithShowCpuFreq:(BOOL)showFreq
@@ -1075,7 +1033,6 @@ static void createCPUWindow(void);
     double freq = getCPUFrequencyMHz(systemCpu);
     _labelsDict[@"CPU主频"].text = [NSString stringWithFormat:@"%.0f / %.0fMHz", freq, spec.maxFreqMHz];
 
-    // 20. 运行内存 (硬件内存精确取整)
     uint64_t memsize = 0;
     size_t size = sizeof(memsize);
     if (sysctlbyname("hw.memsize", &memsize, &size, NULL, 0) != 0 || memsize == 0) {
@@ -1366,7 +1323,6 @@ static UIInterfaceOrientation getActiveInterfaceOrientation(void) {
     return scene ? scene.interfaceOrientation : UIInterfaceOrientationPortrait;
 }
 
-// ✨ 修复充电与长按面板时的智能贴边吸附逻辑
 static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
     if (!floatingView || !floatingView.superview) return;
 
@@ -1377,23 +1333,24 @@ static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
     CGFloat halfW = realFrame.size.width / 2.0f;
     CGFloat halfH = realFrame.size.height / 2.0f;
 
-    CGFloat minX = halfW + 2.0f;
-    CGFloat maxX = containerBounds.size.width - halfW - 2.0f;
+    CGFloat minX = halfW + 4.0f;
+    CGFloat maxX = containerBounds.size.width - halfW - 4.0f;
     CGFloat minY = halfH + 20.0f;
     CGFloat maxY = containerBounds.size.height - halfH - 10.0f;
 
     if (maxX < minX) minX = maxX = containerBounds.size.width / 2.0f;
     if (maxY < minY) minY = maxY = containerBounds.size.height / 2.0f;
 
-    if (smartDockEnable) {
+    // 折叠靠边吸附逻辑（不管是充电还是非充电状态，都自动靠左或靠右边缘）
+    if (floatingView.isCollapsed) {
+        BOOL isLeft = (targetCenter.x <= containerBounds.size.width / 2.0f);
+        targetCenter.x = isLeft ? minX : maxX;
+    } else if (smartDockEnable) {
         CGFloat distLeft = targetCenter.x - halfW;
         CGFloat distRight = containerBounds.size.width - (targetCenter.x + halfW);
 
-        if (dockMode == 1 || (dockMode == 0 && distLeft <= distRight)) {
-            targetCenter.x = minX;
-        } else if (dockMode == 2 || (dockMode == 0 && distRight < distLeft)) {
-            targetCenter.x = maxX;
-        }
+        if (dockMode == 1 || (dockMode == 0 && distLeft <= distRight && distLeft < 100.0f)) targetCenter.x = minX;
+        else if (dockMode == 2 || (dockMode == 0 && distRight < distLeft && distRight < 100.0f)) targetCenter.x = maxX;
     }
 
     if (targetCenter.x < minX) targetCenter.x = minX;
@@ -1404,7 +1361,7 @@ static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
     void (^layoutBlock)(void) = ^{ floatingView.center = targetCenter; };
 
     if (animate) {
-        [UIView animateWithDuration:0.38 delay:0 usingSpringWithDamping:0.78 initialSpringVelocity:0.5 options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState animations:layoutBlock completion:nil];
+        [UIView animateWithDuration:0.35 delay:0 usingSpringWithDamping:0.8 initialSpringVelocity:0.5 options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState animations:layoutBlock completion:nil];
     } else layoutBlock();
 }
 
@@ -1468,7 +1425,7 @@ static void applyFloatingAlpha(void) {
 }
 
 static void updateFloatingSize(void) {
-    if (!floatingView || floatingView.isAnimating) return;
+    if (!floatingView) return;
 
     BOOL charging = isChargingInternal();
     UIInterfaceOrientation orientation = getActiveInterfaceOrientation();
@@ -1493,7 +1450,9 @@ static void updateFloatingSize(void) {
 
     CGAffineTransform finalTransform = CGAffineTransformConcat(CGAffineTransformMakeScale(floatingScale, floatingScale), CGAffineTransformMakeRotation(rotationAngle));
     floatingView.transform = finalTransform;
-    clampAndPositionFloatingView(floatingView.center, YES);
+    
+    // 定时刷新时使用 animate:NO，避免每秒调用触发抖动动画
+    clampAndPositionFloatingView(floatingView.center, NO);
 }
 
 static void createCPUWindow(void) {
@@ -1598,7 +1557,7 @@ static void updateCPU(void) {
     checkHighCPU(cpu);
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (!floatingView || floatingView.isAnimating) return;
+        if (!floatingView) return;
 
         [UIDevice currentDevice].batteryMonitoringEnabled = YES;
         NSInteger battery = (NSInteger)([UIDevice currentDevice].batteryLevel * 100);
@@ -1624,7 +1583,7 @@ static void updateCPU(void) {
     });
 }
 
-#pragma mark - 9. 设置级联选择器实现
+#pragma mark - 9. 设置级联控制器选择器实现
 
 @implementation SBCPUValuePickerController
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { 
@@ -1694,7 +1653,7 @@ static void updateCPU(void) {
 }
 @end
 
-#pragma mark - 10. 完整设置控制器实现
+#pragma mark - 10. 完整设置控制器实现（恢复全部 5 个 Section）
 
 @implementation SBCPUSettingsController
 
@@ -1719,11 +1678,11 @@ static void updateCPU(void) {
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     (void)tableView;
-    if (section == 0) return 2;
-    if (section == 1) return 3;
-    if (section == 2) return 4;
-    if (section == 3) return 3;
-    return 5;
+    if (section == 0) return 2; // 📱 智能缩进
+    if (section == 1) return 3; // ⚡ 自动控制
+    if (section == 2) return 4; // 🔲 悬浮窗外观
+    if (section == 3) return 3; // 🧠 智能选项
+    return 5;                   // 📍 位置与显示
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
