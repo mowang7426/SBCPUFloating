@@ -51,7 +51,7 @@
 @property (nonatomic, strong) UIView *bottomCapsule;
 @property (nonatomic, strong) UILabel *statusLabel;
 
-// ✨ 智能缩进微型胶囊组件
+// 智能缩进微型胶囊组件
 @property (nonatomic, strong) UIView *collapsedContainerView;
 @property (nonatomic, strong) UIView *statusDot;
 @property (nonatomic, strong) UILabel *miniCpuLabel;
@@ -144,10 +144,8 @@ static BOOL showBatteryCurrent = YES;
 static CGRect keyboardBeforeFrame;
 static BOOL keyboardMoved = NO;
 
-// 18 个调用的 C 函数原型声明，无任何多余函数，100% 规避 -Werror
+// 精简后的 16 个调用的 C 函数原型声明，彻底规避 -Werror 编译报错
 static UIWindowScene *getWindowScene(void);
-static UIInterfaceOrientation getActiveInterfaceOrientation(void);
-static CGRect getValidContainerBounds(UIView *view);
 static double getCPUUsage(void);
 static double getCPUFrequencyMHz(double currentCpuUsage);
 static double getBatteryTemperatureInternal(void);
@@ -332,7 +330,7 @@ static void createCPUWindow(void);
         _statusLabel.textAlignment = NSTextAlignmentCenter;
         [_bottomCapsule addSubview:_statusLabel];
 
-        // --- ✨ 6. 智能缩进微型胶囊组件 ---
+        // --- 6. 智能缩进微型胶囊组件 ---
         _collapsedContainerView = [[UIView alloc] init];
         _collapsedContainerView.hidden = YES;
         _collapsedContainerView.alpha = 0.0;
@@ -380,12 +378,12 @@ static void createCPUWindow(void);
     if (_isCollapsed) return;
     _isCollapsed = YES;
 
-    CGRect containerBounds = getValidContainerBounds(self);
+    CGRect containerBounds = self.superview ? self.superview.bounds : [UIScreen mainScreen].bounds;
 
     CGFloat targetW = 64.0f;
     CGFloat targetH = 28.0f;
 
-    // 靠左侧还是靠右侧
+    // 根据父视图当前坐标系自动贴靠左侧/右侧，原生适配横竖屏
     BOOL isLeft = (self.center.x <= containerBounds.size.width / 2.0f);
     CGFloat targetX = isLeft ? (targetW / 2.0f + 2.0f) : (containerBounds.size.width - targetW / 2.0f - 2.0f);
     
@@ -457,7 +455,7 @@ static void createCPUWindow(void);
                                             showBatteryCurrent:showBatteryCurrent
                                                     isCharging:charging];
 
-    CGRect containerBounds = getValidContainerBounds(self);
+    CGRect containerBounds = self.superview ? self.superview.bounds : [UIScreen mainScreen].bounds;
 
     CGFloat halfW = fullSize.width / 2.0f;
     CGFloat halfH = fullSize.height / 2.0f;
@@ -545,7 +543,7 @@ static void createCPUWindow(void);
         CGPoint translation = [pan translationInView:self.superview];
         CGPoint targetCenter = CGPointMake(self.lastPoint.x + translation.x, self.lastPoint.y + translation.y);
 
-        CGRect containerBounds = getValidContainerBounds(self);
+        CGRect containerBounds = self.superview ? self.superview.bounds : [UIScreen mainScreen].bounds;
         CGRect realFrame = self.frame;
         CGFloat halfW = realFrame.size.width / 2.0f;
         CGFloat halfH = realFrame.size.height / 2.0f;
@@ -884,44 +882,14 @@ static UIWindowScene *getWindowScene(void) {
     return nil;
 }
 
-static UIInterfaceOrientation getActiveInterfaceOrientation(void) {
-    UIApplication *app = [UIApplication sharedApplication];
-    if ([app isKindOfClass:NSClassFromString(@"SpringBoard")] && [app respondsToSelector:@selector(activeInterfaceOrientation)]) {
-        return [(SpringBoard *)app activeInterfaceOrientation];
-    }
-    UIWindowScene *scene = getWindowScene();
-    if (scene) {
-        return scene.interfaceOrientation;
-    }
-    return UIInterfaceOrientationPortrait;
-}
-
-// 自动计算横屏/竖屏安全可拖拽容器 Bounds
-static CGRect getValidContainerBounds(UIView *view) {
-    CGRect b = CGRectZero;
-    if (view && view.superview) {
-        b = view.superview.bounds;
-    }
-    if (CGRectIsEmpty(b)) {
-        UIWindowScene *scene = getWindowScene();
-        b = scene ? scene.coordinateSpace.bounds : [UIScreen mainScreen].bounds;
-    }
-
-    UIInterfaceOrientation orientation = getActiveInterfaceOrientation();
-    CGFloat maxDim = MAX(b.size.width, b.size.height);
-    CGFloat minDim = MIN(b.size.width, b.size.height);
-
-    if (UIInterfaceOrientationIsLandscape(orientation)) {
-        return CGRectMake(0, 0, maxDim, minDim);
-    } else {
-        return CGRectMake(0, 0, minDim, maxDim);
-    }
-}
-
 static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
-    if (!floatingView) return;
+    if (!floatingView || !floatingView.superview) return;
 
-    CGRect containerBounds = getValidContainerBounds(floatingView);
+    // 直接采用父视图的实际 Bounds，在 iOS 旋转机制下能够完美锁定范围，绝不超出屏幕
+    CGRect containerBounds = floatingView.superview.bounds;
+    if (CGRectIsEmpty(containerBounds)) {
+        containerBounds = [UIScreen mainScreen].bounds;
+    }
 
     CGRect realFrame = floatingView.frame;
     CGFloat halfW = realFrame.size.width / 2.0f;
@@ -1156,11 +1124,11 @@ static void applyFloatingAlpha(void) {
     });
 }
 
+// 移除手动 CGAffineTransform 旋转，依靠 RootViewController 自动旋转，彻底修复横屏尺寸不对与越界 Bug
 static void updateFloatingSize(void) {
     if (!floatingView) return;
 
     BOOL charging = isChargingInternal();
-    UIInterfaceOrientation orientation = getActiveInterfaceOrientation();
 
     floatingView.transform = CGAffineTransformIdentity;
 
@@ -1172,28 +1140,9 @@ static void updateFloatingSize(void) {
                                        isCharging:charging];
     }
 
-    CGFloat rotationAngle = 0.0;
-    switch (orientation) {
-        case UIInterfaceOrientationLandscapeLeft:
-            rotationAngle = -M_PI_2; // -90 度方向校正
-            break;
-        case UIInterfaceOrientationLandscapeRight:
-            rotationAngle = M_PI_2;  // +90 度方向校正
-            break;
-        case UIInterfaceOrientationPortraitUpsideDown:
-            rotationAngle = M_PI;
-            break;
-        case UIInterfaceOrientationPortrait:
-        default:
-            rotationAngle = 0.0;
-            break;
-    }
+    // 仅应用用户配置的缩放矩阵
+    floatingView.transform = CGAffineTransformMakeScale(floatingScale, floatingScale);
 
-    CGAffineTransform scaleTransform = CGAffineTransformMakeScale(floatingScale, floatingScale);
-    CGAffineTransform rotateTransform = CGAffineTransformMakeRotation(rotationAngle);
-    CGAffineTransform finalTransform = CGAffineTransformConcat(scaleTransform, rotateTransform);
-
-    floatingView.transform = finalTransform;
     clampAndPositionFloatingView(floatingView.center, YES);
 }
 
