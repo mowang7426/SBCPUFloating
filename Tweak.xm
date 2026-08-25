@@ -1,4 +1,3 @@
-```logos
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 #import <mach/mach.h>
@@ -2116,4 +2115,3 @@ static void registerV160Observers()
     });
 }
 
-```
