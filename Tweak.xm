@@ -107,7 +107,7 @@ static CGFloat floatingAlpha = 0.70f;
 
 // 布局、吸附与键盘避让控制配置
 static BOOL autoWindowSizeEnable = NO;
-static BOOL keyboardAvoidEnable = YES; // 新增：键盘避让开关
+static BOOL keyboardAvoidEnable = YES; // 键盘避让开关
 static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
@@ -115,7 +115,7 @@ static BOOL smartDockEnable = YES;
 static NSInteger dockMode = 0; // 0自动 1左 2右 3上 4下
 static BOOL rememberPositionEnable = YES;
 
-static CGRect keyboardBeforeFrame = {0};
+static CGRect keyboardBeforeFrame; // 修复：标准 C 声明，避免 {-Wmissing-braces} 编译错误
 static BOOL keyboardMoved = NO;
 static BOOL g_ForcePauseCharging = NO;
 
@@ -187,8 +187,8 @@ static double getBatteryTemperatureInternal() {
     return -1;
 }
 
-#pragma mark - 充电硬件调控 Engine
-static void applyChargingControl(BOOL pause) {
+#pragma mark - 真实断充与限流核心（在 powerd root 进程下执行）
+static void applyChargingControl(BOOL pause, int currentLimitmA) {
     // 1. PowerUI Private Framework (Client & Manager)
     Class clientClass = objc_getClass("PowerUISmartChargingClient");
     if (clientClass) {
@@ -238,8 +238,7 @@ static void applyChargingControl(BOOL pause) {
         IORegistryEntrySetCFProperty(batteryService, CFSTR("DisableCharging"), pauseBool);
         IORegistryEntrySetCFProperty(batteryService, CFSTR("ChargingEnabled"), enableBool);
 
-        int currentLimit = pause ? 0 : 3000;
-        CFNumberRef numVal = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &currentLimit);
+        CFNumberRef numVal = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &currentLimitmA);
         if (numVal) {
             IORegistryEntrySetCFProperty(batteryService, CFSTR("ChargeCurrentLimit"), numVal);
             IORegistryEntrySetCFProperty(batteryService, CFSTR("CurrentLimit"), numVal);
@@ -248,7 +247,7 @@ static void applyChargingControl(BOOL pause) {
         IOObjectRelease(batteryService);
     }
 
-    // 3. AppleSMC Fallback
+    // 3. AppleSMC Charge Control
     io_service_t smcService = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleSMC"));
     if (smcService) {
         CFBooleanRef pauseBool = pause ? kCFBooleanTrue : kCFBooleanFalse;
@@ -287,7 +286,7 @@ static void powerdCheckTemperatureAndControl() {
     if (!sbcpuSmartChargeEnable) {
         if (g_ForcePauseCharging) {
             g_ForcePauseCharging = NO;
-            applyChargingControl(NO);
+            applyChargingControl(NO, 3000);
         }
         return;
     }
@@ -297,10 +296,13 @@ static void powerdCheckTemperatureAndControl() {
 
     if (temp >= sbcpuChargeTempPause || temp >= sbcpuChargeTempStop) {
         g_ForcePauseCharging = YES;
-        applyChargingControl(YES);
+        applyChargingControl(YES, 0); // 触发完全断充，电流锁定为 0
+    } else if (temp >= sbcpuChargeTempReduce) {
+        g_ForcePauseCharging = NO;
+        applyChargingControl(NO, 300); // 触发降低功率限流 300mA
     } else if (temp <= sbcpuChargeTempFast) {
         g_ForcePauseCharging = NO;
-        applyChargingControl(NO);
+        applyChargingControl(NO, 3000); // 恢复全速快充
     }
 }
 
@@ -915,7 +917,7 @@ static void updateCPU() {
         sw.on = autoWindowSizeEnable;
         [sw addTarget:self action:@selector(changeAutoWindowSize:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = sw;
-    } else if (indexPath.row == 8) { // 新增：键盘避让开关
+    } else if (indexPath.row == 8) { // 键盘避让开关
         cell.textLabel.text = @"键盘避让";
         UISwitch *sw = [[UISwitch alloc] init];
         sw.on = keyboardAvoidEnable;
@@ -1130,7 +1132,7 @@ static void registerV160Observers() {
             }
         }];
 
-        // 键盘避让观察者 (根据中线位置判定)
+        // 键盘避让逻辑 (根据屏幕中线上下位置智能触发)
         [nc addObserverForName:UIKeyboardWillShowNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
             if (settingsShowing || !keyboardAvoidEnable) return;
 
@@ -1141,7 +1143,7 @@ static void registerV160Observers() {
                 CGFloat centerY = CGRectGetMidY(floatingView.frame);
                 CGFloat limitY = CGRectGetMidY(screenBounds);
 
-                // 处于屏幕上半部分时，忽略避让
+                // 如果悬浮窗处于屏幕上半部分（Y < 中线），则不避让
                 if (centerY < limitY) return;
 
                 if (!keyboardMoved) {
