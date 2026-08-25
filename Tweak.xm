@@ -25,7 +25,7 @@
 @property (nonatomic, strong) UIVisualEffectView *blurView;
 @property (nonatomic, strong) CAShapeLayer *marqueeLayer; // 充电跑马灯流光图层
 
-// 方案二横向组件
+// 横向组件
 @property (nonatomic, strong) UILabel *cpuTitleLabel;
 @property (nonatomic, strong) UILabel *cpuValueLabel;
 @property (nonatomic, strong) UILabel *cpuFreqLabel;
@@ -51,7 +51,7 @@
 @property (nonatomic, strong) UIView *bottomCapsule;
 @property (nonatomic, strong) UILabel *statusLabel;
 
-// ✨ 智能缩进胶囊组件
+// 智能缩进胶囊组件
 @property (nonatomic, strong) UIView *collapsedContainerView;
 @property (nonatomic, strong) UIView *statusDot;
 @property (nonatomic, strong) UILabel *miniCpuLabel;
@@ -148,7 +148,6 @@ static BOOL keyboardMoved = NO;
 static UIWindowScene *getWindowScene(void);
 static CGSize getRealScreenSize(void);
 static UIInterfaceOrientation getActiveInterfaceOrientation(void);
-static CGSize getPhysicalScreenSizeForOrientation(UIInterfaceOrientation orientation);
 static double getCPUUsage(void);
 static double getCPUFrequencyMHz(double currentCpuUsage);
 static double getBatteryTemperatureInternal(void);
@@ -334,7 +333,7 @@ static void createCPUWindow(void);
         _statusLabel.textAlignment = NSTextAlignmentCenter;
         [_bottomCapsule addSubview:_statusLabel];
 
-        // --- ✨ 6. 智能缩进微型胶囊 ---
+        // --- 6. 智能缩进微型胶囊 ---
         _collapsedContainerView = [[UIView alloc] init];
         _collapsedContainerView.hidden = YES;
         _collapsedContainerView.alpha = 0.0;
@@ -382,19 +381,23 @@ static void createCPUWindow(void);
     if (_isCollapsed) return;
     _isCollapsed = YES;
 
-    UIInterfaceOrientation orientation = getActiveInterfaceOrientation();
-    CGSize screenSize = getPhysicalScreenSizeForOrientation(orientation);
+    CGRect containerBounds = self.superview ? self.superview.bounds : [UIScreen mainScreen].bounds;
 
     CGFloat targetW = 64.0f;
     CGFloat targetH = 28.0f;
 
-    // 计算贴近左侧还是右侧
-    BOOL isLeft = (self.center.x <= screenSize.width / 2.0f);
-    CGFloat targetX = isLeft ? (targetW / 2.0f + 2.0f) : (screenSize.width - targetW / 2.0f - 2.0f);
-    CGPoint targetCenter = CGPointMake(targetX, self.center.y);
+    // 计算贴近父视图坐标系的左侧还是右侧，彻底消除越界
+    BOOL isLeft = (self.center.x <= containerBounds.size.width / 2.0f);
+    CGFloat targetX = isLeft ? (targetW / 2.0f + 2.0f) : (containerBounds.size.width - targetW / 2.0f - 2.0f);
+    
+    CGFloat targetY = self.center.y;
+    CGFloat halfH = targetH / 2.0f;
+    if (targetY < halfH + 20.0f) targetY = halfH + 20.0f;
+    if (targetY > containerBounds.size.height - halfH - 10.0f) targetY = containerBounds.size.height - halfH - 10.0f;
+
+    CGPoint targetCenter = CGPointMake(targetX, targetY);
 
     void (^animationsBlock)(void) = ^{
-        // 隐藏主视图面板
         self.cpuTitleLabel.alpha = 0.0;
         self.cpuValueLabel.alpha = 0.0;
         self.cpuFreqLabel.alpha = 0.0;
@@ -412,7 +415,6 @@ static void createCPUWindow(void);
         self.currentSubLabel.alpha = 0.0;
         self.bottomCapsule.alpha = 0.0;
 
-        // 显示微型小胶囊
         self.collapsedContainerView.hidden = NO;
         self.collapsedContainerView.alpha = 1.0;
         self.collapsedContainerView.frame = CGRectMake(0, 0, targetW, targetH);
@@ -454,16 +456,21 @@ static void createCPUWindow(void);
                                             showBatteryCurrent:showBatteryCurrent
                                                     isCharging:charging];
 
-    UIInterfaceOrientation orientation = getActiveInterfaceOrientation();
-    CGSize screenSize = getPhysicalScreenSizeForOrientation(orientation);
+    CGRect containerBounds = self.superview ? self.superview.bounds : [UIScreen mainScreen].bounds;
 
-    // 确定展开时的防止越界坐标
     CGFloat halfW = fullSize.width / 2.0f;
+    CGFloat halfH = fullSize.height / 2.0f;
+    
     CGFloat currentX = self.center.x;
-    if (currentX - halfW < 2.0f) currentX = halfW + 2.0f;
-    if (currentX + halfW > screenSize.width - 2.0f) currentX = screenSize.width - halfW - 2.0f;
+    CGFloat currentY = self.center.y;
 
-    CGPoint targetCenter = CGPointMake(currentX, self.center.y);
+    if (currentX - halfW < 2.0f) currentX = halfW + 2.0f;
+    if (currentX + halfW > containerBounds.size.width - 2.0f) currentX = containerBounds.size.width - halfW - 2.0f;
+
+    if (currentY - halfH < 20.0f) currentY = halfH + 20.0f;
+    if (currentY + halfH > containerBounds.size.height - 10.0f) currentY = containerBounds.size.height - halfH - 10.0f;
+
+    CGPoint targetCenter = CGPointMake(currentX, currentY);
 
     void (^animationsBlock)(void) = ^{
         self.collapsedContainerView.alpha = 0.0;
@@ -537,19 +544,19 @@ static void createCPUWindow(void);
         CGPoint translation = [pan translationInView:self.superview];
         CGPoint targetCenter = CGPointMake(self.lastPoint.x + translation.x, self.lastPoint.y + translation.y);
 
-        UIInterfaceOrientation orientation = getActiveInterfaceOrientation();
-        CGSize size = getPhysicalScreenSizeForOrientation(orientation);
+        // 基于父视图 bounds 严密控制拖拽边界，彻底规避横屏越界 Bug
+        CGRect containerBounds = self.superview ? self.superview.bounds : [UIScreen mainScreen].bounds;
         CGRect realFrame = self.frame;
         CGFloat halfW = realFrame.size.width / 2.0f;
         CGFloat halfH = realFrame.size.height / 2.0f;
 
         CGFloat minX = halfW + 2.0f;
-        CGFloat maxX = size.width - halfW - 2.0f;
+        CGFloat maxX = containerBounds.size.width - halfW - 2.0f;
         CGFloat minY = halfH + 20.0f;
-        CGFloat maxY = size.height - halfH - 10.0f;
+        CGFloat maxY = containerBounds.size.height - halfH - 10.0f;
 
-        if (maxX < minX) maxX = minX;
-        if (maxY < minY) maxY = minY;
+        if (maxX < minX) minX = maxX = containerBounds.size.width / 2.0f;
+        if (maxY < minY) minY = maxY = containerBounds.size.height / 2.0f;
 
         if (targetCenter.x < minX) targetCenter.x = minX;
         if (targetCenter.x > maxX) targetCenter.x = maxX;
@@ -777,7 +784,6 @@ static void createCPUWindow(void);
                   current:(double)current 
                isCharging:(BOOL)isCharging {
     
-    // 主视图更新
     _cpuValueLabel.text = [NSString stringWithFormat:@"%.1f%%", cpu];
     _cpuValueLabel.textColor = (cpu >= 80.0) ? [UIColor systemRedColor] : [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
 
@@ -787,16 +793,15 @@ static void createCPUWindow(void);
     _currentValueLabel.text = [NSString stringWithFormat:@"%.0fmA", current];
     _statusLabel.text = isCharging ? @"🟢 正在充电" : @"⚪ 未在充电";
 
-    // ✨ 智能微型胶囊指示颜色更新
     _miniCpuLabel.text = [NSString stringWithFormat:@"%.0f%%", cpu];
     
-    UIColor *statusColor = [UIColor colorWithRed:0.22f green:0.74f blue:0.97f alpha:1.0f]; // 科技蓝（默认）
+    UIColor *statusColor = [UIColor colorWithRed:0.22f green:0.74f blue:0.97f alpha:1.0f];
     if (isCharging) {
-        statusColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f]; // 翡翠绿（充电）
+        statusColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
     } else if (cpu >= 80.0 || temp >= 42.0) {
-        statusColor = [UIColor colorWithRed:1.0f green:0.23f blue:0.19f alpha:1.0f]; // 警示红（高温/高CPU）
+        statusColor = [UIColor colorWithRed:1.0f green:0.23f blue:0.19f alpha:1.0f];
     } else if (temp >= 38.0) {
-        statusColor = [UIColor colorWithRed:1.0f green:0.62f blue:0.04f alpha:1.0f]; // 预警橙（体温高）
+        statusColor = [UIColor colorWithRed:1.0f green:0.62f blue:0.04f alpha:1.0f];
     }
     
     _statusDot.backgroundColor = statusColor;
@@ -901,38 +906,30 @@ static UIInterfaceOrientation getActiveInterfaceOrientation(void) {
     return UIInterfaceOrientationPortrait;
 }
 
-static CGSize getPhysicalScreenSizeForOrientation(UIInterfaceOrientation orientation) {
-    CGSize sz = getRealScreenSize();
-    CGFloat w = sz.width;
-    CGFloat h = sz.height;
-    if (UIInterfaceOrientationIsLandscape(orientation)) {
-        return CGSizeMake(MAX(w, h), MIN(w, h));
-    } else {
-        return CGSizeMake(MIN(w, h), MAX(w, h));
-    }
-}
-
 static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
-    if (!floatingView) return;
+    if (!floatingView || !floatingView.superview) return;
 
-    UIInterfaceOrientation orientation = getActiveInterfaceOrientation();
-    CGSize screenSize = getPhysicalScreenSizeForOrientation(orientation);
+    // 直接采用父视图 bounds 进行精确范围校验，规避横屏越界 Bug
+    CGRect containerBounds = floatingView.superview.bounds;
+    if (CGRectIsEmpty(containerBounds)) {
+        containerBounds = [UIScreen mainScreen].bounds;
+    }
+
     CGRect realFrame = floatingView.frame;
-
     CGFloat halfW = realFrame.size.width / 2.0f;
     CGFloat halfH = realFrame.size.height / 2.0f;
 
     CGFloat minX = halfW + 2.0f;
-    CGFloat maxX = screenSize.width - halfW - 2.0f;
+    CGFloat maxX = containerBounds.size.width - halfW - 2.0f;
     CGFloat minY = halfH + 20.0f;
-    CGFloat maxY = screenSize.height - halfH - 10.0f;
+    CGFloat maxY = containerBounds.size.height - halfH - 10.0f;
 
-    if (maxX < minX) maxX = minX;
-    if (maxY < minY) maxY = minY;
+    if (maxX < minX) minX = maxX = containerBounds.size.width / 2.0f;
+    if (maxY < minY) minY = maxY = containerBounds.size.height / 2.0f;
 
     if (smartDockEnable) {
         CGFloat distLeft = targetCenter.x - halfW;
-        CGFloat distRight = screenSize.width - (targetCenter.x + halfW);
+        CGFloat distRight = containerBounds.size.width - (targetCenter.x + halfW);
 
         if (dockMode == 1 || (dockMode == 0 && distLeft <= distRight && distLeft < 80.0f)) {
             targetCenter.x = minX;
@@ -1170,10 +1167,10 @@ static void updateFloatingSize(void) {
     CGFloat rotationAngle = 0.0;
     switch (orientation) {
         case UIInterfaceOrientationLandscapeLeft:
-            rotationAngle = -M_PI_2; // 维持 -90 度校正
+            rotationAngle = -M_PI_2;
             break;
         case UIInterfaceOrientationLandscapeRight:
-            rotationAngle = M_PI_2;  // 维持 +90 度校正
+            rotationAngle = M_PI_2;
             break;
         case UIInterfaceOrientationPortraitUpsideDown:
             rotationAngle = M_PI;
@@ -1370,11 +1367,11 @@ static void updateCPU(void) {
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 5; }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if (section == 0) return 2; // 📱 智能缩进
-    if (section == 1) return 3; // ⚡ 自动控制
-    if (section == 2) return 4; // 🔲 悬浮窗外观
-    if (section == 3) return 3; // 🧠 智能选项
-    return 5;                   // 📍 位置与显示
+    if (section == 0) return 2;
+    if (section == 1) return 3;
+    if (section == 2) return 4;
+    if (section == 3) return 3;
+    return 5;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
