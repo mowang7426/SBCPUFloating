@@ -17,9 +17,9 @@
 
 @interface SBCPUFloatingView : UIView
 @property (nonatomic, strong) UIVisualEffectView *blurView;
-@property (nonatomic, strong) CAShapeLayer *marqueeLayer; // 灵动岛边框环绕流光图层
+@property (nonatomic, strong) CAShapeLayer *marqueeLayer; // 充电跑马灯流光图层
 
-// 方案二组件
+// 方案二横向组件
 @property (nonatomic, strong) UILabel *cpuTitleLabel;
 @property (nonatomic, strong) UILabel *cpuValueLabel;
 @property (nonatomic, strong) UILabel *cpuFreqLabel;
@@ -69,6 +69,10 @@
 
 @interface SBCPUDragView : UIView
 @property (nonatomic, assign) CGPoint lastPoint;
+@end
+
+// 横屏游戏旋转控制器
+@interface SBCPURootViewController : UIViewController
 @end
 
 @interface SBCPUWindow : UIWindow
@@ -124,8 +128,11 @@ static BOOL keyboardMoved = NO;
 static void openSettings(void);
 static void checkHighCPU(double cpu);
 static void registerV160Observers(void);
+static void updateFloatingSize(void);
+static CGSize getRealScreenSize(void);
+static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate);
 
-#pragma mark - 3. 灵动岛级弹簧流体悬浮窗实现
+#pragma mark - 3. 悬浮窗与跑马灯流光实现
 
 @implementation SBCPUFloatingView
 
@@ -155,10 +162,10 @@ static void registerV160Observers(void);
         _blurView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.30f].CGColor;
         [self addSubview:_blurView];
 
-        // 2. ✨ 灵动岛跑马灯环绕流光图层
+        // 2. ✨ 充电跑马灯流光图层 (围绕悬浮窗四周旋转)
         _marqueeLayer = [CAShapeLayer layer];
         _marqueeLayer.fillColor = [UIColor clearColor].CGColor;
-        _marqueeLayer.strokeColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:0.95f].CGColor;
+        _marqueeLayer.strokeColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:0.95f].CGColor; // 翡翠绿高亮
         _marqueeLayer.lineWidth = 2.0f;
         _marqueeLayer.lineDashPattern = @[@14, @8];
         _marqueeLayer.hidden = YES;
@@ -166,7 +173,7 @@ static void registerV160Observers(void);
 
         UIView *content = _blurView.contentView;
 
-        // --- 1. CPU 模块 (方案二：无图标，纯 CPU 标识，自适应不截断) ---
+        // --- 1. CPU 模块 ---
         _cpuTitleLabel = [[UILabel alloc] init];
         _cpuTitleLabel.text = @"CPU";
         _cpuTitleLabel.textColor = [UIColor colorWithWhite:0.95f alpha:1.0f];
@@ -181,7 +188,7 @@ static void registerV160Observers(void);
         [content addSubview:_cpuValueLabel];
 
         _cpuFreqLabel = [[UILabel alloc] init];
-        _cpuFreqLabel.textColor = [UIColor colorWithRed:0.22f green:0.74f blue:0.97f alpha:1.0f]; // #38bdf8 天蓝
+        _cpuFreqLabel.textColor = [UIColor colorWithRed:0.22f green:0.74f blue:0.97f alpha:1.0f]; // #38bdf8
         _cpuFreqLabel.font = [UIFont monospacedDigitSystemFontOfSize:11 weight:UIFontWeightBold];
         _cpuFreqLabel.adjustsFontSizeToFitWidth = YES;
         _cpuFreqLabel.minimumScaleFactor = 0.5f;
@@ -273,7 +280,7 @@ static void registerV160Observers(void);
     return self;
 }
 
-// 灵动岛同款高光高频微弹动画
+// 插入充电器灵动弹跳动画
 - (void)triggerPlugAnimation {
     CAKeyframeAnimation *animation = [CAKeyframeAnimation animationWithKeyPath:@"transform.scale"];
     animation.values = @[@1.0, @1.08, @0.96, @1.02, @1.0];
@@ -289,7 +296,7 @@ static void registerV160Observers(void);
     [_blurView.layer addAnimation:glowAnim forKey:@"borderGlow"];
 }
 
-// 提前预测计算目标 Size（为统一弹簧动画做准备）
+// 预算目标 Size
 - (CGSize)calculateTargetSizeWithShowCpuFreq:(BOOL)showFreq
                           showBatteryPercent:(BOOL)showBattery
                              showBatteryTemp:(BOOL)showTemp
@@ -333,7 +340,7 @@ static void registerV160Observers(void);
     return CGSizeMake(finalW, currentY);
 }
 
-// 布局更新与组件定位
+// 布局更新与动态定位
 - (void)updateLayoutWithShowCpuFreq:(BOOL)showFreq
                  showBatteryPercent:(BOOL)showBattery
                     showBatteryTemp:(BOOL)showTemp
@@ -482,7 +489,7 @@ static void registerV160Observers(void);
 
 @end
 
-#pragma mark - 4. 拖动与边缘智能吸附 (零空气墙)
+#pragma mark - 4. 拖动与零空气墙贴边吸附
 
 @implementation SBCPUDragView
 
@@ -507,15 +514,23 @@ static void registerV160Observers(void);
     center.x += dx;
     center.y += dy;
 
+    CGSize size = getRealScreenSize();
     CGRect realFrame = floatingView.frame;
-    CGSize size = self.superview.bounds.size;
     CGFloat halfW = realFrame.size.width / 2.0f;
     CGFloat halfH = realFrame.size.height / 2.0f;
 
-    if (center.x < halfW) center.x = halfW;
-    if (center.x > size.width - halfW) center.x = size.width - halfW;
-    if (center.y < halfH + 20) center.y = halfH + 20;
-    if (center.y > size.height - halfH) center.y = size.height - halfH;
+    CGFloat minX = halfW + 2.0f; // 核心修复：允许无缝靠紧最左边 2pt 处，彻底消灭空气墙！
+    CGFloat maxX = size.width - halfW - 2.0f; // 允许无缝靠紧最右边 2pt 处
+    CGFloat minY = halfH + 20.0f;
+    CGFloat maxY = size.height - halfH - 10.0f;
+
+    if (maxX < minX) maxX = minX;
+    if (maxY < minY) maxY = minY;
+
+    if (center.x < minX) center.x = minX;
+    if (center.x > maxX) center.x = maxX;
+    if (center.y < minY) center.y = minY;
+    if (center.y > maxY) center.y = maxY;
 
     floatingView.center = center;
     self.center = center;
@@ -533,36 +548,35 @@ static void registerV160Observers(void);
         [[NSUserDefaults standardUserDefaults] synchronize];
     }
 
-    if (!smartDockEnable) return;
+    clampAndPositionFloatingView(floatingView.center, YES);
+}
+@end
 
-    CGSize size = self.superview.bounds.size;
-    CGRect realFrame = floatingView.frame;
-    CGFloat left = CGRectGetMinX(realFrame);
-    CGFloat right = size.width - CGRectGetMaxX(realFrame);
-    CGFloat top = CGRectGetMinY(realFrame);
-    CGFloat bottom = size.height - CGRectGetMaxY(realFrame);
+#pragma mark - 横屏游戏自动旋转控制器
 
-    CGFloat minDistance = MIN(MIN(left, right), MIN(top, bottom));
-    CGPoint center = floatingView.center;
+@implementation SBCPURootViewController
 
-    CGFloat halfW = realFrame.size.width / 2.0f;
-    CGFloat halfH = realFrame.size.height / 2.0f;
+- (BOOL)shouldAutorotate {
+    return YES;
+}
 
-    if (dockMode > 0) {
-        if (dockMode == 1) { center.x = halfW + 10; }
-        else if (dockMode == 2) { center.x = size.width - halfW - 10; }
-        else if (dockMode == 3) { center.y = halfH + 10; }
-        else if (dockMode == 4) { center.y = size.height - halfH - 10; }
-    } else if (minDistance == left) { center.x = halfW + 10; }
-    else if (minDistance == right) { center.x = size.width - halfW - 10; }
-    else if (minDistance == top) { center.y = halfH + 10; }
-    else if (minDistance == bottom) { center.y = size.height - halfH - 10; }
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations {
+    return UIInterfaceOrientationMaskAll;
+}
 
-    [UIView animateWithDuration:0.25 delay:0 options:UIViewAnimationOptionCurveEaseOut animations:^{
-        floatingView.center = center;
-        self.center = center;
+- (BOOL)prefersStatusBarHidden {
+    return YES;
+}
+
+- (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator {
+    [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
+    [coordinator animateAlongsideTransition:^(id<UIViewControllerTransitionCoordinatorContext> context) {
+        if (floatingView) {
+            updateFloatingSize();
+        }
     } completion:nil];
 }
+
 @end
 
 @implementation SBCPUWindow
@@ -589,6 +603,72 @@ static void registerV160Observers(void);
 @end
 
 #pragma mark - 5. 逻辑与辅助函数
+
+static CGSize getRealScreenSize() {
+    if (cpuWindow && cpuWindow.rootViewController && cpuWindow.rootViewController.view) {
+        CGSize s = cpuWindow.rootViewController.view.bounds.size;
+        if (s.width > 0 && s.height > 0) return s;
+    }
+    UIWindowScene *scene = getWindowScene();
+    if (scene) {
+        return scene.coordinateSpace.bounds.size;
+    }
+    return UIScreen.mainScreen.bounds.size;
+}
+
+// 核心修复：重算吸附边界，无论拔插充电器还是改大小，均平滑贴紧边缘！
+static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
+    if (!floatingView) return;
+
+    CGSize screenSize = getRealScreenSize();
+    CGRect realFrame = floatingView.frame;
+
+    CGFloat halfW = realFrame.size.width / 2.0f;
+    CGFloat halfH = realFrame.size.height / 2.0f;
+
+    CGFloat minX = halfW + 2.0f; // 最左边界（仅留 2pt）
+    CGFloat maxX = screenSize.width - halfW - 2.0f; // 最右边界（仅留 2pt，零截断！）
+    CGFloat minY = halfH + 20.0f;
+    CGFloat maxY = screenSize.height - halfH - 10.0f;
+
+    if (maxX < minX) maxX = minX;
+    if (maxY < minY) maxY = minY;
+
+    if (smartDockEnable) {
+        CGFloat distLeft = targetCenter.x - halfW;
+        CGFloat distRight = screenSize.width - (targetCenter.x + halfW);
+
+        if (dockMode == 1 || (dockMode == 0 && distLeft <= distRight && distLeft < 60.0f)) {
+            targetCenter.x = minX;
+        } else if (dockMode == 2 || (dockMode == 0 && distRight < distLeft && distRight < 60.0f)) {
+            targetCenter.x = maxX;
+        }
+    }
+
+    if (targetCenter.x < minX) targetCenter.x = minX;
+    if (targetCenter.x > maxX) targetCenter.x = maxX;
+    if (targetCenter.y < minY) targetCenter.y = minY;
+    if (targetCenter.y > maxY) targetCenter.y = maxY;
+
+    void (^layoutBlock)(void) = ^{
+        floatingView.center = targetCenter;
+        if (cpuDragView) {
+            cpuDragView.frame = floatingView.frame;
+        }
+    };
+
+    if (animate) {
+        [UIView animateWithDuration:0.35 
+                              delay:0 
+             usingSpringWithDamping:0.82 
+              initialSpringVelocity:0.5 
+                            options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState 
+                         animations:layoutBlock 
+                         completion:nil];
+    } else {
+        layoutBlock();
+    }
+}
 
 static void LoadPreferences() {
     NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
@@ -641,7 +721,7 @@ static void SavePreferencesAndNotify() {
     );
 }
 
-// 核心：读取系统硬件最大峰值主频并按实时 CPU 负载精准 1 秒拟合
+// 核心：读取系统硬件真实最高主频 (如 3460MHz / 3470MHz) 并在 1 秒内实时拟合跳动
 static double getCPUFrequencyMHz(double currentCpuUsage) {
     uint64_t freqMax = 0;
     size_t size = sizeof(freqMax);
@@ -782,82 +862,24 @@ static void applyFloatingAlpha() {
     });
 }
 
-// 💥 灵动岛同款物理弹簧动画引擎：尺寸膨胀与吸附锚定同步进行，绝不悬空溢出！
 static void updateFloatingSize() {
     if (!floatingView) return;
 
     BOOL charging = isChargingInternal();
 
-    // 1. 预先计算目标未缩放基础 Size
-    CGSize rawTargetSize = [floatingView calculateTargetSizeWithShowCpuFreq:showCpuFrequency
-                                                          showBatteryPercent:showBatteryPercent
-                                                             showBatteryTemp:showBatteryTemperature
-                                                          showBatteryCurrent:showBatteryCurrent
-                                                                  isCharging:charging];
+    [floatingView updateLayoutWithShowCpuFreq:showCpuFrequency
+                           showBatteryPercent:showBatteryPercent
+                              showBatteryTemp:showBatteryTemperature
+                           showBatteryCurrent:showBatteryCurrent
+                                   isCharging:charging];
 
-    // 2. 算上 floatingScale 后的实际目标可视尺寸
-    CGSize scaledTargetSize = CGSizeMake(rawTargetSize.width * floatingScale, rawTargetSize.height * floatingScale);
-
-    UIWindowScene *scene = getWindowScene();
-    CGSize screenSize = scene ? scene.coordinateSpace.bounds.size : UIScreen.mainScreen.bounds.size;
-
-    CGRect currentRealFrame = floatingView.frame;
-    CGPoint currentCenter = floatingView.center;
-
-    // 判断悬浮窗当前靠哪条边近，保持靠边的锚点 (Anchor Pin) 不变！
-    CGFloat distLeft = CGRectGetMinX(currentRealFrame);
-    CGFloat distRight = screenSize.width - CGRectGetMaxX(currentRealFrame);
-    CGFloat distTop = CGRectGetMinY(currentRealFrame);
-    CGFloat distBottom = screenSize.height - CGRectGetMaxY(currentRealFrame);
-
-    CGFloat newHalfW = scaledTargetSize.width / 2.0f;
-    CGFloat newHalfH = scaledTargetSize.height / 2.0f;
-
-    CGPoint targetCenter = currentCenter;
-
-    if (smartDockEnable) {
-        if (dockMode == 1 || (dockMode == 0 && distLeft <= distRight && distLeft < 60.0f)) {
-            // 锚定左边缘，向右侧扩展，保证左边距固定为 10pt
-            targetCenter.x = 10.0f + newHalfW;
-        } else if (dockMode == 2 || (dockMode == 0 && distRight < distLeft && distRight < 60.0f)) {
-            // 锚定右边缘，向左侧扩展，保证右边距固定为 10pt
-            targetCenter.x = screenSize.width - 10.0f - newHalfW;
-        }
-
-        if (dockMode == 3 || (dockMode == 0 && distTop <= distBottom && distTop < 60.0f)) {
-            targetCenter.y = 10.0f + newHalfH;
-        } else if (dockMode == 4 || (dockMode == 0 && distBottom < distTop && distBottom < 60.0f)) {
-            targetCenter.y = screenSize.height - 10.0f - newHalfH;
-        }
+    CGAffineTransform transform = CGAffineTransformMakeScale(floatingScale, floatingScale);
+    if (!CGAffineTransformEqualToTransform(floatingView.transform, transform)) {
+        floatingView.transform = transform;
     }
 
-    // 严格限制在屏幕可视范围以内
-    if (targetCenter.x < newHalfW + 10.0f) targetCenter.x = newHalfW + 10.0f;
-    if (targetCenter.x > screenSize.width - newHalfW - 10.0f) targetCenter.x = screenSize.width - newHalfW - 10.0f;
-    if (targetCenter.y < newHalfH + 20.0f) targetCenter.y = newHalfH + 20.0f;
-    if (targetCenter.y > screenSize.height - newHalfH - 10.0f) targetCenter.y = screenSize.height - newHalfH - 10.0f;
-
-    // 3. 灵动岛同款高阶阻尼弹簧形变动画 (Apple Dynamic Island Spring Physics)
-    [UIView animateWithDuration:0.55 
-                          delay:0 
-         usingSpringWithDamping:0.78 
-          initialSpringVelocity:0.6 
-                        options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState 
-                     animations:^{
-        
-        [floatingView updateLayoutWithShowCpuFreq:showCpuFrequency
-                               showBatteryPercent:showBatteryPercent
-                                  showBatteryTemp:showBatteryTemperature
-                               showBatteryCurrent:showBatteryCurrent
-                                       isCharging:charging];
-
-        floatingView.transform = CGAffineTransformMakeScale(floatingScale, floatingScale);
-        floatingView.center = targetCenter;
-
-        if (cpuDragView) {
-            cpuDragView.frame = floatingView.frame;
-        }
-    } completion:nil];
+    // 重新平滑贴合屏幕边缘吸附
+    clampAndPositionFloatingView(floatingView.center, YES);
 }
 
 @interface SBCPUAction : NSObject
@@ -883,7 +905,7 @@ static void createCPUWindow() {
     cpuWindow.windowLevel = UIWindowLevelStatusBar + 1;
     cpuWindow.backgroundColor = UIColor.clearColor;
     cpuWindow.opaque = NO;
-    cpuWindow.rootViewController = [UIViewController new];
+    cpuWindow.rootViewController = [[SBCPURootViewController alloc] init];
     cpuWindow.rootViewController.view.backgroundColor = UIColor.clearColor;
     cpuWindow.hidden = NO;
 
@@ -946,7 +968,7 @@ static void checkHighCPU(double cpu) {
     }
 }
 
-// 1.0 秒定时刷新数据，检测到插入充电器时触发灵动岛微弹效果
+// 1.0 秒定时刷新数据，检测到插入充电器时触发灵动动画
 static void updateCPU() {
     double cpu = getCPUUsage();
     double cpuFreq = getCPUFrequencyMHz(cpu);
@@ -963,7 +985,6 @@ static void updateCPU() {
         double current = getBatteryCurrentInternal();
         BOOL charging = isChargingInternal();
 
-        // 切换为充电瞬间触发触觉抖动弹跳
         if (charging && !previousChargingState) {
             [floatingView triggerPlugAnimation];
         }
@@ -1251,14 +1272,7 @@ static void registerV160Observers() {
 
         [nc addObserverForName:UIDeviceOrientationDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
             if (cpuWindow && floatingView) {
-                CGRect f = floatingView.frame;
-                CGSize s = cpuWindow.bounds.size;
-                if (CGRectGetMaxX(f) > s.width) f.origin.x = s.width - f.size.width - 10;
-                if (CGRectGetMaxY(f) > s.height) f.origin.y = s.height - f.size.height - 10;
-                if (f.origin.x < 0) f.origin.x = 10;
-                if (f.origin.y < 0) f.origin.y = 10;
-                floatingView.frame = f;
-                if (cpuDragView) cpuDragView.frame = f;
+                updateFloatingSize();
             }
         }];
 
