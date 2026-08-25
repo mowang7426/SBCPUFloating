@@ -51,6 +51,19 @@
 @property (nonatomic, strong) UIView *bottomCapsule;
 @property (nonatomic, strong) UILabel *statusLabel;
 
+// ✨ 智能缩进胶囊组件
+@property (nonatomic, strong) UIView *collapsedContainerView;
+@property (nonatomic, strong) UIView *statusDot;
+@property (nonatomic, strong) UILabel *miniCpuLabel;
+
+@property (nonatomic, assign) BOOL isCollapsed;
+@property (nonatomic, strong) NSTimer *inactivityTimer;
+@property (nonatomic, strong) UITapGestureRecognizer *singleTapGesture;
+
+- (void)resetInactivityTimer;
+- (void)collapseToEdgeAnimated:(BOOL)animated;
+- (void)expandFromEdgeAnimated:(BOOL)animated;
+
 - (void)triggerPlugAnimation;
 
 - (CGSize)calculateTargetSizeWithShowCpuFreq:(BOOL)showFreq
@@ -101,6 +114,10 @@ static CGFloat floatingFontSize = 13.0;
 
 static BOOL settingsShowing = NO;
 static BOOL previousChargingState = NO;
+
+// 自动收起缩进配置
+static BOOL autoCollapseEnable = YES;
+static NSInteger autoCollapseDelay = 4; // 默认 4 秒无操作缩进
 
 // 自动注销配置
 static BOOL autoLogoutEnable = NO;
@@ -158,17 +175,26 @@ static void createCPUWindow(void);
         self.layer.masksToBounds = NO;
         self.userInteractionEnabled = YES;
         self.multipleTouchEnabled = NO;
+        _isCollapsed = NO;
         
         // 1. 绑定原生 UIPanGestureRecognizer 拖拽手势
         UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
         pan.delegate = self;
         [self addGestureRecognizer:pan];
 
-        // 2. 绑定原生 UITapGestureRecognizer 双击手势
+        // 2. 单击手势（缩进时点击展开）
+        _singleTapGesture = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleSingleTap:)];
+        _singleTapGesture.delegate = self;
+        [self addGestureRecognizer:_singleTapGesture];
+
+        // 3. 双击手势（展开时双击打开设置）
         UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)];
         doubleTap.numberOfTapsRequired = 2;
         doubleTap.delegate = self;
         [self addGestureRecognizer:doubleTap];
+        
+        // 确保双击不会优先误触发单击
+        [_singleTapGesture requireGestureRecognizerToFail:doubleTap];
 
         // 自然落影
         self.layer.shadowColor = [UIColor blackColor].CGColor;
@@ -176,7 +202,7 @@ static void createCPUWindow(void);
         self.layer.shadowOffset = CGSizeMake(0, 5);
         self.layer.shadowRadius = 10.0f;
 
-        // 3. 高透超薄暗色毛玻璃
+        // 4. 高透超薄暗色毛玻璃
         UIBlurEffect *blurEffect = nil;
         if (@available(iOS 13.0, *)) {
             blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark];
@@ -307,14 +333,205 @@ static void createCPUWindow(void);
         _statusLabel.font = [UIFont systemFontOfSize:10 weight:UIFontWeightMedium];
         _statusLabel.textAlignment = NSTextAlignmentCenter;
         [_bottomCapsule addSubview:_statusLabel];
+
+        // --- ✨ 6. 智能缩进微型胶囊 ---
+        _collapsedContainerView = [[UIView alloc] init];
+        _collapsedContainerView.hidden = YES;
+        _collapsedContainerView.alpha = 0.0;
+        [content addSubview:_collapsedContainerView];
+
+        _statusDot = [[UIView alloc] initWithFrame:CGRectMake(8, 9, 10, 10)];
+        _statusDot.layer.cornerRadius = 5.0f;
+        _statusDot.backgroundColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
+        [_collapsedContainerView addSubview:_statusDot];
+
+        _miniCpuLabel = [[UILabel alloc] initWithFrame:CGRectMake(22, 5, 36, 18)];
+        _miniCpuLabel.textColor = [UIColor whiteColor];
+        _miniCpuLabel.font = [UIFont monospacedDigitSystemFontOfSize:11.5f weight:UIFontWeightBold];
+        _miniCpuLabel.textAlignment = NSTextAlignmentLeft;
+        [_collapsedContainerView addSubview:_miniCpuLabel];
+
+        [self resetInactivityTimer];
     }
     return self;
 }
 
-#pragma mark - 手势跟手拖拽与双击响应
+#pragma mark - 倒计时与缩进/展开控制
+
+- (void)resetInactivityTimer {
+    if (_inactivityTimer) {
+        [_inactivityTimer invalidate];
+        _inactivityTimer = nil;
+    }
+    if (autoCollapseEnable && !_isCollapsed && !settingsShowing) {
+        _inactivityTimer = [NSTimer scheduledTimerWithTimeInterval:autoCollapseDelay
+                                                             target:self
+                                                           selector:@selector(inactivityTimerFired)
+                                                           userInfo:nil
+                                                            repeats:NO];
+    }
+}
+
+- (void)inactivityTimerFired {
+    if (!settingsShowing && !_isCollapsed) {
+        [self collapseToEdgeAnimated:YES];
+    }
+}
+
+- (void)collapseToEdgeAnimated:(BOOL)animated {
+    if (_isCollapsed) return;
+    _isCollapsed = YES;
+
+    UIInterfaceOrientation orientation = getActiveInterfaceOrientation();
+    CGSize screenSize = getPhysicalScreenSizeForOrientation(orientation);
+
+    CGFloat targetW = 64.0f;
+    CGFloat targetH = 28.0f;
+
+    // 计算贴近左侧还是右侧
+    BOOL isLeft = (self.center.x <= screenSize.width / 2.0f);
+    CGFloat targetX = isLeft ? (targetW / 2.0f + 2.0f) : (screenSize.width - targetW / 2.0f - 2.0f);
+    CGPoint targetCenter = CGPointMake(targetX, self.center.y);
+
+    void (^animationsBlock)(void) = ^{
+        // 隐藏主视图面板
+        self.cpuTitleLabel.alpha = 0.0;
+        self.cpuValueLabel.alpha = 0.0;
+        self.cpuFreqLabel.alpha = 0.0;
+        self.div1.alpha = 0.0;
+        self.batteryIconLabel.alpha = 0.0;
+        self.batteryValueLabel.alpha = 0.0;
+        self.batterySubLabel.alpha = 0.0;
+        self.div2.alpha = 0.0;
+        self.tempIconLabel.alpha = 0.0;
+        self.tempValueLabel.alpha = 0.0;
+        self.tempSubLabel.alpha = 0.0;
+        self.div3.alpha = 0.0;
+        self.currentIconLabel.alpha = 0.0;
+        self.currentValueLabel.alpha = 0.0;
+        self.currentSubLabel.alpha = 0.0;
+        self.bottomCapsule.alpha = 0.0;
+
+        // 显示微型小胶囊
+        self.collapsedContainerView.hidden = NO;
+        self.collapsedContainerView.alpha = 1.0;
+        self.collapsedContainerView.frame = CGRectMake(0, 0, targetW, targetH);
+
+        self.blurView.frame = CGRectMake(0, 0, targetW, targetH);
+        self.blurView.layer.cornerRadius = 14.0f;
+        self.bounds = CGRectMake(0, 0, targetW, targetH);
+        self.center = targetCenter;
+
+        self.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, targetW, targetH) cornerRadius:14.0f].CGPath;
+        self.marqueeLayer.frame = self.blurView.bounds;
+        self.marqueeLayer.path = [UIBezierPath bezierPathWithRoundedRect:self.blurView.bounds cornerRadius:14.0f].CGPath;
+    };
+
+    if (animated) {
+        [UIView animateWithDuration:0.4
+                              delay:0
+             usingSpringWithDamping:0.8
+              initialSpringVelocity:0.4
+                            options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState
+                         animations:animationsBlock
+                         completion:nil];
+    } else {
+        animationsBlock();
+    }
+}
+
+- (void)expandFromEdgeAnimated:(BOOL)animated {
+    if (!_isCollapsed) {
+        [self resetInactivityTimer];
+        return;
+    }
+    _isCollapsed = NO;
+
+    BOOL charging = isChargingInternal();
+    CGSize fullSize = [self calculateTargetSizeWithShowCpuFreq:showCpuFrequency
+                                            showBatteryPercent:showBatteryPercent
+                                               showBatteryTemp:showBatteryTemperature
+                                            showBatteryCurrent:showBatteryCurrent
+                                                    isCharging:charging];
+
+    UIInterfaceOrientation orientation = getActiveInterfaceOrientation();
+    CGSize screenSize = getPhysicalScreenSizeForOrientation(orientation);
+
+    // 确定展开时的防止越界坐标
+    CGFloat halfW = fullSize.width / 2.0f;
+    CGFloat currentX = self.center.x;
+    if (currentX - halfW < 2.0f) currentX = halfW + 2.0f;
+    if (currentX + halfW > screenSize.width - 2.0f) currentX = screenSize.width - halfW - 2.0f;
+
+    CGPoint targetCenter = CGPointMake(currentX, self.center.y);
+
+    void (^animationsBlock)(void) = ^{
+        self.collapsedContainerView.alpha = 0.0;
+
+        self.cpuTitleLabel.alpha = 1.0;
+        self.cpuValueLabel.alpha = 1.0;
+        self.cpuFreqLabel.alpha = 1.0;
+        self.div1.alpha = 1.0;
+        self.batteryIconLabel.alpha = 1.0;
+        self.batteryValueLabel.alpha = 1.0;
+        self.batterySubLabel.alpha = 1.0;
+        self.div2.alpha = 1.0;
+        self.tempIconLabel.alpha = 1.0;
+        self.tempValueLabel.alpha = 1.0;
+        self.tempSubLabel.alpha = 1.0;
+        self.div3.alpha = 1.0;
+        self.currentIconLabel.alpha = 1.0;
+        self.currentValueLabel.alpha = 1.0;
+        self.currentSubLabel.alpha = 1.0;
+        self.bottomCapsule.alpha = 1.0;
+
+        [self updateLayoutWithShowCpuFreq:showCpuFrequency
+                       showBatteryPercent:showBatteryPercent
+                          showBatteryTemp:showBatteryTemperature
+                       showBatteryCurrent:showBatteryCurrent
+                               isCharging:charging];
+
+        self.center = targetCenter;
+    };
+
+    void (^completionBlock)(BOOL) = ^(BOOL finished) {
+        self.collapsedContainerView.hidden = YES;
+        [self resetInactivityTimer];
+    };
+
+    if (animated) {
+        [UIView animateWithDuration:0.35
+                              delay:0
+             usingSpringWithDamping:0.8
+              initialSpringVelocity:0.5
+                            options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState
+                         animations:animationsBlock
+                         completion:completionBlock];
+    } else {
+        animationsBlock();
+        completionBlock(YES);
+    }
+}
+
+#pragma mark - 手势跟手拖拽与点击响应
+
+- (void)handleSingleTap:(UITapGestureRecognizer *)tap {
+    if (tap.state == UIGestureRecognizerStateEnded) {
+        if (_isCollapsed) {
+            [self expandFromEdgeAnimated:YES];
+        } else {
+            [self resetInactivityTimer];
+        }
+    }
+}
 
 - (void)handlePan:(UIPanGestureRecognizer *)pan {
+    [self resetInactivityTimer];
+
     if (pan.state == UIGestureRecognizerStateBegan) {
+        if (_isCollapsed) {
+            [self expandFromEdgeAnimated:NO];
+        }
         self.lastPoint = self.center;
     } else if (pan.state == UIGestureRecognizerStateChanged) {
         CGPoint translation = [pan translationInView:self.superview];
@@ -347,6 +564,7 @@ static void createCPUWindow(void);
         }
 
         clampAndPositionFloatingView(self.center, YES);
+        [self resetInactivityTimer];
     }
 }
 
@@ -425,6 +643,7 @@ static void createCPUWindow(void);
                     showBatteryTemp:(BOOL)showTemp
                  showBatteryCurrent:(BOOL)showCurrent
                          isCharging:(BOOL)isCharging {
+    if (_isCollapsed) return;
 
     _cpuFreqLabel.hidden = !showFreq;
 
@@ -527,6 +746,7 @@ static void createCPUWindow(void);
     currentY += 6.0f;
 
     _blurView.frame = CGRectMake(0, 0, finalW, currentY);
+    _blurView.layer.cornerRadius = 20.0f;
     self.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, finalW, currentY) cornerRadius:20.0f].CGPath;
 
     _marqueeLayer.frame = _blurView.bounds;
@@ -556,15 +776,30 @@ static void createCPUWindow(void);
                      temp:(double)temp 
                   current:(double)current 
                isCharging:(BOOL)isCharging {
+    
+    // 主视图更新
     _cpuValueLabel.text = [NSString stringWithFormat:@"%.1f%%", cpu];
     _cpuValueLabel.textColor = (cpu >= 80.0) ? [UIColor systemRedColor] : [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
 
     _cpuFreqLabel.text = [NSString stringWithFormat:@"%.0f MHz", cpuFreq];
-
     _batteryValueLabel.text = [NSString stringWithFormat:@"%ld%%", (long)battery];
     _tempValueLabel.text = (temp > 0) ? [NSString stringWithFormat:@"%.1f°C", temp] : @"--°C";
     _currentValueLabel.text = [NSString stringWithFormat:@"%.0fmA", current];
     _statusLabel.text = isCharging ? @"🟢 正在充电" : @"⚪ 未在充电";
+
+    // ✨ 智能微型胶囊指示颜色更新
+    _miniCpuLabel.text = [NSString stringWithFormat:@"%.0f%%", cpu];
+    
+    UIColor *statusColor = [UIColor colorWithRed:0.22f green:0.74f blue:0.97f alpha:1.0f]; // 科技蓝（默认）
+    if (isCharging) {
+        statusColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f]; // 翡翠绿（充电）
+    } else if (cpu >= 80.0 || temp >= 42.0) {
+        statusColor = [UIColor colorWithRed:1.0f green:0.23f blue:0.19f alpha:1.0f]; // 警示红（高温/高CPU）
+    } else if (temp >= 38.0) {
+        statusColor = [UIColor colorWithRed:1.0f green:0.62f blue:0.04f alpha:1.0f]; // 预警橙（体温高）
+    }
+    
+    _statusDot.backgroundColor = statusColor;
 }
 
 @end
@@ -730,6 +965,9 @@ static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
 
 static void LoadPreferences(void) {
     NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
+    if ([def objectForKey:@"autoCollapseEnable"]) autoCollapseEnable = [def boolForKey:@"autoCollapseEnable"];
+    if ([def objectForKey:@"autoCollapseDelay"]) autoCollapseDelay = [def integerForKey:@"autoCollapseDelay"];
+
     if ([def objectForKey:@"autoLogoutEnable"]) autoLogoutEnable = [def boolForKey:@"autoLogoutEnable"];
     if ([def objectForKey:@"logoutCPUThreshold"]) logoutCPUThreshold = [def doubleForKey:@"logoutCPUThreshold"];
     if ([def objectForKey:@"logoutDuration"]) logoutDuration = [def integerForKey:@"logoutDuration"];
@@ -752,6 +990,9 @@ static void LoadPreferences(void) {
 
 static void SavePreferencesAndNotify(void) {
     NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
+    [def setBool:autoCollapseEnable forKey:@"autoCollapseEnable"];
+    [def setInteger:autoCollapseDelay forKey:@"autoCollapseDelay"];
+
     [def setBool:autoLogoutEnable forKey:@"autoLogoutEnable"];
     [def setDouble:logoutCPUThreshold forKey:@"logoutCPUThreshold"];
     [def setInteger:logoutDuration forKey:@"logoutDuration"];
@@ -910,30 +1151,29 @@ static void applyFloatingAlpha(void) {
     });
 }
 
-// 核心自适应引擎：根据游戏/系统的当前方向自动施加旋转变换并精准对齐边缘
 static void updateFloatingSize(void) {
     if (!floatingView) return;
 
     BOOL charging = isChargingInternal();
     UIInterfaceOrientation orientation = getActiveInterfaceOrientation();
 
-    // 1. 先重置 Transform 确保 Bounds 尺寸计算准确
     floatingView.transform = CGAffineTransformIdentity;
 
-    [floatingView updateLayoutWithShowCpuFreq:showCpuFrequency
-                           showBatteryPercent:showBatteryPercent
-                              showBatteryTemp:showBatteryTemperature
-                           showBatteryCurrent:showBatteryCurrent
-                                   isCharging:charging];
+    if (!floatingView.isCollapsed) {
+        [floatingView updateLayoutWithShowCpuFreq:showCpuFrequency
+                               showBatteryPercent:showBatteryPercent
+                                  showBatteryTemp:showBatteryTemperature
+                               showBatteryCurrent:showBatteryCurrent
+                                       isCharging:charging];
+    }
 
-    // 2. 结合 Scale 缩放与游戏方向旋转矩阵（横屏旋转弧度已调整 180 度）
     CGFloat rotationAngle = 0.0;
     switch (orientation) {
         case UIInterfaceOrientationLandscapeLeft:
-            rotationAngle = -M_PI_2; // 调整为 -90 度，纠正颠倒方向
+            rotationAngle = -M_PI_2; // 维持 -90 度校正
             break;
         case UIInterfaceOrientationLandscapeRight:
-            rotationAngle = M_PI_2;  // 调整为 +90 度，纠正颠倒方向
+            rotationAngle = M_PI_2;  // 维持 +90 度校正
             break;
         case UIInterfaceOrientationPortraitUpsideDown:
             rotationAngle = M_PI;
@@ -949,8 +1189,6 @@ static void updateFloatingSize(void) {
     CGAffineTransform finalTransform = CGAffineTransformConcat(scaleTransform, rotateTransform);
 
     floatingView.transform = finalTransform;
-
-    // 3. 重新校准并对齐吸附至当前方向下的屏幕边缘
     clampAndPositionFloatingView(floatingView.center, YES);
 }
 
@@ -1126,21 +1364,24 @@ static void updateCPU(void) {
     settingsShowing = NO;
     [self dismissViewControllerAnimated:YES completion:^{
         if (cpuWindow) [cpuWindow setNeedsLayout];
+        if (floatingView) [floatingView resetInactivityTimer];
     }];
 }
 
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 4; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 5; }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if (section == 0) return 3;
-    if (section == 1) return 4;
-    if (section == 2) return 3;
-    return 5;
+    if (section == 0) return 2; // 📱 智能缩进
+    if (section == 1) return 3; // ⚡ 自动控制
+    if (section == 2) return 4; // 🔲 悬浮窗外观
+    if (section == 3) return 3; // 🧠 智能选项
+    return 5;                   // 📍 位置与显示
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    if (section == 0) return @"⚡ 自动控制";
-    if (section == 1) return @"🔲 悬浮窗外观";
-    if (section == 2) return @"🧠 智能选项";
+    if (section == 0) return @"📱 智能缩进与侧边吸附";
+    if (section == 1) return @"⚡ 自动控制";
+    if (section == 2) return @"🔲 悬浮窗外观";
+    if (section == 3) return @"🧠 智能选项";
     return @"📍 位置与显示";
 }
 
@@ -1148,20 +1389,32 @@ static void updateCPU(void) {
     floatingScale = slider.value;
     SavePreferencesAndNotify();
     updateFloatingSize();
-    [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:2 inSection:1]] withRowAnimation:UITableViewRowAnimationNone];
+    [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:2 inSection:2]] withRowAnimation:UITableViewRowAnimationNone];
 }
 
 - (void)changeFontSlider:(UISlider *)slider {
     floatingFontSize = slider.value;
     SavePreferencesAndNotify();
     updateFloatingSize();
-    [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:3 inSection:1]] withRowAnimation:UITableViewRowAnimationNone];
+    [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:3 inSection:2]] withRowAnimation:UITableViewRowAnimationNone];
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
 
     if (indexPath.section == 0) {
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"无操作自动收起";
+            UISwitch *sw = [UISwitch new];
+            sw.on = autoCollapseEnable;
+            [sw addTarget:self action:@selector(changeAutoCollapse:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"收起延迟时间";
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld 秒", (long)autoCollapseDelay];
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        }
+    } else if (indexPath.section == 1) {
         if (indexPath.row == 0) {
             cell.textLabel.text = @"自动注销";
             UISwitch *sw = [UISwitch new];
@@ -1177,7 +1430,7 @@ static void updateCPU(void) {
             cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld 秒", (long)logoutDuration];
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         }
-    } else if (indexPath.section == 1) {
+    } else if (indexPath.section == 2) {
         if (indexPath.row == 0) {
             cell.textLabel.text = @"透明度开关";
             UISwitch *sw = [UISwitch new];
@@ -1203,7 +1456,7 @@ static void updateCPU(void) {
             cell.accessoryView = slider;
             cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0fpt", floatingFontSize];
         }
-    } else if (indexPath.section == 2) {
+    } else if (indexPath.section == 3) {
         if (indexPath.row == 0) {
             cell.textLabel.text = @"键盘避让";
             UISwitch *sw = [UISwitch new];
@@ -1222,7 +1475,7 @@ static void updateCPU(void) {
             cell.detailTextLabel.text = (dockMode >= 0 && dockMode < modes.count) ? modes[dockMode] : @"自动";
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         }
-    } else if (indexPath.section == 3) {
+    } else if (indexPath.section == 4) {
         if (indexPath.row == 0) {
             cell.textLabel.text = @"记忆悬浮窗位置";
             UISwitch *sw = [UISwitch new];
@@ -1263,13 +1516,29 @@ static void updateCPU(void) {
 
     if (indexPath.section == 0) {
         if (indexPath.row == 1) {
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"无操作收起延迟" message:@"选择多长时间无操作后自动折叠" preferredStyle:UIAlertControllerStyleActionSheet];
+            NSArray *titles = @[@"2 秒", @"3 秒", @"4 秒", @"5 秒", @"8 秒", @"10 秒"];
+            NSArray *values = @[@2, @3, @4, @5, @8, @10];
+
+            for (NSInteger i = 0; i < titles.count; i++) {
+                [alert addAction:[UIAlertAction actionWithTitle:titles[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                    autoCollapseDelay = [values[i] integerValue];
+                    SavePreferencesAndNotify();
+                    [self.tableView reloadData];
+                }]];
+            }
+            [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+            [self presentViewController:alert animated:YES completion:nil];
+        }
+    } else if (indexPath.section == 1) {
+        if (indexPath.row == 1) {
             SBCPUValuePickerController *vc = [[SBCPUValuePickerController alloc] initWithStyle:UITableViewStyleInsetGrouped];
             [self.navigationController pushViewController:vc animated:YES];
         } else if (indexPath.row == 2) {
             SBCPUTimePickerController *vc = [[SBCPUTimePickerController alloc] initWithStyle:UITableViewStyleInsetGrouped];
             [self.navigationController pushViewController:vc animated:YES];
         }
-    } else if (indexPath.section == 1) {
+    } else if (indexPath.section == 2) {
         if (indexPath.row == 1) {
             UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"透明度" message:@"选择悬浮窗透明度" preferredStyle:UIAlertControllerStyleActionSheet];
             NSArray *titles = @[@"20%", @"40%", @"60%", @"70%", @"80%", @"100%"];
@@ -1286,12 +1555,24 @@ static void updateCPU(void) {
             [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
             [self presentViewController:alert animated:YES completion:nil];
         }
-    } else if (indexPath.section == 2) {
+    } else if (indexPath.section == 3) {
         if (indexPath.row == 2) {
             NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
             dockMode = (dockMode + 1) % modes.count;
             SavePreferencesAndNotify();
             [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+        }
+    }
+}
+
+- (void)changeAutoCollapse:(UISwitch *)sw {
+    autoCollapseEnable = sw.isOn;
+    SavePreferencesAndNotify();
+    if (floatingView) {
+        if (!autoCollapseEnable && floatingView.isCollapsed) {
+            [floatingView expandFromEdgeAnimated:YES];
+        } else {
+            [floatingView resetInactivityTimer];
         }
     }
 }
