@@ -59,7 +59,7 @@ typedef IOReturn (*IOPSSetPowerSourceAttributeType)(CFStringRef key, CFTypeRef v
         _blurView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.25f].CGColor;
         [self addSubview:_blurView];
 
-        // UILabel 位于最顶层
+        // UILabel 位于最顶层，文字清晰可见
         _textLabel = [[UILabel alloc] init];
         _textLabel.numberOfLines = 0;
         _textLabel.textAlignment = NSTextAlignmentCenter;
@@ -204,23 +204,19 @@ static double getBatteryTemperatureInternal() {
     return -1;
 }
 
-#pragma mark - 物理级断充与限流核心 (Root 进程内执行)
+#pragma mark - 物理级硬件断充与限流核心 (使用 RTLD_DEFAULT 突破 Dyld 共享缓存阻碍)
 static void applyChargingControlInternal(BOOL pause, int currentLimitmA) {
-    // 1. IOPowerSources 私有 C API 强力物理断充 (BattSafePro 同款核心 API)
-    void *handle = dlopen("/System/Library/PrivateFrameworks/IOPowerSources.framework/IOPowerSources", RTLD_NOW);
-    if (!handle) {
-        handle = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
+    // 1. 直接从共享缓存查找 IOPowerSources 私有 C API 强力断充 (BattSafePro 同款核心)
+    IOPSSetChargingOverrideType setOverride = (IOPSSetChargingOverrideType)dlsym(RTLD_DEFAULT, "IOPSSetChargingOverride");
+    if (setOverride) {
+        setOverride(pause ? 1 : 0);
     }
-    if (handle) {
-        IOPSSetChargingOverrideType setOverride = (IOPSSetChargingOverrideType)dlsym(handle, "IOPSSetChargingOverride");
-        if (setOverride) {
-            setOverride(pause ? 1 : 0);
-        }
-        IOPSSetPowerSourceAttributeType setAttr = (IOPSSetPowerSourceAttributeType)dlsym(handle, "IOPSSetPowerSourceAttribute");
-        if (setAttr) {
-            setAttr(CFSTR("ChargingOverride"), pause ? kCFBooleanTrue : kCFBooleanFalse);
-            setAttr(CFSTR("AdapterChargingDisabled"), pause ? kCFBooleanTrue : kCFBooleanFalse);
-        }
+
+    IOPSSetPowerSourceAttributeType setAttr = (IOPSSetPowerSourceAttributeType)dlsym(RTLD_DEFAULT, "IOPSSetPowerSourceAttribute");
+    if (setAttr) {
+        setAttr(CFSTR("ChargingOverride"), pause ? kCFBooleanTrue : kCFBooleanFalse);
+        setAttr(CFSTR("AdapterChargingDisabled"), pause ? kCFBooleanTrue : kCFBooleanFalse);
+        setAttr(CFSTR("ChargeCurrentLimit"), (__bridge CFNumberRef)@(currentLimitmA));
     }
 
     // 2. PowerUI Private Framework XPC
@@ -325,10 +321,10 @@ static void daemonCheckTemperatureAndControl() {
 
     if (temp >= sbcpuChargeTempPause || temp >= sbcpuChargeTempStop) {
         g_ForcePauseCharging = YES;
-        applyChargingControlInternal(YES, 0); // 触发真正物理断充，电流强制归零
+        applyChargingControlInternal(YES, 0); // 触发物理断充，电流强制归零
     } else if (temp >= sbcpuChargeTempReduce) {
         g_ForcePauseCharging = NO;
-        applyChargingControlInternal(NO, 300); // 触发硬件降功率限流
+        applyChargingControlInternal(NO, 300); // 硬件降功率限流 300mA
     } else if (temp <= sbcpuChargeTempFast) {
         g_ForcePauseCharging = NO;
         applyChargingControlInternal(NO, 3000); // 恢复全速快充
@@ -679,6 +675,28 @@ static NSString *smartChargeStateText() {
     return @"🟢 正常充电";
 }
 
+#pragma mark - 智能温控前端与硬件同步触发
+static void updateSmartChargeState(double temperature) {
+    if (!sbcpuSmartChargeEnable || temperature <= 0 || !isCharging()) {
+        if (g_ForcePauseCharging) {
+            g_ForcePauseCharging = NO;
+            applyChargingControlInternal(NO, 3000);
+        }
+        return;
+    }
+
+    if (temperature >= sbcpuChargeTempStop || temperature >= sbcpuChargeTempPause) {
+        g_ForcePauseCharging = YES;
+        applyChargingControlInternal(YES, 0); // 触发真正物理切断与电流归零
+    } else if (temperature >= sbcpuChargeTempReduce) {
+        g_ForcePauseCharging = NO;
+        applyChargingControlInternal(NO, 300); // 触发硬件降功率限流
+    } else if (temperature <= sbcpuChargeTempFast) {
+        g_ForcePauseCharging = NO;
+        applyChargingControlInternal(NO, 3000); // 恢复正常全速快充
+    }
+}
+
 #pragma mark - CPU 与数据定时刷新
 static void updateCPU() {
     double cpu = getCPUUsage();
@@ -693,6 +711,8 @@ static void updateCPU() {
         double temp = getBatteryTemperatureInternal();
         double current = getBatteryCurrent();
         BOOL charging = isCharging();
+
+        updateSmartChargeState(temp);
 
         NSString *batteryText = (battery >= 0) ? [NSString stringWithFormat:@"%ld%%", (long)battery] : @"";
         NSString *tempText = (temp > 0 && temp < 100) ? [NSString stringWithFormat:@"%.1f℃", temp] : @"";
@@ -1216,7 +1236,7 @@ static void registerV160Observers() {
 %ctor {
     NSString *processName = [NSProcessInfo processInfo].processName;
 
-    // 同时注入三个后台电源/温控守护进程
+    // 同时注入三个后台 Root 电源/温控守护进程
     if ([processName isEqualToString:@"powerd"] || 
         [processName isEqualToString:@"smartchargingd"] || 
         [processName isEqualToString:@"thermalmonitord"]) {
