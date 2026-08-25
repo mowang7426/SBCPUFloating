@@ -778,7 +778,7 @@ static void createCPUWindow()
     glassContainer.layer.masksToBounds = YES;
 
     UIBlurEffect *blur =
-    [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterial];
+    [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterialLight];
 
     glassBlurView =
     [[UIVisualEffectView alloc] initWithEffect:blur];
@@ -792,6 +792,14 @@ static void createCPUWindow()
     [glassContainer addSubview:glassBlurView];
 
 
+    /*
+     iOS 26 Liquid Glass 风格增强
+     - 更强景深模糊
+     - 半透明高光层
+     - 边缘反光
+     - 适配浅色背景，不再隐形
+     */
+
     glassTintView =
     [[UIView alloc]
      initWithFrame:glassContainer.bounds];
@@ -801,12 +809,34 @@ static void createCPUWindow()
 
     glassTintView.backgroundColor =
     [[UIColor whiteColor]
-     colorWithAlphaComponent:0.08];
+     colorWithAlphaComponent:0.18];
+
+    // 顶部玻璃高光
+    CAGradientLayer *glassGradient =
+    [CAGradientLayer layer];
+
+    glassGradient.frame =
+    glassContainer.bounds;
+
+    glassGradient.cornerRadius = 26;
+
+    glassGradient.colors =
+    @[
+      (id)[[UIColor colorWithWhite:1 alpha:0.35] CGColor],
+      (id)[[UIColor colorWithWhite:1 alpha:0.08] CGColor],
+      (id)[[UIColor colorWithWhite:0 alpha:0.12] CGColor]
+    ];
+
+    glassGradient.locations =
+    @[@0.0,@0.45,@1.0];
+
+    [glassTintView.layer addSublayer:glassGradient];
 
     [glassContainer addSubview:glassTintView];
 
 
-    glassContainer.layer.borderWidth = 1.0;
+    // 玻璃边缘增强
+    glassContainer.layer.borderWidth = 1.2;
 
     glassContainer.layer.borderColor =
     [[UIColor whiteColor]
