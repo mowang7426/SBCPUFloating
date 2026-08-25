@@ -192,7 +192,7 @@ static DeviceSpec getDeviceSpec(void) {
 - (void)refreshAllDetailData;
 @end
 
-#pragma mark - 4. 全局状态变量与 Insulation 配置
+#pragma mark - 4. 全局状态变量与 Insulation 原生配置
 
 static UIWindow *cpuWindow = nil;
 static SBCPUFloatingView *floatingView = nil;
@@ -911,7 +911,7 @@ static void applySystemRefreshRate(void) {
     CGFloat expandedHalfH = expandedH / 2.0f;
 
     BOOL isLeft = (self.center.x <= containerBounds.size.width / 2.0f);
-    CGFloat targetX = isLeft ? (expandedHalfW + 4.0f) : (containerBounds.size.width - targetHalfW - 4.0f);
+    CGFloat targetX = isLeft ? (expandedHalfW + 4.0f) : (containerBounds.size.width - expandedHalfW - 4.0f);
     
     CGFloat minY = expandedHalfH + 20.0f;
     CGFloat maxY = containerBounds.size.height - expandedHalfH - 10.0f;
@@ -2586,4 +2586,3 @@ static void registerV160Observers(void) {
         });
     }
 }
-
