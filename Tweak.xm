@@ -21,9 +21,10 @@ static UIView *glassContainer;
 static UIView *glassTintView;
 static UIVisualEffectView *glassBlurView;
 static CAGradientLayer *glassGradientLayer;
+static CALayer *topHighlightRim;
 
 static CGFloat floatingScale = 1.0;
-static CGFloat floatingFontSize = 14.0;
+static CGFloat floatingFontSize = 13.5;
 static CGFloat landscapeScale = 0.75;
 static CGFloat batteryFontSize = 12.0;
 static CGFloat landscapeFontSize = 12.0;
@@ -60,7 +61,7 @@ static BOOL logoutCounting = NO;
  透明度
  */
 static BOOL floatingAlphaEnable = YES;
-static CGFloat floatingAlpha = 0.70f;
+static CGFloat floatingAlpha = 0.75f;
 
 /*
  V1.6.0 智能布局
@@ -347,7 +348,7 @@ static void applyFloatingAlpha()
     }
     else if(minDistance == top)
     {
-        center.y = glassContainer.bounds.size.height / 2.0 + 10;
+        center.y = label.bounds.size.height / 2.0 + 10;
         dockSide = 3;
     }
     else if(minDistance == bottom)
@@ -392,7 +393,7 @@ static void applyFloatingAlpha()
 @end
 
 #pragma mark -
-#pragma mark 创建悬浮窗 (Liquid Glass 升级版)
+#pragma mark 创建悬浮窗 (iOS 锁屏通知卡片式 Liquid Glass)
 #pragma mark -
 
 static void createCPUWindow()
@@ -412,84 +413,92 @@ static void createCPUWindow()
     cpuWindow.hidden = NO;
 
     /*
-     iOS 26 Liquid Glass 独立容器构建
+     iOS 通知卡片式（Notification Glass Card）外观构造
      */
-    glassContainer = [[UIView alloc] initWithFrame:CGRectMake(20, 200, 140, 64)];
+    glassContainer = [[UIView alloc] initWithFrame:CGRectMake(20, 180, 154, 68)];
     glassContainer.backgroundColor = UIColor.clearColor;
     
+    // 1. 采用 iOS 标准通知卡片的连续光滑圆角 (Continuous Curves)
     if (@available(iOS 13.0, *)) {
         glassContainer.layer.cornerCurve = kCACornerCurveContinuous;
     }
-    glassContainer.layer.cornerRadius = 20;
-    glassContainer.layer.masksToBounds = NO;
+    glassContainer.layer.cornerRadius = 24.0;
+    glassContainer.layer.masksToBounds = NO; // 允许层次感阴影溢出
 
-    // 1. 高级立体环境阴影 (Liquid Glass Ambient Shadow)
-    glassContainer.layer.shadowColor = UIColor.blackColor.CGColor;
+    // 2. 真实通知卡片悬浮阴影 (Notification Elevation Shadow)
+    glassContainer.layer.shadowColor = [UIColor colorWithWhite:0.0 alpha:0.45].CGColor;
     glassContainer.layer.shadowOpacity = 0.28;
-    glassContainer.layer.shadowRadius = 18;
-    glassContainer.layer.shadowOffset = CGSizeMake(0, 8);
+    glassContainer.layer.shadowRadius = 16.0;
+    glassContainer.layer.shadowOffset = CGSizeMake(0, 7);
 
-    // 2. 超薄深层模糊背景 (Frosted Glass Backdrop)
+    // 3. 超高清深层次模糊背景 (iOS Frosted Glass)
     UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
     glassBlurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
     glassBlurView.frame = glassContainer.bounds;
     if (@available(iOS 13.0, *)) {
         glassBlurView.layer.cornerCurve = kCACornerCurveContinuous;
     }
-    glassBlurView.layer.cornerRadius = 20;
+    glassBlurView.layer.cornerRadius = 24.0;
     glassBlurView.clipsToBounds = YES;
     [glassContainer addSubview:glassBlurView];
 
-    // 3. 液态玻璃高光与微浅色遮罩 (Liquid Specular Layer)
+    // 4. 液态玻璃斜向镜面遮罩 (Liquid Glass Specular Highlight)
     glassTintView = [[UIView alloc] initWithFrame:glassContainer.bounds];
     if (@available(iOS 13.0, *)) {
         glassTintView.layer.cornerCurve = kCACornerCurveContinuous;
     }
-    glassTintView.layer.cornerRadius = 20;
+    glassTintView.layer.cornerRadius = 24.0;
     glassTintView.clipsToBounds = YES;
-    glassTintView.backgroundColor = [[UIColor whiteColor] colorWithAlphaComponent:0.06];
+    glassTintView.backgroundColor = [[UIColor whiteColor] colorWithAlphaComponent:0.08];
 
-    // 顶端斜向玻璃凸透镜高光 (Convex Glass Highlight)
+    // 顶部斜向柔光透镜渐变
     glassGradientLayer = [CAGradientLayer layer];
     glassGradientLayer.frame = glassContainer.bounds;
     if (@available(iOS 13.0, *)) {
         glassGradientLayer.cornerCurve = kCACornerCurveContinuous;
     }
-    glassGradientLayer.cornerRadius = 20;
+    glassGradientLayer.cornerRadius = 24.0;
     glassGradientLayer.colors = @[
-        (id)[[UIColor colorWithWhite:1.0 alpha:0.38] CGColor],
-        (id)[[UIColor colorWithWhite:1.0 alpha:0.12] CGColor],
-        (id)[[UIColor colorWithWhite:0.0 alpha:0.04] CGColor],
-        (id)[[UIColor colorWithWhite:1.0 alpha:0.18] CGColor]
+        (id)[[UIColor colorWithWhite:1.0 alpha:0.45] CGColor],
+        (id)[[UIColor colorWithWhite:1.0 alpha:0.15] CGColor],
+        (id)[[UIColor colorWithWhite:0.0 alpha:0.02] CGColor],
+        (id)[[UIColor colorWithWhite:1.0 alpha:0.22] CGColor]
     ];
-    glassGradientLayer.locations = @[@0.0, @0.35, @0.70, @1.0];
+    glassGradientLayer.locations = @[@0.0, @0.30, @0.68, @1.0];
     glassGradientLayer.startPoint = CGPointMake(0.0, 0.0);
     glassGradientLayer.endPoint = CGPointMake(1.0, 1.0);
     [glassTintView.layer addSublayer:glassGradientLayer];
     [glassContainer addSubview:glassTintView];
 
-    // 4. 精细玻璃边缘反光 (Glass Rim Border)
-    glassContainer.layer.borderWidth = 1.0;
-    glassContainer.layer.borderColor = [[UIColor whiteColor] colorWithAlphaComponent:0.32].CGColor;
+    // 5. iOS 通知卡片顶层折射高光线 (Rim Reflection)
+    topHighlightRim = [CALayer layer];
+    topHighlightRim.frame = CGRectMake(12, 1, glassContainer.bounds.size.width - 24, 1.2);
+    topHighlightRim.backgroundColor = [[UIColor whiteColor] colorWithAlphaComponent:0.60].CGColor;
+    topHighlightRim.cornerRadius = 0.6;
+    [glassContainer.layer addSublayer:topHighlightRim];
 
-    // 5. 内容 Label 嵌入玻璃内部
+    // 6. 精细全包围玻璃微反光外框
+    glassContainer.layer.borderWidth = 1.0;
+    glassContainer.layer.borderColor = [[UIColor whiteColor] colorWithAlphaComponent:0.35].CGColor;
+
+    // 7. 文字标签及清晰微阴影
     label = [[UILabel alloc] initWithFrame:glassContainer.bounds];
     label.backgroundColor = UIColor.clearColor;
     label.textAlignment = NSTextAlignmentCenter;
     label.numberOfLines = 0;
     label.textColor = UIColor.whiteColor;
-    label.font = [UIFont monospacedDigitSystemFontOfSize:14 weight:UIFontWeightMedium];
+    label.font = [UIFont systemFontOfSize:13.5 weight:UIFontWeightMedium];
     label.text = @"SB CPU\n0%";
 
     label.layer.shadowColor = UIColor.blackColor.CGColor;
     label.layer.shadowOffset = CGSizeMake(0, 1);
-    label.layer.shadowOpacity = 0.5;
+    label.layer.shadowOpacity = 0.55;
     label.layer.shadowRadius = 2.0;
 
     [glassContainer addSubview:label];
     [cpuWindow.rootViewController.view addSubview:glassContainer];
 
-    // 6. 透明拖动响应层
+    // 8. 拖动手势响应层
     cpuDragView = [[SBCPUDragView alloc] initWithFrame:glassContainer.frame];
     cpuDragView.backgroundColor = UIColor.clearColor;
     cpuDragView.userInteractionEnabled = YES;
@@ -683,7 +692,7 @@ static BOOL isCharging()
 }
 
 #pragma mark -
-#pragma mark 横竖屏尺寸与液态玻璃同步更新
+#pragma mark 横竖屏尺寸与通知卡片同步更新
 #pragma mark -
 
 static void updateFloatingSize()
@@ -697,10 +706,10 @@ static void updateFloatingSize()
     {
         CGSize maxSize = CGSizeMake(UIScreen.mainScreen.bounds.size.width - 40, 200);
         CGSize textSize = [label sizeThatFits:maxSize];
-        CGSize targetSize = CGSizeMake(textSize.width + 32, textSize.height + 20);
+        CGSize targetSize = CGSizeMake(textSize.width + 36, textSize.height + 22);
 
-        if(targetSize.width < 100) targetSize.width = 100;
-        if(targetSize.height < 48) targetSize.height = 48;
+        if(targetSize.width < 110) targetSize.width = 110;
+        if(targetSize.height < 52) targetSize.height = 52;
 
         targetFrame = CGRectMake(center.x - targetSize.width / 2.0, center.y - targetSize.height / 2.0, targetSize.width, targetSize.height);
     }
@@ -708,7 +717,7 @@ static void updateFloatingSize()
     {
         BOOL landscape = isLandscapeMode();
         CGFloat scale = landscape ? landscapeScale : floatingScale;
-        CGSize targetSize = landscape ? CGSizeMake(135 * scale, 58 * scale) : CGSizeMake(100 * scale, 48 * scale);
+        CGSize targetSize = landscape ? CGSizeMake(142 * scale, 62 * scale) : CGSizeMake(110 * scale, 52 * scale);
 
         targetFrame = CGRectMake(center.x - targetSize.width / 2.0, center.y - targetSize.height / 2.0, targetSize.width, targetSize.height);
     }
@@ -722,6 +731,10 @@ static void updateFloatingSize()
         {
             glassGradientLayer.frame = glassContainer.bounds;
         }
+        if(topHighlightRim)
+        {
+            topHighlightRim.frame = CGRectMake(12, 1, glassContainer.bounds.size.width - 24, 1.2);
+        }
         label.frame = glassContainer.bounds;
 
         if(cpuDragView)
@@ -729,9 +742,10 @@ static void updateFloatingSize()
             cpuDragView.frame = targetFrame;
         }
 
-        CGFloat radius = MIN(targetFrame.size.width, targetFrame.size.height) * 0.35;
-        if(radius > 22) radius = 22;
-        if(radius < 12) radius = 12;
+        // 维持连续通知卡片弧度
+        CGFloat radius = MIN(targetFrame.size.width, targetFrame.size.height) * 0.38;
+        if(radius > 26.0) radius = 26.0;
+        if(radius < 14.0) radius = 14.0;
 
         glassContainer.layer.cornerRadius = radius;
         glassBlurView.layer.cornerRadius = radius;
@@ -1953,6 +1967,7 @@ static void applySmartLayout()
         glassBlurView.frame = glassContainer.bounds;
         glassTintView.frame = glassContainer.bounds;
         if(glassGradientLayer) glassGradientLayer.frame = glassContainer.bounds;
+        if(topHighlightRim) topHighlightRim.frame = CGRectMake(12, 1, glassContainer.bounds.size.width - 24, 1.2);
         label.frame = glassContainer.bounds;
         cpuDragView.frame = target;
         lastFloatingFrame = target;
@@ -1982,6 +1997,7 @@ static void registerV160Observers()
                  glassBlurView.frame = glassContainer.bounds;
                  glassTintView.frame = glassContainer.bounds;
                  if(glassGradientLayer) glassGradientLayer.frame = glassContainer.bounds;
+                 if(topHighlightRim) topHighlightRim.frame = CGRectMake(12, 1, glassContainer.bounds.size.width - 24, 1.2);
                  label.frame = glassContainer.bounds;
                  cpuDragView.frame = f;
                  lastFloatingFrame = f;
@@ -2080,7 +2096,7 @@ static void registerV160Observers()
     floatingScale = [def floatForKey:@"SBCPU.FloatingScale"];
     if(floatingScale < 0.4) floatingScale = 1.0;
     floatingFontSize = [def floatForKey:@"SBCPU.FloatingFontSize"];
-    if(floatingFontSize < 1) floatingFontSize = 14.0;
+    if(floatingFontSize < 1) floatingFontSize = 13.5;
     landscapeScale = [def floatForKey:@"SBCPU.LandscapeScale"];
     if(landscapeScale < 0.4) landscapeScale = 0.75;
     landscapeFontSize = [def floatForKey:@"SBCPU.LandscapeFontSize"];
