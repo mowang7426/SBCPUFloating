@@ -249,7 +249,7 @@ static void createCPUWindow(void);
 static BOOL isDeviceOverheated(void);
 static void applySystemRefreshRate(void);
 
-#pragma mark - 5. 温控检测与底层 120Hz 硬件锁 Hook
+#pragma mark - 5. 温控检测与底层 120Hz 全链路 Hook
 
 static BOOL isDeviceOverheated(void) {
     if (@available(iOS 11.0, *)) {
@@ -265,7 +265,7 @@ static BOOL isDeviceOverheated(void) {
     return NO;
 }
 
-// Hook 底层窗口合成器，强制覆盖刷新率返回值为 120Hz
+// Hook 1: 底层窗口合成器，锁定 120Hz 刷新率
 %hook CAWindowServerDisplay
 - (float)minimumRefreshRate {
     if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
@@ -289,7 +289,17 @@ static BOOL isDeviceOverheated(void) {
 }
 %end
 
-// Hook UIScreen 绕过系统低电量或省电模式降频限制
+// Hook 2: 全局 CAAnimation 默认优先使用 120Hz
+%hook CAAnimation
+- (CAFrameRateRange)preferredFrameRateRange {
+    if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
+        return CAFrameRateRangeMake(120.0f, 120.0f, 120.0f);
+    }
+    return %orig;
+}
+%end
+
+// Hook 3: UIScreen 突破系统低电量或节能限制
 %hook UIScreen
 - (NSInteger)maximumFramesPerSecond {
     if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
@@ -299,13 +309,15 @@ static BOOL isDeviceOverheated(void) {
 }
 %end
 
-#pragma mark - 6. CADisplayLink 帧率监控与 GlobalRefresh 硬件驱动引擎
+#pragma mark - 6. CADisplayLink 帧率监控与 ProMotion 微驱动引擎
 
 @interface SBCPUFPSHelper : NSObject
 + (instancetype)sharedInstance;
 - (void)startMonitoring;
 - (void)stopMonitoring;
 - (void)updateFrameRate;
+- (void)startDriverAnimation;
+- (void)stopDriverAnimation;
 @property (nonatomic, assign) double currentFPS;
 @property (nonatomic, strong) CALayer *driverLayer;
 @end
@@ -327,13 +339,36 @@ static BOOL isDeviceOverheated(void) {
 
 - (instancetype)init {
     if (self = [super init]) {
-        // 创建微像素驱动图层，用于向 WindowServer 提交微小渲染以维持 120Hz
+        // 创建微像素驱动图层，挂载到 Window 产生持续微小重绘事务
         _driverLayer = [CALayer layer];
-        _driverLayer.frame = CGRectMake(0, 0, 1, 1);
+        _driverLayer.frame = CGRectMake(0, 0, 2, 2);
         _driverLayer.backgroundColor = [UIColor clearColor].CGColor;
-        _driverLayer.opacity = 1.0f;
+        _driverLayer.opacity = 0.01f;
     }
     return self;
+}
+
+- (void)startDriverAnimation {
+    if (!_driverLayer) return;
+    [_driverLayer removeAnimationForKey:@"ProMotion120Driver"];
+
+    CABasicAnimation *driveAnim = [CABasicAnimation animationWithKeyPath:@"opacity"];
+    driveAnim.fromValue = @(0.01f);
+    driveAnim.toValue = @(0.02f);
+    driveAnim.duration = 1.0;
+    driveAnim.repeatCount = HUGE_VALF;
+    driveAnim.autoreverses = YES;
+    driveAnim.removedOnCompletion = NO;
+    if (@available(iOS 15.0, *)) {
+        driveAnim.preferredFrameRateRange = CAFrameRateRangeMake(120.0f, 120.0f, 120.0f);
+    }
+    [_driverLayer addAnimation:driveAnim forKey:@"ProMotion120Driver"];
+}
+
+- (void)stopDriverAnimation {
+    if (_driverLayer) {
+        [_driverLayer removeAnimationForKey:@"ProMotion120Driver"];
+    }
 }
 
 - (void)startMonitoring {
@@ -348,6 +383,7 @@ static BOOL isDeviceOverheated(void) {
         [_displayLink invalidate];
         _displayLink = nil;
     }
+    [self stopDriverAnimation];
     _lastTimestamp = 0;
     _frameCount = 0;
     _currentFPS = 0.0;
@@ -360,21 +396,26 @@ static BOOL isDeviceOverheated(void) {
 
     if (@available(iOS 15.0, *)) {
         float targetFps = apply120 ? 120.0f : 60.0f;
-        // 将 min, max, preferred 全部固定在 120，阻止系统降频到 60/30
-        CAFrameRateRange range = CAFrameRateRangeMake(targetFps, targetFps, targetFps);
-        _displayLink.preferredFrameRateRange = range;
+        // 关键：将 min, max, preferred 全部锁在 120Hz
+        _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(targetFps, targetFps, targetFps);
+        
+        // 注入 ProMotion 高刷理由标识 (0x110001 = 1114113)
+        if (apply120) {
+            if ([_displayLink respondsToSelector:@selector(setHighFrameRateReason:)]) {
+                @try {
+                    [_displayLink setValue:@(1114113) forKey:@"highFrameRateReason"];
+                } @catch (id ex) {}
+            }
+            [self startDriverAnimation];
+        } else {
+            [self stopDriverAnimation];
+        }
     } else {
         _displayLink.preferredFramesPerSecond = apply120 ? 120 : 60;
     }
 }
 
 - (void)tick:(CADisplayLink *)link {
-    // 借鉴 GlobalRefresh-PiP 核心机制：提交微小事务强制渲染合成器以 120Hz 进行画面翻转
-    BOOL apply120 = force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated());
-    if (apply120 && _driverLayer) {
-        _driverLayer.opacity = (_driverLayer.opacity > 0.995f) ? 0.99f : 1.0f;
-    }
-
     if (_lastTimestamp == 0) {
         _lastTimestamp = link.timestamp;
         return;
@@ -407,6 +448,10 @@ static void applySystemRefreshRate(void) {
                 }
             }
         }
+    }
+
+    if (cpuWindow && [SBCPUFPSHelper sharedInstance].driverLayer.superlayer == nil) {
+        [cpuWindow.layer addSublayer:[SBCPUFPSHelper sharedInstance].driverLayer];
     }
 
     [[SBCPUFPSHelper sharedInstance] updateFrameRate];
@@ -876,7 +921,7 @@ static void applySystemRefreshRate(void) {
     }
 }
 
-- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimiterWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
     (void)gestureRecognizer;
     (void)otherGestureRecognizer;
     return YES;
@@ -1740,7 +1785,7 @@ static void createCPUWindow(void) {
     cpuWindow.rootViewController.view.backgroundColor = UIColor.clearColor;
     cpuWindow.hidden = !isEnabled;
 
-    // 将硬件驱动图层挂载到顶级 Window 上
+    // 将微图层挂载到顶级 Window 上
     [cpuWindow.layer addSublayer:[SBCPUFPSHelper sharedInstance].driverLayer];
 
     CGRect initFrame = CGRectMake(20, 160, 240, 60);
