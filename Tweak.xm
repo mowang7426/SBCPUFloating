@@ -484,7 +484,6 @@ static void createCPUWindow(void);
     }
 }
 
-// ✨ 修复：使用 containerBounds 正确进行边界约束限制，彻底消除 -Wunused-variable 报错
 - (void)expandFromEdgeAnimated:(BOOL)animated {
     if (!_isCollapsed) {
         [self resetInactivityTimer];
@@ -978,6 +977,16 @@ static void createCPUWindow(void);
     double freq = getCPUFrequencyMHz(systemCpu);
     _labelsDict[@"CPU主频"].text = [NSString stringWithFormat:@"%.0f / %.0fMHz", freq, spec.maxFreqMHz];
 
+    // ✨ 20. 运行内存 (精准硬件规格计算)
+    uint64_t memsize = 0;
+    size_t size = sizeof(memsize);
+    if (sysctlbyname("hw.memsize", &memsize, &size, NULL, 0) != 0 || memsize == 0) {
+        memsize = [NSProcessInfo processInfo].physicalMemory;
+    }
+    // 使用 ceil 保证 6GB/8GB 物理内存精准对齐显示
+    uint64_t totalRAM_GB = (uint64_t)ceil((double)memsize / (1024.0 * 1024.0 * 1024.0));
+    if (totalRAM_GB == 0) totalRAM_GB = 6;
+
     mach_port_t host_port = mach_host_self();
     mach_msg_type_number_t host_size = sizeof(vm_statistics64_data_t) / sizeof(integer_t);
     vm_size_t pagesize;
@@ -985,12 +994,8 @@ static void createCPUWindow(void);
     vm_statistics64_data_t vm_stat;
     if (host_statistics64(host_port, HOST_VM_INFO64, (host_info64_t)&vm_stat, &host_size) == KERN_SUCCESS) {
         uint64_t freeBytes = (uint64_t)(vm_stat.free_count + vm_stat.inactive_count + vm_stat.speculative_count) * (uint64_t)pagesize;
-        uint64_t totalBytes = [NSProcessInfo processInfo].physicalMemory;
-        
-        double totalGB = (double)totalBytes / (1024.0 * 1024.0 * 1024.0);
         uint64_t freeMB = freeBytes / (1024 * 1024);
-        
-        _labelsDict[@"内存剩余"].text = [NSString stringWithFormat:@"%lluMB / %.0fGB", freeMB, totalGB];
+        _labelsDict[@"内存剩余"].text = [NSString stringWithFormat:@"%lluMB / %lluGB", freeMB, totalRAM_GB];
     }
 
     NSDictionary *fsAttrs = [[NSFileManager defaultManager] attributesOfFileSystemForPath:NSHomeDirectory() error:nil];
