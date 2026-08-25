@@ -165,6 +165,8 @@ static NSInteger autoCollapseDelay = 4;
 static BOOL autoLogoutEnable = NO;
 static double logoutCPUThreshold = 100.0;
 static NSInteger logoutDuration = 60;
+static NSDate *cpuHighStartTime = nil;
+static BOOL logoutCounting = NO;
 
 static BOOL floatingAlphaEnable = YES;
 static CGFloat floatingAlpha = 0.70f;
@@ -182,7 +184,6 @@ static BOOL showBatteryCurrent = YES;
 static CGRect keyboardBeforeFrame;
 static BOOL keyboardMoved = NO;
 
-// 实时网络速率算法全局变量
 static uint64_t lastWifiInBytes = 0;
 static uint64_t lastWifiOutBytes = 0;
 static uint64_t lastCellInBytes = 0;
@@ -191,7 +192,6 @@ static uint64_t speedUpBytesPerSec = 0;
 static uint64_t speedDownBytesPerSec = 0;
 static CFAbsoluteTime lastNetSpeedTime = 0;
 
-// 全系统 CPU 占用率算法全局变量
 static host_cpu_load_info_data_t prev_cpu_load;
 static BOOL has_prev_cpu_load = NO;
 
@@ -208,6 +208,7 @@ static void updateFloatingSize(void);
 static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate);
 static void openSettings(void);
 static void openDetailView(void);
+static void checkHighCPU(double cpu);
 static void LoadPreferences(void);
 static void SavePreferencesAndNotify(void);
 static void updateCPU(void);
@@ -483,6 +484,7 @@ static void createCPUWindow(void);
     }
 }
 
+// ✨ 修复：使用 containerBounds 正确进行边界约束限制，彻底消除 -Wunused-variable 报错
 - (void)expandFromEdgeAnimated:(BOOL)animated {
     if (!_isCollapsed) {
         [self resetInactivityTimer];
@@ -494,8 +496,18 @@ static void createCPUWindow(void);
     UIView *parent = self.superview;
     CGRect containerBounds = parent ? parent.bounds : [UIScreen mainScreen].bounds;
 
+    CGFloat halfW = self.bounds.size.width / 2.0f;
+    CGFloat halfH = self.bounds.size.height / 2.0f;
+
     CGFloat currentX = self.center.x;
     CGFloat currentY = self.center.y;
+
+    if (currentX < halfW + 2.0f) currentX = halfW + 2.0f;
+    if (currentX > containerBounds.size.width - halfW - 2.0f) currentX = containerBounds.size.width - halfW - 2.0f;
+    if (currentY < halfH + 20.0f) currentY = halfH + 20.0f;
+    if (currentY > containerBounds.size.height - halfH - 10.0f) currentY = containerBounds.size.height - halfH - 10.0f;
+
+    CGPoint targetCenter = CGPointMake(currentX, currentY);
 
     void (^animationsBlock)(void) = ^{
         self.collapsedContainerView.alpha = 0.0;
@@ -523,10 +535,11 @@ static void createCPUWindow(void);
                        showBatteryCurrent:showBatteryCurrent
                                isCharging:charging];
 
-        self.center = CGPointMake(currentX, currentY);
+        self.center = targetCenter;
     };
 
     void (^completionBlock)(BOOL) = ^(BOOL finished) {
+        (void)finished;
         self.collapsedContainerView.hidden = YES;
         [self resetInactivityTimer];
     };
@@ -593,6 +606,8 @@ static void createCPUWindow(void);
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    (void)gestureRecognizer;
+    (void)otherGestureRecognizer;
     return YES;
 }
 
@@ -888,13 +903,12 @@ static void createCPUWindow(void);
     DeviceSpec spec = getDeviceSpec();
     NSDictionary *batInfo = getRealBatteryDetails();
 
-    // 1. 电池容量与健康度计算
     NSInteger designCap = [batInfo[@"DesignCapacity"] integerValue];
     if (designCap <= 0) designCap = spec.designBatteryCapacity;
 
     NSInteger maxCap = [batInfo[@"MaxCapacity"] integerValue];
     if (maxCap <= 100 && designCap > 0) {
-        maxCap = designCap; // 若 IOKit 键受限返回百分比则降级处理
+        maxCap = designCap;
     }
 
     [UIDevice currentDevice].batteryMonitoringEnabled = YES;
@@ -914,11 +928,9 @@ static void createCPUWindow(void);
 
     _labelsDict[@"电池健康程度"].text = [NSString stringWithFormat:@"%.0f%% %@", health, mfg];
 
-    // 2. 循环次数
     NSInteger cycles = [batInfo[@"CycleCount"] integerValue];
     _labelsDict[@"电池循环次数"].text = [NSString stringWithFormat:@"%ld次", (long)cycles];
 
-    // 3. 预计充满时间
     BOOL charging = isChargingInternal();
     NSInteger timeToFull = [batInfo[@"AvgTimeToFull"] integerValue];
     if (charging && timeToFull > 0 && timeToFull < 600) {
@@ -927,67 +939,51 @@ static void createCPUWindow(void);
         _labelsDict[@"电池预计充满"].text = charging ? @"计算中..." : @"未在充电";
     }
 
-    // 4. 充电类型
     _labelsDict[@"电池充电类型"].text = charging ? (batInfo[@"ChargerType"] ?: @"PD 快充") : @"未充电";
 
-    // 5. 充电功率
     double watts = [batInfo[@"Watts"] doubleValue];
     _labelsDict[@"电池充电功率"].text = charging ? [NSString stringWithFormat:@"%.1fW", watts > 0 ? watts : 20.0] : @"0W";
 
-    // 6. 当前电流
     double currentmA = getBatteryCurrentInternal();
     _labelsDict[@"电池当前电流"].text = [NSString stringWithFormat:@"%.0fmA", currentmA];
 
-    // 7. 当前电压
     double voltage = [batInfo[@"Voltage"] doubleValue] / 1000.0;
     _labelsDict[@"电池当前电压"].text = (voltage > 0) ? [NSString stringWithFormat:@"%.2fV", voltage] : @"3.95V";
 
-    // 8. 当前温度
     double temp = getBatteryTemperatureInternal();
     _labelsDict[@"电池当前温度"].text = (temp > -10) ? [NSString stringWithFormat:@"%.1f°C", temp] : @"--°C";
 
-    // 9. 当前电量
     _labelsDict[@"电池当前电量"].text = [NSString stringWithFormat:@"%ld%%", (long)batPercent];
 
-    // 10. 容量指标
     _labelsDict[@"电池设计容量"].text = [NSString stringWithFormat:@"%ldmAh", (long)designCap];
     _labelsDict[@"电池实际容量"].text = [NSString stringWithFormat:@"%ldmAh", (long)maxCap];
     _labelsDict[@"电池当前容量"].text = [NSString stringWithFormat:@"%ldmAh", (long)curCap];
 
     // --- 右列数据采集 ---
 
-    // 13. 设备名称 (准确反映当前真实机型)
     _labelsDict[@"设备名称"].text = [NSString stringWithUTF8String:spec.modelName];
 
-    // 14. 系统版本
     _labelsDict[@"软件版本"].text = [UIDevice currentDevice].systemVersion;
 
-    // 15. 网络信息
     _labelsDict[@"网络信息"].text = @"[-42dBm] PDCN_5G";
 
-    // 16. 内网地址
     _labelsDict[@"内网地址"].text = [self getLocalIPAddress];
 
-    // 17. 实时网速
     [self calculateNetworkSpeed];
     _labelsDict[@"实时网速"].text = [NSString stringWithFormat:@"↑%lluK ↓%lluK", speedUpBytesPerSec / 1024, speedDownBytesPerSec / 1024];
 
-    // 18. CPU 信息 (动态计算真实总利用率与芯片名称)
     double systemCpu = getSystemCPUUsage();
     _labelsDict[@"CPU信息"].text = [NSString stringWithFormat:@"%s %ld核心 %.0f%%", spec.chipName, (long)spec.cores, systemCpu];
 
-    // 19. CPU 主频 (根据当前利用率解算动态频率/匹配规格上限)
     double freq = getCPUFrequencyMHz(systemCpu);
     _labelsDict[@"CPU主频"].text = [NSString stringWithFormat:@"%.0f / %.0fMHz", freq, spec.maxFreqMHz];
 
-    // 20. 内存 (物理内存与可用 RAM 精准统计)
     mach_port_t host_port = mach_host_self();
     mach_msg_type_number_t host_size = sizeof(vm_statistics64_data_t) / sizeof(integer_t);
     vm_size_t pagesize;
     host_page_size(host_port, &pagesize);
     vm_statistics64_data_t vm_stat;
     if (host_statistics64(host_port, HOST_VM_INFO64, (host_info64_t)&vm_stat, &host_size) == KERN_SUCCESS) {
-        // 可用内存 = 空闲页 + 非活跃页 + 投机页
         uint64_t freeBytes = (uint64_t)(vm_stat.free_count + vm_stat.inactive_count + vm_stat.speculative_count) * (uint64_t)pagesize;
         uint64_t totalBytes = [NSProcessInfo processInfo].physicalMemory;
         
@@ -997,16 +993,13 @@ static void createCPUWindow(void);
         _labelsDict[@"内存剩余"].text = [NSString stringWithFormat:@"%lluMB / %.0fGB", freeMB, totalGB];
     }
 
-    // 21. 存储空间
     NSDictionary *fsAttrs = [[NSFileManager defaultManager] attributesOfFileSystemForPath:NSHomeDirectory() error:nil];
     int64_t freeDisk = [fsAttrs[NSFileSystemFreeSize] longLongValue];
     int64_t totalDisk = [fsAttrs[NSFileSystemSize] longLongValue];
     _labelsDict[@"存储剩余"].text = [NSString stringWithFormat:@"%.2fGB / %lldGB", freeDisk / (1024.0 * 1024.0 * 1024.0), (int64_t)round((double)totalDisk / (1024.0 * 1024.0 * 1024.0))];
 
-    // 22. 蜂窝/WiFi
     _labelsDict[@"蜂窝/WiFi"].text = [NSString stringWithFormat:@"%lluMB / %lluMB", lastCellInBytes / (1024 * 1024), lastWifiInBytes / (1024 * 1024)];
 
-    // 23. 运动步数
     if (_pedometer) {
         NSDate *now = [NSDate date];
         NSCalendar *cal = [NSCalendar currentCalendar];
@@ -1014,6 +1007,7 @@ static void createCPUWindow(void);
         NSDate *zeroDate = [cal dateFromComponents:comp];
 
         [_pedometer queryPedometerDataFromDate:zeroDate toDate:now withHandler:^(CMPedometerData * _Nullable pedometerData, NSError * _Nullable error) {
+            (void)error;
             if (pedometerData) {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     self.labelsDict[@"运动信息"].text = [NSString stringWithFormat:@"%@步 %@层 %@m", pedometerData.numberOfSteps ?: @0, pedometerData.floorsAscended ?: @0, pedometerData.distance ? [NSString stringWithFormat:@"%.0f", pedometerData.distance.doubleValue] : @"0"];
@@ -1022,7 +1016,6 @@ static void createCPUWindow(void);
         }];
     }
 
-    // 24. 运行时间
     NSTimeInterval uptime = [[NSProcessInfo processInfo] systemUptime];
     NSInteger days = (NSInteger)(uptime / 86400);
     NSInteger hours = (NSInteger)((uptime - days * 86400) / 3600);
@@ -1229,6 +1222,7 @@ static double getCPUFrequencyMHz(double currentCpuUsage) {
 - (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator {
     [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
     [coordinator animateAlongsideTransition:^(id<UIViewControllerTransitionCoordinatorContext> context) {
+        (void)context;
         if (floatingView) updateFloatingSize();
     } completion:nil];
 }
@@ -1457,9 +1451,45 @@ static void openSettings(void) {
     [root presentViewController:nav animated:YES completion:nil];
 }
 
+static void checkHighCPU(double cpu) {
+    if (!autoLogoutEnable || cpu < logoutCPUThreshold) {
+        cpuHighStartTime = nil;
+        logoutCounting = NO;
+        return;
+    }
+
+    if (!cpuHighStartTime) {
+        cpuHighStartTime = [NSDate date];
+        return;
+    }
+
+    NSTimeInterval duration = [[NSDate date] timeIntervalSinceDate:cpuHighStartTime];
+    if (duration >= logoutDuration && !logoutCounting) {
+        logoutCounting = YES;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!cpuWindow || !cpuWindow.rootViewController) { logoutCounting = NO; return; }
+            UIViewController *root = cpuWindow.rootViewController;
+            if (root.presentedViewController) return;
+
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"SpringBoard CPU过高" message:@"5秒后自动注销" preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) {
+                (void)action;
+                logoutCounting = NO;
+                cpuHighStartTime = nil;
+            }]];
+            [root presentViewController:alert animated:YES completion:nil];
+
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                if (logoutCounting) kill(getpid(), SIGTERM);
+            });
+        });
+    }
+}
+
 static void updateCPU(void) {
     double cpu = getSystemCPUUsage();
     double cpuFreq = getCPUFrequencyMHz(cpu);
+    checkHighCPU(cpu);
 
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!floatingView) return;
@@ -1506,10 +1536,19 @@ static void updateCPU(void) {
     }];
 }
 
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 1; }
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 1; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { 
+    (void)tableView;
+    return 1; 
+}
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { 
+    (void)tableView;
+    (void)section;
+    return 1; 
+}
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    (void)tableView;
+    (void)indexPath;
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
     cell.textLabel.text = @"无操作自动收起";
     UISwitch *sw = [UISwitch new];
@@ -1532,6 +1571,7 @@ static void registerV160Observers(void) {
         NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
 
         [nc addObserverForName:UIDeviceOrientationDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+            (void)n;
             if (cpuWindow && floatingView) updateFloatingSize();
         }];
 
@@ -1543,14 +1583,24 @@ static void registerV160Observers(void) {
                 if (CGRectGetMidY(floatingView.frame) < CGRectGetMidY(screenBounds)) return;
 
                 if (!keyboardMoved) keyboardBeforeFrame = floatingView.frame;
+                
+                NSDictionary *info = n.userInfo;
+                NSValue *endFrameValue = info[UIKeyboardFrameEndUserInfoKey];
+                CGFloat keyboardHeight = 220.0;
+                if (endFrameValue) {
+                    CGRect keyboardFrame = [endFrameValue CGRectValue];
+                    keyboardHeight = MIN(320.0, keyboardFrame.size.height);
+                }
+
                 CGRect f = keyboardBeforeFrame;
-                f.origin.y = MAX(20.0, f.origin.y - 220.0);
+                f.origin.y = MAX(20.0, f.origin.y - keyboardHeight);
                 [UIView animateWithDuration:0.25 animations:^{ floatingView.frame = f; }];
                 keyboardMoved = YES;
             }
         }];
 
         [nc addObserverForName:UIKeyboardWillHideNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+            (void)n;
             if (!settingsShowing && !detailShowing && keyboardMoved && floatingView) {
                 [UIView animateWithDuration:0.25 animations:^{ floatingView.frame = keyboardBeforeFrame; }];
                 keyboardMoved = NO;
