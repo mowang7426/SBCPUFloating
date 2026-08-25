@@ -15,8 +15,8 @@
 
 #pragma mark - 1. 前置 Interface 声明 (避免 Clang 编译报错)
 
-// 1:1 精致悬浮窗视图类 (直接内建触摸拖拽与手势响应)
-@interface SBCPUFloatingView : UIView
+// 1:1 精致悬浮窗视图类 (直接内建 UIPan & UITap 原生手势)
+@interface SBCPUFloatingView : UIView <UIGestureRecognizerDelegate>
 @property (nonatomic, assign) CGPoint lastPoint;
 @property (nonatomic, strong) UIVisualEffectView *blurView;
 @property (nonatomic, strong) CAShapeLayer *marqueeLayer; // 充电跑马灯流光图层
@@ -141,7 +141,7 @@ static void SavePreferencesAndNotify(void);
 static void updateCPU(void);
 static void createCPUWindow(void);
 
-#pragma mark - 3. SBCPUFloatingView 悬浮窗实现 (内建平滑拖拽与边缘吸附)
+#pragma mark - 3. SBCPUFloatingView 悬浮窗实现 (内建原生 Pan & Tap 手势)
 
 @implementation SBCPUFloatingView
 
@@ -152,13 +152,24 @@ static void createCPUWindow(void);
         self.userInteractionEnabled = YES;
         self.multipleTouchEnabled = NO;
         
+        // 1. 绑定原生拖拽手势 (UIPanGestureRecognizer)
+        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
+        pan.delegate = self;
+        [self addGestureRecognizer:pan];
+
+        // 2. 绑定原生双击手势 (UITapGestureRecognizer)
+        UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleDoubleTap:)];
+        doubleTap.numberOfTapsRequired = 2;
+        doubleTap.delegate = self;
+        [self addGestureRecognizer:doubleTap];
+
         // 自然落影
         self.layer.shadowColor = [UIColor blackColor].CGColor;
         self.layer.shadowOpacity = 0.35f;
         self.layer.shadowOffset = CGSizeMake(0, 5);
         self.layer.shadowRadius = 10.0f;
 
-        // 1. 高透超薄暗色毛玻璃
+        // 高透超薄暗色毛玻璃
         UIBlurEffect *blurEffect = nil;
         if (@available(iOS 13.0, *)) {
             blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark];
@@ -171,10 +182,10 @@ static void createCPUWindow(void);
         _blurView.layer.masksToBounds = YES;
         _blurView.layer.borderWidth = 0.75f;
         _blurView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.30f].CGColor;
-        _blurView.userInteractionEnabled = NO; // 将内部毛玻璃设为 NO，由宿主 View 统一接收手势
+        _blurView.userInteractionEnabled = NO; // 将内部毛玻璃设为 NO，手势由宿主 View 统一处理
         [self addSubview:_blurView];
 
-        // 2. ✨ 充电跑马灯流光图层 (围绕悬浮窗四周旋转)
+        // ✨ 充电跑马灯流光图层 (围绕悬浮窗四周旋转)
         _marqueeLayer = [CAShapeLayer layer];
         _marqueeLayer.fillColor = [UIColor clearColor].CGColor;
         _marqueeLayer.strokeColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:0.95f].CGColor; // 翡翠绿高亮
@@ -292,71 +303,54 @@ static void createCPUWindow(void);
     return self;
 }
 
-#pragma mark - 原生拖拽触摸响应
+#pragma mark - 原生 UIPan 手势平滑拖拽与双击处理
 
-- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    UITouch *touch = touches.anyObject;
-    if (!touch) return;
-    self.lastPoint = [touch locationInView:self.superview];
-    [super touchesBegan:touches withEvent:event];
-}
+- (void)handlePan:(UIPanGestureRecognizer *)pan {
+    if (pan.state == UIGestureRecognizerStateBegan) {
+        self.lastPoint = self.center;
+    } else if (pan.state == UIGestureRecognizerStateChanged) {
+        CGPoint translation = [pan translationInView:self.superview];
+        CGPoint targetCenter = CGPointMake(self.lastPoint.x + translation.x, self.lastPoint.y + translation.y);
 
-- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    UITouch *touch = touches.anyObject;
-    if (!touch) return;
+        CGSize size = getRealScreenSize();
+        CGRect realFrame = self.frame;
+        CGFloat halfW = realFrame.size.width / 2.0f;
+        CGFloat halfH = realFrame.size.height / 2.0f;
 
-    CGPoint now = [touch locationInView:self.superview];
-    CGFloat dx = now.x - self.lastPoint.x;
-    CGFloat dy = now.y - self.lastPoint.y;
+        CGFloat minX = halfW + 2.0f;
+        CGFloat maxX = size.width - halfW - 2.0f;
+        CGFloat minY = halfH + 20.0f;
+        CGFloat maxY = size.height - halfH - 10.0f;
 
-    CGPoint center = self.center;
-    center.x += dx;
-    center.y += dy;
+        if (maxX < minX) maxX = minX;
+        if (maxY < minY) maxY = minY;
 
-    CGSize size = getRealScreenSize();
-    CGRect realFrame = self.frame;
-    CGFloat halfW = realFrame.size.width / 2.0f;
-    CGFloat halfH = realFrame.size.height / 2.0f;
+        if (targetCenter.x < minX) targetCenter.x = minX;
+        if (targetCenter.x > maxX) targetCenter.x = maxX;
+        if (targetCenter.y < minY) targetCenter.y = minY;
+        if (targetCenter.y > maxY) targetCenter.y = maxY;
 
-    CGFloat minX = halfW + 2.0f;
-    CGFloat maxX = size.width - halfW - 2.0f;
-    CGFloat minY = halfH + 20.0f;
-    CGFloat maxY = size.height - halfH - 10.0f;
+        self.center = targetCenter;
+    } else if (pan.state == UIGestureRecognizerStateEnded || pan.state == UIGestureRecognizerStateCancelled) {
+        if (rememberPositionEnable) {
+            [[NSUserDefaults standardUserDefaults] setObject:NSStringFromCGRect(self.frame) forKey:@"SBCPU.LastFrame"];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+        }
 
-    if (maxX < minX) maxX = minX;
-    if (maxY < minY) maxY = minY;
-
-    if (center.x < minX) center.x = minX;
-    if (center.x > maxX) center.x = maxX;
-    if (center.y < minY) center.y = minY;
-    if (center.y > maxY) center.y = maxY;
-
-    self.center = center;
-    self.lastPoint = now;
-
-    [super touchesMoved:touches withEvent:event];
-}
-
-- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    [super touchesEnded:touches withEvent:event];
-
-    if (rememberPositionEnable) {
-        [[NSUserDefaults standardUserDefaults] setObject:NSStringFromCGRect(self.frame) forKey:@"SBCPU.LastFrame"];
-        [[NSUserDefaults standardUserDefaults] synchronize];
+        clampAndPositionFloatingView(self.center, YES);
     }
-
-    clampAndPositionFloatingView(self.center, YES);
 }
 
-- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    [super touchesCancelled:touches withEvent:event];
-
-    if (rememberPositionEnable) {
-        [[NSUserDefaults standardUserDefaults] setObject:NSStringFromCGRect(self.frame) forKey:@"SBCPU.LastFrame"];
-        [[NSUserDefaults standardUserDefaults] synchronize];
+- (void)handleDoubleTap:(UITapGestureRecognizer *)tap {
+    if (tap.state == UIGestureRecognizerStateEnded) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            openSettings();
+        });
     }
+}
 
-    clampAndPositionFloatingView(self.center, YES);
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    return YES;
 }
 
 // 插入充电器灵动弹跳动画
@@ -595,19 +589,19 @@ static void createCPUWindow(void);
 
 @end
 
-#pragma mark - 优雅可穿透 Window 实现 (直连悬浮窗，零手势遮挡)
+#pragma mark - 优雅可穿透 Window 实现 (直通悬浮窗，绝无遮挡)
 
 @implementation SBCPUWindow
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     if (settingsShowing) return [super hitTest:point withEvent:event];
     
-    if (floatingView && !floatingView.hidden) {
-        CGPoint pointInFloating = [floatingView convertPoint:point fromView:self];
-        if ([floatingView pointInside:pointInFloating withEvent:event]) {
-            return floatingView; // 命中悬浮窗直接返回悬浮窗，接收拖拽与双击！
+    if (floatingView && !floatingView.hidden && floatingView.alpha > 0.01) {
+        CGPoint p = [self convertPoint:point toView:floatingView];
+        if ([floatingView pointInside:p withEvent:event]) {
+            return floatingView; // 命中悬浮窗直接返回，接收原生 Pan 拖拽与 Tap 双击！
         }
     }
-    return nil; // 命中其他区域直接透传给 iOS 桌面与应用
+    return nil; // 其他区域透传给 iOS 桌面与应用
 }
 @end
 
@@ -741,7 +735,7 @@ static void SavePreferencesAndNotify(void) {
     );
 }
 
-// 读取系统硬件真实最高主频 (如 3470MHz) 并在 1 秒内实时拟合跳动
+// 核心：读取系统硬件真实最高主频 (如 3470MHz) 并在 1 秒内实时拟合跳动
 static double getCPUFrequencyMHz(double currentCpuUsage) {
     uint64_t freqMax = 0;
     size_t size = sizeof(freqMax);
@@ -927,16 +921,8 @@ static void createCPUWindow(void) {
     }
 
     floatingView = [[SBCPUFloatingView alloc] initWithFrame:initFrame];
-    floatingView.userInteractionEnabled = YES;
-    floatingView.multipleTouchEnabled = NO;
 
     [cpuWindow.rootViewController.view addSubview:floatingView];
-
-    // 直接给悬浮窗添加双击打开设置手势
-    UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:[SBCPUAction class] action:@selector(doubleTapAction)];
-    doubleTap.numberOfTapsRequired = 2;
-    doubleTap.cancelsTouchesInView = NO;
-    [floatingView addGestureRecognizer:doubleTap];
 
     applyFloatingAlpha();
     updateFloatingSize();
