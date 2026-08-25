@@ -12,17 +12,17 @@
 static UIWindow *cpuWindow = nil;
 @class SBCPUDragView;
 
-static UIView *containerView = nil; // 容器 View
+static UIView *containerView = nil; // 底层容器 View
 static UILabel *label = nil; // 显示文字 Label
 static UIVisualEffectView *blurEffectView = nil; // 背景毛玻璃
 static SBCPUDragView *cpuDragView = nil;
 
-static CGFloat floatingScale = 1.0;
-static CGFloat floatingFontSize = 14.0;
+static CGFloat floatingScale = 1.0; // 0.4 到 1.6
+static CGFloat floatingFontSize = 13.0; // 8.0 到 15.0
 static CGFloat landscapeScale = 0.75;
 static CGFloat landscapeFontSize = 12.0;
 
-// SmartCharge 全局参数
+// SmartCharge 温控参数
 static BOOL sbcpuSmartChargeEnable = YES;
 static NSInteger sbcpuChargeTempFast = 35;
 static NSInteger sbcpuChargeTempReduce = 38;
@@ -42,13 +42,13 @@ static BOOL logoutCounting = NO;
 static BOOL floatingAlphaEnable = YES;
 static CGFloat floatingAlpha = 0.70f;
 
-// 布局与尺寸控制配置
-static BOOL autoWindowSizeEnable = NO; // 自动调整浮窗大小 (已恢复)
+// 布局与吸附控制配置
+static BOOL autoWindowSizeEnable = NO;
 static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
 static BOOL smartDockEnable = YES;
-static NSInteger dockMode = 0; // 0自动 1左 2右 3上 4下
+static NSInteger dockMode = 0; // 0自动 1左侧 2右侧 3顶部 4底部
 static BOOL rememberPositionEnable = YES;
 
 // 前置函数声明
@@ -202,6 +202,7 @@ static void applyFloatingAlpha() {
     CGFloat minDistance = MIN(MIN(left, right), MIN(top, bottom));
     CGPoint center = containerView.center;
 
+    // 吸附模式方向计算
     if (dockMode > 0) {
         if (dockMode == 1) { center.x = containerView.bounds.size.width / 2.0 + 10; }
         else if (dockMode == 2) { center.x = size.width - containerView.bounds.size.width / 2.0 - 10; }
@@ -232,7 +233,7 @@ static void applyFloatingAlpha() {
 }
 @end
 
-#pragma mark - 创建悬浮窗 UI (修正层级架构，解决文字不可见)
+#pragma mark - 创建悬浮窗 UI
 static void createCPUWindow() {
     if (cpuWindow) return;
 
@@ -248,11 +249,10 @@ static void createCPUWindow() {
     cpuWindow.rootViewController.view.backgroundColor = UIColor.clearColor;
     cpuWindow.hidden = NO;
 
-    // 1. 创建底层容器 View
+    // 1. 底层容器 View
     containerView = [[UIView alloc] initWithFrame:CGRectMake(30, 200, 115, 48)];
     containerView.backgroundColor = UIColor.clearColor;
 
-    // 容器外层阴影 (无错位虚影)
     containerView.layer.shadowColor = [UIColor blackColor].CGColor;
     containerView.layer.shadowOpacity = 0.25f;
     containerView.layer.shadowOffset = CGSizeMake(0, 3);
@@ -260,7 +260,7 @@ static void createCPUWindow() {
     containerView.layer.masksToBounds = NO;
     containerView.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:containerView.bounds cornerRadius:14].CGPath;
 
-    // 2. 创建毛玻璃图层
+    // 2. 毛玻璃背景
     UIBlurEffect *blurEffect = nil;
     if (@available(iOS 13.0, *)) {
         blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark];
@@ -275,17 +275,17 @@ static void createCPUWindow() {
     blurEffectView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.2f].CGColor;
     [containerView addSubview:blurEffectView];
 
-    // 3. 将 UILabel 添加到毛玻璃的 contentView 最上层，保证文字 100% 正常显示
+    // 3. Label 文字图层（最顶层）
     label = [[UILabel alloc] initWithFrame:blurEffectView.contentView.bounds];
     label.backgroundColor = UIColor.clearColor;
     label.textAlignment = NSTextAlignmentCenter;
     label.numberOfLines = 0;
     label.textColor = UIColor.whiteColor;
-    label.font = [UIFont monospacedDigitSystemFontOfSize:13 weight:UIFontWeightBold];
+    label.font = [UIFont monospacedDigitSystemFontOfSize:floatingFontSize weight:UIFontWeightBold];
     label.text = @"SB CPU\n0%";
     [blurEffectView.contentView addSubview:label];
 
-    // 4. 创建拖动图层
+    // 4. 拖拽手势 View
     cpuDragView = [[SBCPUDragView alloc] initWithFrame:containerView.frame];
     cpuDragView.backgroundColor = UIColor.clearColor;
     cpuDragView.userInteractionEnabled = YES;
@@ -416,11 +416,10 @@ static BOOL isCharging() {
     return charging;
 }
 
-#pragma mark - 自动/手动自适应浮窗尺寸 (已修复恢复)
+#pragma mark - 浮窗尺寸更新（自动/固定比例）
 static void updateFloatingSize() {
     if (!containerView || !label || !blurEffectView) return;
 
-    // 1. 开启“自动调整浮窗大小”的自适应计算逻辑
     if (autoWindowSizeEnable) {
         CGSize maxSize = CGSizeMake(UIScreen.mainScreen.bounds.size.width - 40, 200);
         CGSize textSize = [label sizeThatFits:maxSize];
@@ -445,7 +444,6 @@ static void updateFloatingSize() {
         return;
     }
 
-    // 2. 固定比例缩放逻辑
     BOOL landscape = isLandscapeMode();
     CGFloat scale = landscape ? landscapeScale : floatingScale;
     CGSize targetSize = landscape ? CGSizeMake(135 * scale, 58 * scale) : CGSizeMake(115 * scale, 48 * scale);
@@ -467,7 +465,7 @@ static void updateFloatingSize() {
     }
 }
 
-#pragma mark - 真实智能温控 Engine (IOKit 充电调控)
+#pragma mark - 真实智能温控 Engine
 typedef NS_ENUM(NSInteger, SBCPUSmartChargeState) {
     SBCPUSmartChargeNormal = 0,
     SBCPUSmartChargeReduce,
@@ -540,7 +538,7 @@ static void updateSmartChargeState(double temperature) {
 
 #pragma mark - CPU 与数据定时刷新
 static void updateCPU() {
-    double cpu = getCPUUsage(); // 只针对 SpringBoard 进程计算
+    double cpu = getCPUUsage();
     checkHighCPU(cpu);
 
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -574,9 +572,85 @@ static void updateCPU() {
         label.text = [displayLines componentsJoinedByString:@"\n"];
         label.textColor = (cpu >= 80.0) ? UIColor.systemRedColor : UIColor.whiteColor;
 
-        updateFloatingSize(); // 更新文本内容后自动调整尺寸
+        updateFloatingSize();
     });
 }
+
+#pragma mark - 温度独立编辑控制器 (修复 Bug 2: 温控四个打不开)
+@interface SBChargeTempEditController : UIViewController
+@property (nonatomic, assign) NSInteger tempValue;
+@property (nonatomic, copy) NSString *tempTitle;
+@property (nonatomic, copy) void (^finishBlock)(NSInteger value);
+@end
+
+@implementation SBChargeTempEditController {
+    UILabel *_valueLabel;
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
+    self.title = self.tempTitle;
+
+    UIButton *minus = [UIButton buttonWithType:UIButtonTypeSystem];
+    [minus setTitle:@"-" forState:UIControlStateNormal];
+    minus.titleLabel.font = [UIFont systemFontOfSize:36 weight:UIFontWeightBold];
+    [minus addTarget:self action:@selector(changeMinus) forControlEvents:UIControlEventTouchUpInside];
+
+    UIButton *plus = [UIButton buttonWithType:UIButtonTypeSystem];
+    [plus setTitle:@"+" forState:UIControlStateNormal];
+    plus.titleLabel.font = [UIFont systemFontOfSize:36 weight:UIFontWeightBold];
+    [plus addTarget:self action:@selector(changePlus) forControlEvents:UIControlEventTouchUpInside];
+
+    _valueLabel = [[UILabel alloc] init];
+    _valueLabel.textAlignment = NSTextAlignmentCenter;
+    _valueLabel.font = [UIFont boldSystemFontOfSize:32];
+
+    UIButton *done = [UIButton buttonWithType:UIButtonTypeSystem];
+    [done setTitle:@"完成" forState:UIControlStateNormal];
+    done.titleLabel.font = [UIFont systemFontOfSize:18 weight:UIFontWeightMedium];
+    [done addTarget:self action:@selector(doneClick) forControlEvents:UIControlEventTouchUpInside];
+
+    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[minus, _valueLabel, plus]];
+    row.axis = UILayoutConstraintAxisHorizontal;
+    row.distribution = UIStackViewDistributionEqualSpacing;
+    row.alignment = UIStackViewAlignmentCenter;
+
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[row, done]];
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.spacing = 30;
+
+    [self.view addSubview:stack];
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [stack.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
+        [stack.widthAnchor constraintEqualToConstant:220]
+    ]];
+
+    [self refresh];
+}
+
+- (void)refresh {
+    _valueLabel.text = [NSString stringWithFormat:@"%ld℃", (long)self.tempValue];
+}
+
+- (void)changeMinus {
+    if (self.tempValue > 0) self.tempValue--;
+    [self refresh];
+}
+
+- (void)changePlus {
+    if (self.tempValue < 100) self.tempValue++;
+    [self refresh];
+}
+
+- (void)doneClick {
+    if (self.finishBlock) self.finishBlock(self.tempValue);
+    [self.navigationController popViewControllerAnimated:YES];
+}
+@end
 
 #pragma mark - CPU 触发值 Picker 控制器
 @interface SBCPUValuePickerController : UITableViewController
@@ -661,8 +735,25 @@ static void updateCPU() {
     }];
 }
 
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 15; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 18; }
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { return @"自动注销 / 悬浮窗 / 智能温控"; }
+
+#pragma mark 滑动事件响应 (新增浮窗大小与字体大小)
+- (void)changeScaleSlider:(UISlider *)slider {
+    floatingScale = slider.value;
+    [[NSUserDefaults standardUserDefaults] setFloat:floatingScale forKey:@"SBCPU.FloatingScale"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    updateFloatingSize();
+    [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:5 inSection:0]] withRowAnimation:UITableViewRowAnimationNone];
+}
+
+- (void)changeFontSlider:(UISlider *)slider {
+    floatingFontSize = slider.value;
+    [[NSUserDefaults standardUserDefaults] setFloat:floatingFontSize forKey:@"SBCPU.FloatingFontSize"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    if (label) label.font = [UIFont systemFontOfSize:floatingFontSize];
+    [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:6 inSection:0]] withRowAnimation:UITableViewRowAnimationNone];
+}
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
@@ -690,52 +781,78 @@ static void updateCPU() {
     } else if (indexPath.row == 4) {
         cell.textLabel.text = @"透明度";
         cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", floatingAlpha * 100.0];
-    } else if (indexPath.row == 5) {
-        cell.textLabel.text = @"自动调整浮窗大小"; // 已恢复设置项
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    } else if (indexPath.row == 5) { // 新增 40% 到 160% 浮窗大小控制
+        cell.textLabel.text = @"浮窗大小";
+        UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0, 0, 140, 30)];
+        slider.minimumValue = 0.4;
+        slider.maximumValue = 1.6;
+        slider.value = floatingScale;
+        [slider addTarget:self action:@selector(changeScaleSlider:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = slider;
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", floatingScale * 100];
+    } else if (indexPath.row == 6) { // 新增 8 到 15pt 字体大小控制
+        cell.textLabel.text = @"字体大小";
+        UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0, 0, 140, 30)];
+        slider.minimumValue = 8.0;
+        slider.maximumValue = 15.0;
+        slider.value = floatingFontSize;
+        [slider addTarget:self action:@selector(changeFontSlider:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = slider;
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0fpt", floatingFontSize];
+    } else if (indexPath.row == 7) {
+        cell.textLabel.text = @"自动调整浮窗大小";
         UISwitch *sw = [[UISwitch alloc] init];
         sw.on = autoWindowSizeEnable;
         [sw addTarget:self action:@selector(changeAutoWindowSize:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = sw;
-    } else if (indexPath.row == 6) {
+    } else if (indexPath.row == 8) {
         cell.textLabel.text = @"智能吸附";
         UISwitch *sw = [[UISwitch alloc] init];
         sw.on = smartDockEnable;
         [sw addTarget:self action:@selector(changeSmartDock:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = sw;
-    } else if (indexPath.row == 7) {
+    } else if (indexPath.row == 9) { // 新增吸附方向选择
+        cell.textLabel.text = @"吸附模式";
+        NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
+        cell.detailTextLabel.text = (dockMode >= 0 && dockMode < modes.count) ? modes[dockMode] : @"自动";
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    } else if (indexPath.row == 10) {
         cell.textLabel.text = @"显示电池百分比";
         UISwitch *sw = [[UISwitch alloc] init];
         sw.on = showBatteryPercent;
         [sw addTarget:self action:@selector(changeShowBattery:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = sw;
-    } else if (indexPath.row == 8) {
+    } else if (indexPath.row == 11) {
         cell.textLabel.text = @"显示电池温度";
         UISwitch *sw = [[UISwitch alloc] init];
         sw.on = showBatteryTemperature;
         [sw addTarget:self action:@selector(changeShowTemperature:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = sw;
-    } else if (indexPath.row == 9) {
+    } else if (indexPath.row == 12) {
         cell.textLabel.text = @"显示实时电流";
         UISwitch *sw = [[UISwitch alloc] init];
         sw.on = showBatteryCurrent;
         [sw addTarget:self action:@selector(changeShowCurrent:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = sw;
-    } else if (indexPath.row == 10) {
+    } else if (indexPath.row == 13) {
         cell.textLabel.text = @"智能温控";
         UISwitch *sw = [[UISwitch alloc] init];
         sw.on = sbcpuSmartChargeEnable;
         [sw addTarget:self action:@selector(changeSmartCharge:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = sw;
-    } else if (indexPath.row >= 11 && indexPath.row <= 14) {
+    } else if (indexPath.row >= 14 && indexPath.row <= 17) {
         NSArray *chargeTitles = @[@"保持快充温度", @"降低功率温度", @"暂停充电温度", @"断充保护温度"];
         NSArray *chargeValues = @[@(sbcpuChargeTempFast), @(sbcpuChargeTempReduce), @(sbcpuChargeTempPause), @(sbcpuChargeTempStop)];
-        NSInteger i = indexPath.row - 11;
+        NSInteger i = indexPath.row - 14;
         cell.textLabel.text = chargeTitles[i];
         cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld℃", (long)[chargeValues[i] integerValue]];
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     }
     return cell;
 }
 
+#pragma mark 点击事件路由 (修复 Bug 1 & Bug 2)
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 
@@ -744,6 +861,50 @@ static void updateCPU() {
         [self.navigationController pushViewController:vc animated:YES];
     } else if (indexPath.row == 2) {
         SBCPUTimePickerController *vc = [[SBCPUTimePickerController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+        [self.navigationController pushViewController:vc animated:YES];
+    } else if (indexPath.row == 4) { // 修复 Bug 1: 透明度点击弹出选择
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"透明度" message:@"选择悬浮窗透明度" preferredStyle:UIAlertControllerStyleActionSheet];
+        NSArray *titles = @[@"20%", @"40%", @"60%", @"70%", @"80%", @"100%"];
+        NSArray *values = @[@0.2, @0.4, @0.6, @0.7, @0.8, @1.0];
+
+        for (NSInteger i = 0; i < titles.count; i++) {
+            [alert addAction:[UIAlertAction actionWithTitle:titles[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                floatingAlpha = [values[i] floatValue];
+                [[NSUserDefaults standardUserDefaults] setFloat:floatingAlpha forKey:@"SBCPU.FloatingAlpha"];
+                [[NSUserDefaults standardUserDefaults] synchronize];
+                applyFloatingAlpha();
+                [self.tableView reloadData];
+            }]];
+        }
+        [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+    } else if (indexPath.row == 9) { // 切换吸附方向
+        NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
+        dockMode = (dockMode + 1) % modes.count;
+        [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPU.DockMode"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+    } else if (indexPath.row >= 14 && indexPath.row <= 17) { // 修复 Bug 2: 打开温控 4 项设置
+        NSInteger type = indexPath.row - 14;
+        NSInteger current = 35;
+        NSString *title = @"温度";
+
+        if (type == 0) { current = sbcpuChargeTempFast; title = @"保持快充温度"; }
+        if (type == 1) { current = sbcpuChargeTempReduce; title = @"降低功率温度"; }
+        if (type == 2) { current = sbcpuChargeTempPause; title = @"暂停充电温度"; }
+        if (type == 3) { current = sbcpuChargeTempStop; title = @"断充保护温度"; }
+
+        SBChargeTempEditController *vc = [SBChargeTempEditController new];
+        vc.tempValue = current;
+        vc.tempTitle = title;
+        vc.finishBlock = ^(NSInteger value) {
+            if (type == 0) { sbcpuChargeTempFast = value; [[NSUserDefaults standardUserDefaults] setInteger:value forKey:@"SBCPU.ChargeFastTemp"]; }
+            if (type == 1) { sbcpuChargeTempReduce = value; [[NSUserDefaults standardUserDefaults] setInteger:value forKey:@"SBCPU.ChargeReduceTemp"]; }
+            if (type == 2) { sbcpuChargeTempPause = value; [[NSUserDefaults standardUserDefaults] setInteger:value forKey:@"SBCPU.ChargePauseTemp"]; }
+            if (type == 3) { sbcpuChargeTempStop = value; [[NSUserDefaults standardUserDefaults] setInteger:value forKey:@"SBCPU.ChargeStopTemp"]; }
+            [[NSUserDefaults standardUserDefaults] synchronize];
+            [self.tableView reloadData];
+        };
         [self.navigationController pushViewController:vc animated:YES];
     }
 }
@@ -849,6 +1010,15 @@ static void registerV160Observers() {
     NSUserDefaults *def = NSUserDefaults.standardUserDefaults;
     autoWindowSizeEnable = [def boolForKey:@"SBCPU.AutoWindowSize"];
     autoLogoutEnable = [def boolForKey:@"SBCPU.AutoLogout"];
+
+    floatingScale = [def floatForKey:@"SBCPU.FloatingScale"];
+    if (floatingScale < 0.4 || floatingScale > 1.6) floatingScale = 1.0;
+
+    floatingFontSize = [def floatForKey:@"SBCPU.FloatingFontSize"];
+    if (floatingFontSize < 8.0 || floatingFontSize > 15.0) floatingFontSize = 13.0;
+
+    dockMode = [def integerForKey:@"SBCPU.DockMode"];
+
     double cpu = [def doubleForKey:@"SBCPU.CPUThreshold"];
     if (cpu >= 80.0 && cpu <= 1000.0) logoutCPUThreshold = cpu;
 
@@ -861,6 +1031,11 @@ static void registerV160Observers() {
 
     CGFloat alpha = [def floatForKey:@"SBCPU.FloatingAlpha"];
     if (alpha >= 0.2 && alpha <= 1.0) floatingAlpha = alpha;
+
+    if ([def objectForKey:@"SBCPU.ChargeFastTemp"]) sbcpuChargeTempFast = [def integerForKey:@"SBCPU.ChargeFastTemp"];
+    if ([def objectForKey:@"SBCPU.ChargeReduceTemp"]) sbcpuChargeTempReduce = [def integerForKey:@"SBCPU.ChargeReduceTemp"];
+    if ([def objectForKey:@"SBCPU.ChargePauseTemp"]) sbcpuChargeTempPause = [def integerForKey:@"SBCPU.ChargePauseTemp"];
+    if ([def objectForKey:@"SBCPU.ChargeStopTemp"]) sbcpuChargeTempStop = [def integerForKey:@"SBCPU.ChargeStopTemp"];
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         createCPUWindow();
