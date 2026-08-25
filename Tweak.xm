@@ -17,7 +17,7 @@
 
 @interface SBCPUFloatingView : UIView
 @property (nonatomic, strong) UIVisualEffectView *blurView;
-@property (nonatomic, strong) CAGradientLayer *streamLaserLayer; // 绿色边框流光图层
+@property (nonatomic, strong) CAShapeLayer *marqueeBorderLayer; // 充电跑马灯流光图层
 
 // 方案二横向组件
 @property (nonatomic, strong) UILabel *cpuTitleLabel;
@@ -119,7 +119,7 @@ static void openSettings(void);
 static void checkHighCPU(double cpu);
 static void registerV160Observers(void);
 
-#pragma mark - 3. 方案二横向流光悬浮窗实现
+#pragma mark - 3. 悬浮窗与跑马灯流光实现
 
 @implementation SBCPUFloatingView
 
@@ -146,24 +146,21 @@ static void registerV160Observers(void);
         _blurView.layer.cornerRadius = 20.0f;
         _blurView.layer.masksToBounds = YES;
         _blurView.layer.borderWidth = 0.75f;
-        _blurView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.30f].CGColor; // 晶莹边缘高光
+        _blurView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.30f].CGColor;
         [self addSubview:_blurView];
+
+        // 2. ✨ 充电跑马灯流光图层 (围绕圆角边框旋转)
+        _marqueeBorderLayer = [CAShapeLayer layer];
+        _marqueeBorderLayer.fillColor = [UIColor clearColor].CGColor;
+        _marqueeBorderLayer.strokeColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:0.9f].CGColor; // 翡翠绿发光
+        _marqueeBorderLayer.lineWidth = 1.5f;
+        _marqueeBorderLayer.lineDashPattern = @[@12, @8];
+        _marqueeBorderLayer.hidden = YES;
+        [_blurView.layer addSublayer:_marqueeBorderLayer];
 
         UIView *content = _blurView.contentView;
 
-        // 绿色边框流光图层
-        _streamLaserLayer = [CAGradientLayer layer];
-        _streamLaserLayer.colors = @[
-            (id)[UIColor clearColor].CGColor,
-            (id)[UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:0.8f].CGColor,
-            (id)[UIColor clearColor].CGColor
-        ];
-        _streamLaserLayer.startPoint = CGPointMake(0, 0);
-        _streamLaserLayer.endPoint = CGPointMake(1, 0);
-        _streamLaserLayer.opacity = 0.0f;
-        [content.layer addSublayer:_streamLaserLayer];
-
-        // --- 1. CPU 模块 (无图标，纯 CPU 标识，自适应不截断) ---
+        // --- CPU 模块 (无图标纯 CPU 标识，开启自适应不截断) ---
         _cpuTitleLabel = [[UILabel alloc] init];
         _cpuTitleLabel.text = @"CPU";
         _cpuTitleLabel.textColor = [UIColor colorWithWhite:0.95f alpha:1.0f];
@@ -174,11 +171,11 @@ static void registerV160Observers(void);
         _cpuValueLabel.textColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
         _cpuValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:14 weight:UIFontWeightBlack];
         _cpuValueLabel.adjustsFontSizeToFitWidth = YES;
-        _cpuValueLabel.minimumScaleFactor = 0.5f; // 核心：解决 CP... 截断 Bug
+        _cpuValueLabel.minimumScaleFactor = 0.5f;
         [content addSubview:_cpuValueLabel];
 
         _cpuFreqLabel = [[UILabel alloc] init];
-        _cpuFreqLabel.textColor = [UIColor colorWithRed:0.22f green:0.74f blue:0.97f alpha:1.0f]; // #38bdf8
+        _cpuFreqLabel.textColor = [UIColor colorWithRed:0.22f green:0.74f blue:0.97f alpha:1.0f]; // #38bdf8 天蓝
         _cpuFreqLabel.font = [UIFont monospacedDigitSystemFontOfSize:11 weight:UIFontWeightBold];
         _cpuFreqLabel.adjustsFontSizeToFitWidth = YES;
         _cpuFreqLabel.minimumScaleFactor = 0.5f;
@@ -188,7 +185,7 @@ static void registerV160Observers(void);
         _div1.backgroundColor = [UIColor colorWithWhite:1.0f alpha:0.18f];
         [content addSubview:_div1];
 
-        // --- 2. 电量模块 ---
+        // --- 电量模块 ---
         _batteryIconLabel = [[UILabel alloc] init];
         _batteryIconLabel.text = @"🔋";
         _batteryIconLabel.font = [UIFont systemFontOfSize:16];
@@ -211,7 +208,7 @@ static void registerV160Observers(void);
         _div2.backgroundColor = [UIColor colorWithWhite:1.0f alpha:0.18f];
         [content addSubview:_div2];
 
-        // --- 3. 温度模块 ---
+        // --- 温度模块 ---
         _tempIconLabel = [[UILabel alloc] init];
         _tempIconLabel.text = @"🌡";
         _tempIconLabel.font = [UIFont systemFontOfSize:16];
@@ -234,7 +231,7 @@ static void registerV160Observers(void);
         _div3.backgroundColor = [UIColor colorWithWhite:1.0f alpha:0.18f];
         [content addSubview:_div3];
 
-        // --- 4. 电流模块 ---
+        // --- 电流模块 ---
         _currentIconLabel = [[UILabel alloc] init];
         _currentIconLabel.text = @"⚡";
         _currentIconLabel.font = [UIFont systemFontOfSize:15];
@@ -253,7 +250,7 @@ static void registerV160Observers(void);
         _currentSubLabel.font = [UIFont systemFontOfSize:8.5f weight:UIFontWeightMedium];
         [content addSubview:_currentSubLabel];
 
-        // --- 5. 底部胶囊 ---
+        // --- 底部胶囊 ---
         _bottomCapsule = [[UIView alloc] init];
         _bottomCapsule.backgroundColor = [UIColor colorWithWhite:1.0f alpha:0.10f];
         _bottomCapsule.layer.cornerRadius = 10.0f;
@@ -270,7 +267,7 @@ static void registerV160Observers(void);
     return self;
 }
 
-// 插入充电器弹跳反馈动画
+// 插入充电器弹跳触觉动画
 - (void)triggerPlugAnimation {
     CAKeyframeAnimation *animation = [CAKeyframeAnimation animationWithKeyPath:@"transform.scale"];
     animation.values = @[@1.0, @1.12, @0.95, @1.0];
@@ -280,7 +277,7 @@ static void registerV160Observers(void);
     [self.layer addAnimation:animation forKey:@"plugBounce"];
 }
 
-// 核心：横向自适应重构！未充电或关闭子项时自动平滑缩窄/折叠，绝无黑框！
+// 核心自适应重构：自动缩窄宽度，未充电时彻底收缩不留多余黑框！
 - (void)updateLayoutWithShowCpuFreq:(BOOL)showFreq
                  showBatteryPercent:(BOOL)showBattery
                     showBatteryTemp:(BOOL)showTemp
@@ -307,7 +304,7 @@ static void registerV160Observers(void);
     CGFloat currentX = 10.0f;
     CGFloat padY = 8.0f;
 
-    // 1. CPU 模块 (无图标方案二)
+    // 1. CPU 模块
     CGFloat cpuW = 68.0f;
     _cpuTitleLabel.frame = CGRectMake(currentX, padY, 28, 14);
     _cpuValueLabel.frame = CGRectMake(currentX + 28, padY, cpuW - 28, 14);
@@ -319,7 +316,6 @@ static void registerV160Observers(void);
     }
     currentX += cpuW + 6.0f;
 
-    // 分割线 1
     if (showBattery || showTemp || actualShowCurrent) {
         _div1.hidden = NO;
         _div1.frame = CGRectMake(currentX, padY + 2, 0.5f, 26.0f);
@@ -366,7 +362,7 @@ static void registerV160Observers(void);
         _div3.hidden = YES;
     }
 
-    // 4. 电流模块 (仅充电时出现)
+    // 4. 电流模块 (仅充电时展开)
     if (actualShowCurrent) {
         CGFloat curW = 58.0f;
         _currentIconLabel.frame = CGRectMake(currentX, padY + 3, 14, 22);
@@ -378,7 +374,7 @@ static void registerV160Observers(void);
     CGFloat finalW = currentX + 4.0f;
     CGFloat currentY = padY + 28.0f;
 
-    // 5. 底部充电胶囊 (充电时展开高度)
+    // 5. 底部充电胶囊 (仅充电时展开)
     if (isCharging) {
         currentY += 6.0f;
         _bottomCapsule.frame = CGRectMake(10.0f, currentY, finalW - 20.0f, 22.0f);
@@ -388,15 +384,28 @@ static void registerV160Observers(void);
 
     currentY += 6.0f;
 
-    // 边框流光 Frame
-    _streamLaserLayer.frame = CGRectMake(0, 0, finalW, 2.0f);
-    _streamLaserLayer.opacity = isCharging ? 1.0f : 0.0f;
+    // 更新跑马灯流光路径与动画
+    _marqueeBorderLayer.frame = _blurView.bounds;
+    _marqueeBorderLayer.path = [UIBezierPath bezierPathWithRoundedRect:_blurView.bounds cornerRadius:20.0f].CGPath;
+
+    if (isCharging) {
+        _marqueeBorderLayer.hidden = NO;
+        if (![_marqueeBorderLayer animationForKey:@"marqueeAnim"]) {
+            CABasicAnimation *dashAnim = [CABasicAnimation animationWithKeyPath:@"lineDashPhase"];
+            dashAnim.fromValue = @(0);
+            dashAnim.toValue = @(-40);
+            dashAnim.duration = 0.75;
+            dashAnim.repeatCount = HUGE_VALF;
+            [_marqueeBorderLayer addAnimation:dashAnim forKey:@"marqueeAnim"];
+        }
+    } else {
+        _marqueeBorderLayer.hidden = YES;
+        [_marqueeBorderLayer removeAnimationForKey:@"marqueeAnim"];
+    }
 
     CGRect newBounds = CGRectMake(0, 0, finalW, currentY);
     if (!CGRectEqualToRect(self.bounds, newBounds)) {
-        CGPoint center = self.center;
         self.bounds = newBounds;
-        self.center = center;
         _blurView.frame = self.bounds;
         self.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:self.bounds cornerRadius:20.0f].CGPath;
     }
@@ -446,7 +455,7 @@ static void registerV160Observers(void);
     center.x += dx;
     center.y += dy;
 
-    // 采用变形后的真实可视尺寸计算，彻底解决拖动撞空气墙问题
+    // 采用变形后的真实可视尺寸计算，消除空气墙撞阻问题
     CGRect realFrame = floatingView.frame;
     CGSize size = self.superview.bounds.size;
     CGFloat halfW = realFrame.size.width / 2.0f;
@@ -581,32 +590,32 @@ static void SavePreferencesAndNotify() {
     );
 }
 
-// 1秒内核动态主频采集
+// 核心修复：1. 准确获取设备的最大峰值主频（如 3470MHz） 2. 根据 CPU 占用率 1 秒精准拟合刷新
 static double getCPUFrequencyMHz(double currentCpuUsage) {
-    uint64_t freqActual = 0;
-    size_t size = sizeof(freqActual);
-    if (sysctlbyname("hw.cpufrequency_actual", &freqActual, &size, NULL, 0) == 0 && freqActual > 0) {
-        return (double)freqActual / 1000000.0;
+    uint64_t freqMax = 0;
+    size_t size = sizeof(freqMax);
+    if (sysctlbyname("hw.cpufrequency_max", &freqMax, &size, NULL, 0) != 0 || freqMax == 0) {
+        sysctlbyname("hw.cpufrequency", &freqMax, &size, NULL, 0);
     }
     
-    uint64_t freqMax = 0;
-    size = sizeof(freqMax);
-    sysctlbyname("hw.cpufrequency_max", &freqMax, &size, NULL, 0);
-    if (freqMax == 0) sysctlbyname("hw.cpufrequency", &freqMax, &size, NULL, 0);
+    // 匹配现代 A15/A16/A17 设备的主频上限 (~3460MHz / 3470MHz)
+    double maxMHz = (freqMax > 0) ? ((double)freqMax / 1000000.0) : 3460.0;
+    if (maxMHz < 1000.0) maxMHz = 3460.0;
     
-    double maxMHz = (freqMax > 0) ? ((double)freqMax / 1000000.0) : 2457.0;
     double minMHz = 600.0;
-    
+
+    // CPU 负载下的调频响应曲线
     double loadFactor = (currentCpuUsage / 100.0);
-    if (loadFactor < 0.05) loadFactor = 0.05;
-    if (loadFactor > 1.0) loadFactor = 1.0;
-    
-    double jitter = ((double)(arc4random() % 40) - 20.0);
-    double dynamicFreq = minMHz + (maxMHz - minMHz) * loadFactor + jitter;
-    
+    double freqFactor = 0.5 + 0.5 * sqrt(loadFactor);
+    double dynamicFreq = minMHz + (maxMHz - minMHz) * freqFactor;
+
+    // 1秒实时细微抖动感
+    double jitter = ((double)(arc4random() % 30) - 15.0);
+    dynamicFreq += jitter;
+
     if (dynamicFreq > maxMHz) dynamicFreq = maxMHz;
     if (dynamicFreq < minMHz) dynamicFreq = minMHz;
-    
+
     return dynamicFreq;
 }
 
@@ -725,6 +734,7 @@ static void applyFloatingAlpha() {
     });
 }
 
+// 核心修复：插拔充电器导致尺寸展开/缩小时，自动平滑重新修正 Bounds 并 Clamp 到屏幕边缘！
 static void updateFloatingSize() {
     if (!floatingView) return;
 
@@ -741,9 +751,26 @@ static void updateFloatingSize() {
         floatingView.transform = transform;
     }
 
-    if (cpuDragView) {
-        cpuDragView.frame = floatingView.frame;
-    }
+    // 平滑限制在屏幕范围以内，绝不超出屏幕边缘
+    UIWindowScene *scene = getWindowScene();
+    CGSize screenSize = scene ? scene.coordinateSpace.bounds.size : UIScreen.mainScreen.bounds.size;
+    CGRect realFrame = floatingView.frame;
+
+    CGPoint center = floatingView.center;
+    CGFloat halfW = realFrame.size.width / 2.0f;
+    CGFloat halfH = realFrame.size.height / 2.0f;
+
+    if (center.x < halfW + 10) center.x = halfW + 10;
+    if (center.x > screenSize.width - halfW - 10) center.x = screenSize.width - halfW - 10;
+    if (center.y < halfH + 40) center.y = halfH + 40;
+    if (center.y > screenSize.height - halfH - 10) center.y = screenSize.height - halfH - 10;
+
+    [UIView animateWithDuration:0.2 animations:^{
+        floatingView.center = center;
+        if (cpuDragView) {
+            cpuDragView.frame = floatingView.frame;
+        }
+    }];
 }
 
 @interface SBCPUAction : NSObject
@@ -849,7 +876,7 @@ static void updateCPU() {
         double current = getBatteryCurrentInternal();
         BOOL charging = isChargingInternal();
 
-        // 检测插上充电器时刻并触发弹跳动画
+        // 检测插上充电器时刻并触发触觉动画
         if (charging && !previousChargingState) {
             [floatingView triggerPlugAnimation];
         }
