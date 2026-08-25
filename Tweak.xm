@@ -135,6 +135,12 @@ static DeviceSpec getDeviceSpec(void) {
 @interface SBCPUWindow : UIWindow
 @end
 
+@interface SBCPUValuePickerController : UITableViewController
+@end
+
+@interface SBCPUTimePickerController : UITableViewController
+@end
+
 @interface SBCPUSettingsController : UITableViewController
 @end
 
@@ -977,13 +983,12 @@ static void createCPUWindow(void);
     double freq = getCPUFrequencyMHz(systemCpu);
     _labelsDict[@"CPU主频"].text = [NSString stringWithFormat:@"%.0f / %.0fMHz", freq, spec.maxFreqMHz];
 
-    // ✨ 20. 运行内存 (精准硬件规格计算)
+    // 20. 运行内存精准计算
     uint64_t memsize = 0;
     size_t size = sizeof(memsize);
     if (sysctlbyname("hw.memsize", &memsize, &size, NULL, 0) != 0 || memsize == 0) {
         memsize = [NSProcessInfo processInfo].physicalMemory;
     }
-    // 使用 ceil 保证 6GB/8GB 物理内存精准对齐显示
     uint64_t totalRAM_GB = (uint64_t)ceil((double)memsize / (1024.0 * 1024.0 * 1024.0));
     if (totalRAM_GB == 0) totalRAM_GB = 6;
 
@@ -1523,7 +1528,77 @@ static void updateCPU(void) {
     });
 }
 
-#pragma mark - 9. 设置控制器
+#pragma mark - 9. 设置级联控制器选择器实现
+
+@implementation SBCPUValuePickerController
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { 
+    (void)tableView;
+    (void)section;
+    return 7; 
+}
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { 
+    (void)tableView;
+    (void)section;
+    return @"CPU 触发值"; 
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    (void)tableView;
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    NSArray *titles = @[@"80%", @"100%", @"120%", @"140%", @"160%", @"180%", @"200%"];
+    NSArray *values = @[@80, @100, @120, @140, @160, @180, @200];
+
+    cell.textLabel.text = titles[indexPath.row];
+    if ([values[indexPath.row] doubleValue] == logoutCPUThreshold) {
+        cell.accessoryType = UITableViewCellAccessoryCheckmark;
+    }
+    return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    NSArray *values = @[@80, @100, @120, @140, @160, @180, @200];
+    logoutCPUThreshold = [values[indexPath.row] doubleValue];
+    SavePreferencesAndNotify();
+    [tableView reloadData];
+}
+@end
+
+@implementation SBCPUTimePickerController
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { 
+    (void)tableView;
+    (void)section;
+    return 7; 
+}
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { 
+    (void)tableView;
+    (void)section;
+    return @"持续时间"; 
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    (void)tableView;
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    NSArray *titles = @[@"10 秒", @"30 秒", @"60 秒", @"120 秒", @"180 秒", @"300 秒", @"600 秒"];
+    NSArray *values = @[@10, @30, @60, @120, @180, @300, @600];
+
+    cell.textLabel.text = titles[indexPath.row];
+    if ([values[indexPath.row] integerValue] == logoutDuration) {
+        cell.accessoryType = UITableViewCellAccessoryCheckmark;
+    }
+    return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    NSArray *values = @[@10, @30, @60, @120, @180, @300, @600];
+    logoutDuration = [values[indexPath.row] integerValue];
+    SavePreferencesAndNotify();
+    [tableView reloadData];
+}
+@end
+
+#pragma mark - 10. 完整设置控制器实现（恢复全部 5 个 Section）
 
 @implementation SBCPUSettingsController
 
@@ -1543,32 +1618,236 @@ static void updateCPU(void) {
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { 
     (void)tableView;
-    return 1; 
+    return 5; 
 }
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { 
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     (void)tableView;
-    (void)section;
-    return 1; 
+    if (section == 0) return 2; // 📱 智能缩进
+    if (section == 1) return 3; // ⚡ 自动控制
+    if (section == 2) return 4; // 🔲 悬浮窗外观
+    if (section == 3) return 3; // 🧠 智能选项
+    return 5;                   // 📍 位置与显示
+}
+
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
+    (void)tableView;
+    if (section == 0) return @"📱 智能缩进与侧边吸附";
+    if (section == 1) return @"⚡ 自动控制";
+    if (section == 2) return @"🔲 悬浮窗外观";
+    if (section == 3) return @"🧠 智能选项";
+    return @"📍 位置与显示";
+}
+
+- (void)changeScaleSlider:(UISlider *)slider {
+    floatingScale = slider.value;
+    SavePreferencesAndNotify();
+    updateFloatingSize();
+    [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:2 inSection:2]] withRowAnimation:UITableViewRowAnimationNone];
+}
+
+- (void)changeFontSlider:(UISlider *)slider {
+    floatingFontSize = slider.value;
+    SavePreferencesAndNotify();
+    updateFloatingSize();
+    [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:3 inSection:2]] withRowAnimation:UITableViewRowAnimationNone];
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     (void)tableView;
-    (void)indexPath;
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
-    cell.textLabel.text = @"无操作自动收起";
-    UISwitch *sw = [UISwitch new];
-    sw.on = autoCollapseEnable;
-    [sw addTarget:self action:@selector(changeAutoCollapse:) forControlEvents:UIControlEventValueChanged];
-    cell.accessoryView = sw;
+
+    if (indexPath.section == 0) {
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"无操作自动收起";
+            UISwitch *sw = [UISwitch new];
+            sw.on = autoCollapseEnable;
+            [sw addTarget:self action:@selector(changeAutoCollapse:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"收起延迟时间";
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld 秒", (long)autoCollapseDelay];
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        }
+    } else if (indexPath.section == 1) {
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"自动注销";
+            UISwitch *sw = [UISwitch new];
+            sw.on = autoLogoutEnable;
+            [sw addTarget:self action:@selector(changeLogout:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"CPU 触发值";
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", logoutCPUThreshold];
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        } else if (indexPath.row == 2) {
+            cell.textLabel.text = @"持续时间";
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld 秒", (long)logoutDuration];
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        }
+    } else if (indexPath.section == 2) {
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"透明度开关";
+            UISwitch *sw = [UISwitch new];
+            sw.on = floatingAlphaEnable;
+            [sw addTarget:self action:@selector(changeAlphaEnable:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"透明度";
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", floatingAlpha * 100.0];
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        } else if (indexPath.row == 2) {
+            cell.textLabel.text = @"浮窗大小";
+            UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,130,30)];
+            slider.minimumValue = 0.4; slider.maximumValue = 1.6; slider.value = floatingScale;
+            [slider addTarget:self action:@selector(changeScaleSlider:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = slider;
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", floatingScale * 100];
+        } else if (indexPath.row == 3) {
+            cell.textLabel.text = @"字体大小";
+            UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,130,30)];
+            slider.minimumValue = 8.0; slider.maximumValue = 15.0; slider.value = floatingFontSize;
+            [slider addTarget:self action:@selector(changeFontSlider:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = slider;
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0fpt", floatingFontSize];
+        }
+    } else if (indexPath.section == 3) {
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"键盘避让";
+            UISwitch *sw = [UISwitch new];
+            sw.on = keyboardAvoidEnable;
+            [sw addTarget:self action:@selector(changeKeyboardAvoid:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"智能吸附";
+            UISwitch *sw = [UISwitch new];
+            sw.on = smartDockEnable;
+            [sw addTarget:self action:@selector(changeSmartDock:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 2) {
+            cell.textLabel.text = @"吸附模式";
+            NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
+            cell.detailTextLabel.text = (dockMode >= 0 && dockMode < modes.count) ? modes[dockMode] : @"自动";
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        }
+    } else if (indexPath.section == 4) {
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"记忆悬浮窗位置";
+            UISwitch *sw = [UISwitch new];
+            sw.on = rememberPositionEnable;
+            [sw addTarget:self action:@selector(changeRememberPosition:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"显示 CPU 频率";
+            UISwitch *sw = [UISwitch new];
+            sw.on = showCpuFrequency;
+            [sw addTarget:self action:@selector(changeShowCpuFreq:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 2) {
+            cell.textLabel.text = @"显示电池百分比";
+            UISwitch *sw = [UISwitch new];
+            sw.on = showBatteryPercent;
+            [sw addTarget:self action:@selector(changeShowBattery:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 3) {
+            cell.textLabel.text = @"显示电池温度";
+            UISwitch *sw = [UISwitch new];
+            sw.on = showBatteryTemperature;
+            [sw addTarget:self action:@selector(changeShowTemp:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 4) {
+            cell.textLabel.text = @"显示实时电流";
+            UISwitch *sw = [UISwitch new];
+            sw.on = showBatteryCurrent;
+            [sw addTarget:self action:@selector(changeShowCurrent:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        }
+    }
     return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+
+    if (indexPath.section == 0) {
+        if (indexPath.row == 1) {
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"无操作收起延迟" message:@"选择多长时间无操作后自动折叠" preferredStyle:UIAlertControllerStyleActionSheet];
+            NSArray *titles = @[@"2 秒", @"3 秒", @"4 秒", @"5 秒", @"8 秒", @"10 秒"];
+            NSArray *values = @[@2, @3, @4, @5, @8, @10];
+
+            for (NSInteger i = 0; i < titles.count; i++) {
+                [alert addAction:[UIAlertAction actionWithTitle:titles[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                    (void)action;
+                    autoCollapseDelay = [values[i] integerValue];
+                    SavePreferencesAndNotify();
+                    [self.tableView reloadData];
+                }]];
+            }
+            [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+            [self presentViewController:alert animated:YES completion:nil];
+        }
+    } else if (indexPath.section == 1) {
+        if (indexPath.row == 1) {
+            SBCPUValuePickerController *vc = [[SBCPUValuePickerController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+            [self.navigationController pushViewController:vc animated:YES];
+        } else if (indexPath.row == 2) {
+            SBCPUTimePickerController *vc = [[SBCPUTimePickerController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+            [self.navigationController pushViewController:vc animated:YES];
+        }
+    } else if (indexPath.section == 2) {
+        if (indexPath.row == 1) {
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"透明度" message:@"选择悬浮窗透明度" preferredStyle:UIAlertControllerStyleActionSheet];
+            NSArray *titles = @[@"20%", @"40%", @"60%", @"70%", @"80%", @"100%"];
+            NSArray *values = @[@0.2, @0.4, @0.6, @0.7, @0.8, @1.0];
+
+            for (NSInteger i = 0; i < titles.count; i++) {
+                [alert addAction:[UIAlertAction actionWithTitle:titles[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                    (void)action;
+                    floatingAlpha = [values[i] floatValue];
+                    SavePreferencesAndNotify();
+                    applyFloatingAlpha();
+                    [self.tableView reloadData];
+                }]];
+            }
+            [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+            [self presentViewController:alert animated:YES completion:nil];
+        }
+    } else if (indexPath.section == 3) {
+        if (indexPath.row == 2) {
+            NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
+            dockMode = (dockMode + 1) % modes.count;
+            SavePreferencesAndNotify();
+            [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+        }
+    }
 }
 
 - (void)changeAutoCollapse:(UISwitch *)sw {
     autoCollapseEnable = sw.isOn;
     SavePreferencesAndNotify();
+    if (floatingView) {
+        if (!autoCollapseEnable && floatingView.isCollapsed) {
+            [floatingView expandFromEdgeAnimated:YES];
+        } else {
+            [floatingView resetInactivityTimer];
+        }
+    }
 }
 
+- (void)changeLogout:(UISwitch *)sw { autoLogoutEnable = sw.isOn; SavePreferencesAndNotify(); }
+- (void)changeAlphaEnable:(UISwitch *)sw { floatingAlphaEnable = sw.isOn; SavePreferencesAndNotify(); applyFloatingAlpha(); }
+- (void)changeKeyboardAvoid:(UISwitch *)sw { keyboardAvoidEnable = sw.isOn; SavePreferencesAndNotify(); }
+- (void)changeSmartDock:(UISwitch *)sw { smartDockEnable = sw.isOn; SavePreferencesAndNotify(); }
+- (void)changeRememberPosition:(UISwitch *)sw { rememberPositionEnable = sw.isOn; SavePreferencesAndNotify(); }
+
+- (void)changeShowCpuFreq:(UISwitch *)sw { showCpuFrequency = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
+- (void)changeShowBattery:(UISwitch *)sw { showBatteryPercent = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
+- (void)changeShowTemp:(UISwitch *)sw { showBatteryTemperature = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
+- (void)changeShowCurrent:(UISwitch *)sw { showBatteryCurrent = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
+
 @end
+
+#pragma mark - 11. 通知监听与 Tweak 入口 (%ctor)
 
 static void registerV160Observers(void) {
     static dispatch_once_t onceToken;
@@ -1613,8 +1892,6 @@ static void registerV160Observers(void) {
         }];
     });
 }
-
-#pragma mark - 10. Tweak 入口 (%ctor)
 
 %ctor {
     NSString *processName = [NSProcessInfo processInfo].processName;
