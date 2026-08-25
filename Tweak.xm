@@ -1,3 +1,4 @@
+
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 #import <mach/mach.h>
@@ -10,10 +11,10 @@
 #define kIOMainPortDefault kIOMasterPortDefault
 #endif
 
-#define kPlistPath @"/var/mobile/Library/Preferences/com.yourname.sbcpufloating.plist"
+#define kCFPrefAppID CFSTR("com.yourname.sbcpufloating")
 #define kPrefChangedNotification "com.yourname.sbcpufloating.prefschanged"
 
-#pragma mark - IOPowerSources 私有 C 函数类型定义
+#pragma mark - IOPowerSources 私有 C API 函数类型定义
 typedef IOReturn (*IOPSSetChargingOverrideType)(int state);
 typedef IOReturn (*IOPSSetPowerSourceAttributeType)(CFStringRef key, CFTypeRef value);
 
@@ -24,7 +25,7 @@ typedef IOReturn (*IOPSSetPowerSourceAttributeType)(CFStringRef key, CFTypeRef v
 - (void)resumeCharging;
 @end
 
-#pragma mark - 悬浮窗精致视图类 (解决文字遮挡与阴影重影)
+#pragma mark - 悬浮窗视图类 (解决文字遮挡与阴影重影)
 @interface SBCPUFloatingView : UIView
 @property (nonatomic, strong) UIVisualEffectView *blurView;
 @property (nonatomic, strong) UILabel *textLabel;
@@ -37,7 +38,7 @@ typedef IOReturn (*IOPSSetPowerSourceAttributeType)(CFStringRef key, CFTypeRef v
         self.backgroundColor = [UIColor clearColor];
         self.layer.masksToBounds = NO;
         
-        // 单层精准外阴影
+        // 单层外阴影
         self.layer.shadowColor = [UIColor blackColor].CGColor;
         self.layer.shadowOpacity = 0.25f;
         self.layer.shadowOffset = CGSizeMake(0, 3);
@@ -58,7 +59,7 @@ typedef IOReturn (*IOPSSetPowerSourceAttributeType)(CFStringRef key, CFTypeRef v
         _blurView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.25f].CGColor;
         [self addSubview:_blurView];
 
-        // UILabel 放在毛玻璃 contentView 最上层，保证文字清晰可见
+        // UILabel 位于最顶层
         _textLabel = [[UILabel alloc] init];
         _textLabel.numberOfLines = 0;
         _textLabel.textAlignment = NSTextAlignmentCenter;
@@ -120,7 +121,7 @@ static BOOL smartDockEnable = YES;
 static NSInteger dockMode = 0; // 0自动 1左 2右 3上 4下
 static BOOL rememberPositionEnable = YES;
 
-static CGRect keyboardBeforeFrame; // 标准 C 声明，消除 {-Wmissing-braces} 警告
+static CGRect keyboardBeforeFrame; // 标准 C 声明，消除编译 warning
 static BOOL keyboardMoved = NO;
 static BOOL g_ForcePauseCharging = NO;
 
@@ -132,45 +133,39 @@ static void registerV160Observers(void);
 @class SBCPUValuePickerController;
 @class SBCPUTimePickerController;
 
-#pragma mark - 读取与保存配置
+#pragma mark - 跨进程 CFPreferences 读取与保存
 static void LoadPreferences() {
-    NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
-    if ([def objectForKey:@"sbcpuSmartChargeEnable"]) sbcpuSmartChargeEnable = [def boolForKey:@"sbcpuSmartChargeEnable"];
-    if ([def objectForKey:@"sbcpuChargeTempFast"]) sbcpuChargeTempFast = [def integerForKey:@"sbcpuChargeTempFast"];
-    if ([def objectForKey:@"sbcpuChargeTempReduce"]) sbcpuChargeTempReduce = [def integerForKey:@"sbcpuChargeTempReduce"];
-    if ([def objectForKey:@"sbcpuChargeTempPause"]) sbcpuChargeTempPause = [def integerForKey:@"sbcpuChargeTempPause"];
-    if ([def objectForKey:@"sbcpuChargeTempStop"]) sbcpuChargeTempStop = [def integerForKey:@"sbcpuChargeTempStop"];
-    if ([def objectForKey:@"keyboardAvoidEnable"]) keyboardAvoidEnable = [def boolForKey:@"keyboardAvoidEnable"];
+    CFPreferencesAppSynchronize(kCFPrefAppID);
 
-    NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:kPlistPath];
-    if (prefs) {
-        if (prefs[@"sbcpuSmartChargeEnable"]) sbcpuSmartChargeEnable = [prefs[@"sbcpuSmartChargeEnable"] boolValue];
-        if (prefs[@"sbcpuChargeTempFast"]) sbcpuChargeTempFast = [prefs[@"sbcpuChargeTempFast"] integerValue];
-        if (prefs[@"sbcpuChargeTempReduce"]) sbcpuChargeTempReduce = [prefs[@"sbcpuChargeTempReduce"] integerValue];
-        if (prefs[@"sbcpuChargeTempPause"]) sbcpuChargeTempPause = [prefs[@"sbcpuChargeTempPause"] integerValue];
-        if (prefs[@"sbcpuChargeTempStop"]) sbcpuChargeTempStop = [prefs[@"sbcpuChargeTempStop"] integerValue];
-        if (prefs[@"keyboardAvoidEnable"]) keyboardAvoidEnable = [prefs[@"keyboardAvoidEnable"] boolValue];
-    }
+    Boolean keyExists = false;
+    Boolean enable = CFPreferencesGetAppBooleanValue(CFSTR("sbcpuSmartChargeEnable"), kCFPrefAppID, &keyExists);
+    if (keyExists) sbcpuSmartChargeEnable = enable;
+
+    CFIndex fast = CFPreferencesGetAppIntegerValue(CFSTR("sbcpuChargeTempFast"), kCFPrefAppID, &keyExists);
+    if (keyExists) sbcpuChargeTempFast = fast;
+
+    CFIndex reduce = CFPreferencesGetAppIntegerValue(CFSTR("sbcpuChargeTempReduce"), kCFPrefAppID, &keyExists);
+    if (keyExists) sbcpuChargeTempReduce = reduce;
+
+    CFIndex pause = CFPreferencesGetAppIntegerValue(CFSTR("sbcpuChargeTempPause"), kCFPrefAppID, &keyExists);
+    if (keyExists) sbcpuChargeTempPause = pause;
+
+    CFIndex stop = CFPreferencesGetAppIntegerValue(CFSTR("sbcpuChargeTempStop"), kCFPrefAppID, &keyExists);
+    if (keyExists) sbcpuChargeTempStop = stop;
+
+    Boolean avoid = CFPreferencesGetAppBooleanValue(CFSTR("keyboardAvoidEnable"), kCFPrefAppID, &keyExists);
+    if (keyExists) keyboardAvoidEnable = avoid;
 }
 
 static void SavePreferencesAndNotify() {
-    NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
-    [def setBool:sbcpuSmartChargeEnable forKey:@"sbcpuSmartChargeEnable"];
-    [def setInteger:sbcpuChargeTempFast forKey:@"sbcpuChargeTempFast"];
-    [def setInteger:sbcpuChargeTempReduce forKey:@"sbcpuChargeTempReduce"];
-    [def setInteger:sbcpuChargeTempPause forKey:@"sbcpuChargeTempPause"];
-    [def setInteger:sbcpuChargeTempStop forKey:@"sbcpuChargeTempStop"];
-    [def setBool:keyboardAvoidEnable forKey:@"keyboardAvoidEnable"];
-    [def synchronize];
+    CFPreferencesSetAppValue(CFSTR("sbcpuSmartChargeEnable"), sbcpuSmartChargeEnable ? kCFBooleanTrue : kCFBooleanFalse, kCFPrefAppID);
+    CFPreferencesSetAppValue(CFSTR("sbcpuChargeTempFast"), (__bridge CFNumberRef)@(sbcpuChargeTempFast), kCFPrefAppID);
+    CFPreferencesSetAppValue(CFSTR("sbcpuChargeTempReduce"), (__bridge CFNumberRef)@(sbcpuChargeTempReduce), kCFPrefAppID);
+    CFPreferencesSetAppValue(CFSTR("sbcpuChargeTempPause"), (__bridge CFNumberRef)@(sbcpuChargeTempPause), kCFPrefAppID);
+    CFPreferencesSetAppValue(CFSTR("sbcpuChargeTempStop"), (__bridge CFNumberRef)@(sbcpuChargeTempStop), kCFPrefAppID);
+    CFPreferencesSetAppValue(CFSTR("keyboardAvoidEnable"), keyboardAvoidEnable ? kCFBooleanTrue : kCFBooleanFalse, kCFPrefAppID);
 
-    NSMutableDictionary *dict = [NSMutableDictionary dictionaryWithContentsOfFile:kPlistPath] ?: [NSMutableDictionary dictionary];
-    dict[@"sbcpuSmartChargeEnable"] = @(sbcpuSmartChargeEnable);
-    dict[@"sbcpuChargeTempFast"] = @(sbcpuChargeTempFast);
-    dict[@"sbcpuChargeTempReduce"] = @(sbcpuChargeTempReduce);
-    dict[@"sbcpuChargeTempPause"] = @(sbcpuChargeTempPause);
-    dict[@"sbcpuChargeTempStop"] = @(sbcpuChargeTempStop);
-    dict[@"keyboardAvoidEnable"] = @(keyboardAvoidEnable);
-    [dict writeToFile:kPlistPath atomically:YES];
+    CFPreferencesAppSynchronize(kCFPrefAppID);
 
     CFNotificationCenterPostNotification(
         CFNotificationCenterGetDarwinNotifyCenter(),
@@ -209,21 +204,26 @@ static double getBatteryTemperatureInternal() {
     return -1;
 }
 
-#pragma mark - 真实断充与限流核心 (系统级 IOPowerSources 私有接口 + 四重兜底)
-static void applyChargingControl(BOOL pause, int currentLimitmA) {
-    // 1. IOPowerSources 私有 C API 强力物理断充 (BattSafePro 同款核心)
-    IOPSSetChargingOverrideType setOverride = (IOPSSetChargingOverrideType)dlsym(RTLD_DEFAULT, "IOPSSetChargingOverride");
-    if (setOverride) {
-        setOverride(pause ? 1 : 0);
+#pragma mark - 物理级断充与限流核心 (Root 进程内执行)
+static void applyChargingControlInternal(BOOL pause, int currentLimitmA) {
+    // 1. IOPowerSources 私有 C API 强力物理断充 (BattSafePro 同款核心 API)
+    void *handle = dlopen("/System/Library/PrivateFrameworks/IOPowerSources.framework/IOPowerSources", RTLD_NOW);
+    if (!handle) {
+        handle = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
+    }
+    if (handle) {
+        IOPSSetChargingOverrideType setOverride = (IOPSSetChargingOverrideType)dlsym(handle, "IOPSSetChargingOverride");
+        if (setOverride) {
+            setOverride(pause ? 1 : 0);
+        }
+        IOPSSetPowerSourceAttributeType setAttr = (IOPSSetPowerSourceAttributeType)dlsym(handle, "IOPSSetPowerSourceAttribute");
+        if (setAttr) {
+            setAttr(CFSTR("ChargingOverride"), pause ? kCFBooleanTrue : kCFBooleanFalse);
+            setAttr(CFSTR("AdapterChargingDisabled"), pause ? kCFBooleanTrue : kCFBooleanFalse);
+        }
     }
 
-    IOPSSetPowerSourceAttributeType setAttr = (IOPSSetPowerSourceAttributeType)dlsym(RTLD_DEFAULT, "IOPSSetPowerSourceAttribute");
-    if (setAttr) {
-        setAttr(CFSTR("ChargingOverride"), pause ? kCFBooleanTrue : kCFBooleanFalse);
-        setAttr(CFSTR("AdapterChargingDisabled"), pause ? kCFBooleanTrue : kCFBooleanFalse);
-    }
-
-    // 2. PowerUI Private Framework XPC 触发
+    // 2. PowerUI Private Framework XPC
     Class clientClass = objc_getClass("PowerUISmartChargingClient");
     if (clientClass) {
         static id client = nil;
@@ -276,10 +276,10 @@ static void applyChargingControl(BOOL pause, int currentLimitmA) {
 }
 
 // ============================================================================
-#pragma mark - powerd 进程 Hook
+#pragma mark - Daemon (smartchargingd/powerd/thermalmonitord) 进程 Hook
 // ============================================================================
 
-%group PowerdHooks
+%group DaemonHooks
 
 %hook PowerUISmartChargingManager
 
@@ -299,12 +299,23 @@ static void applyChargingControl(BOOL pause, int currentLimitmA) {
 
 %end
 
-static void powerdCheckTemperatureAndControl() {
+%hook PowerUIEngine
+
+- (BOOL)shouldPauseCharging {
+    if (sbcpuSmartChargeEnable && g_ForcePauseCharging) {
+        return YES;
+    }
+    return %orig;
+}
+
+%end
+
+static void daemonCheckTemperatureAndControl() {
     LoadPreferences();
     if (!sbcpuSmartChargeEnable) {
         if (g_ForcePauseCharging) {
             g_ForcePauseCharging = NO;
-            applyChargingControl(NO, 3000);
+            applyChargingControlInternal(NO, 3000);
         }
         return;
     }
@@ -314,13 +325,13 @@ static void powerdCheckTemperatureAndControl() {
 
     if (temp >= sbcpuChargeTempPause || temp >= sbcpuChargeTempStop) {
         g_ForcePauseCharging = YES;
-        applyChargingControl(YES, 0);
+        applyChargingControlInternal(YES, 0); // 触发真正物理断充，电流强制归零
     } else if (temp >= sbcpuChargeTempReduce) {
         g_ForcePauseCharging = NO;
-        applyChargingControl(NO, 300);
+        applyChargingControlInternal(NO, 300); // 触发硬件降功率限流
     } else if (temp <= sbcpuChargeTempFast) {
         g_ForcePauseCharging = NO;
-        applyChargingControl(NO, 3000);
+        applyChargingControlInternal(NO, 3000); // 恢复全速快充
     }
 }
 
@@ -668,28 +679,6 @@ static NSString *smartChargeStateText() {
     return @"🟢 正常充电";
 }
 
-#pragma mark - 智能温控触发
-static void updateSmartChargeState(double temperature) {
-    if (!sbcpuSmartChargeEnable || temperature <= 0 || !isCharging()) {
-        if (g_ForcePauseCharging) {
-            g_ForcePauseCharging = NO;
-            applyChargingControl(NO, 3000);
-        }
-        return;
-    }
-
-    if (temperature >= sbcpuChargeTempStop || temperature >= sbcpuChargeTempPause) {
-        g_ForcePauseCharging = YES;
-        applyChargingControl(YES, 0); // 触发真正物理切断与电流归零
-    } else if (temperature >= sbcpuChargeTempReduce) {
-        g_ForcePauseCharging = NO;
-        applyChargingControl(NO, 300); // 触发硬件降功率限流
-    } else if (temperature <= sbcpuChargeTempFast) {
-        g_ForcePauseCharging = NO;
-        applyChargingControl(NO, 3000); // 恢复正常全速快充
-    }
-}
-
 #pragma mark - CPU 与数据定时刷新
 static void updateCPU() {
     double cpu = getCPUUsage();
@@ -704,8 +693,6 @@ static void updateCPU() {
         double temp = getBatteryTemperatureInternal();
         double current = getBatteryCurrent();
         BOOL charging = isCharging();
-
-        updateSmartChargeState(temp);
 
         NSString *batteryText = (battery >= 0) ? [NSString stringWithFormat:@"%ld%%", (long)battery] : @"";
         NSString *tempText = (temp > 0 && temp < 100) ? [NSString stringWithFormat:@"%.1f℃", temp] : @"";
@@ -959,7 +946,7 @@ static void updateCPU() {
         sw.on = autoWindowSizeEnable;
         [sw addTarget:self action:@selector(changeAutoWindowSize:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = sw;
-    } else if (indexPath.row == 8) { // 键盘避让开关
+    } else if (indexPath.row == 8) {
         cell.textLabel.text = @"键盘避让";
         UISwitch *sw = [[UISwitch alloc] init];
         sw.on = keyboardAvoidEnable;
@@ -1174,7 +1161,7 @@ static void registerV160Observers() {
             }
         }];
 
-        // 键盘避让逻辑 (根据屏幕中线上下位置智能触发)
+        // 键盘避让逻辑 (基于中线智能判别)
         [nc addObserverForName:UIKeyboardWillShowNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
             if (settingsShowing || !keyboardAvoidEnable) return;
 
@@ -1185,8 +1172,7 @@ static void registerV160Observers() {
                 CGFloat centerY = CGRectGetMidY(floatingView.frame);
                 CGFloat limitY = CGRectGetMidY(screenBounds);
 
-                // 如果悬浮窗处于屏幕上半部分（Y < 中线），则不避让
-                if (centerY < limitY) return;
+                if (centerY < limitY) return; // 屏幕上半区，保持不动
 
                 if (!keyboardMoved) {
                     keyboardBeforeFrame = floatingView.frame;
@@ -1230,21 +1216,25 @@ static void registerV160Observers() {
 %ctor {
     NSString *processName = [NSProcessInfo processInfo].processName;
 
-    if ([processName isEqualToString:@"powerd"] || [processName isEqualToString:@"smartchargingd"] || [processName isEqualToString:@"thermalmonitord"]) {
-        %init(PowerdHooks);
+    // 同时注入三个后台电源/温控守护进程
+    if ([processName isEqualToString:@"powerd"] || 
+        [processName isEqualToString:@"smartchargingd"] || 
+        [processName isEqualToString:@"thermalmonitord"]) {
+
+        %init(DaemonHooks);
         LoadPreferences();
 
         CFNotificationCenterAddObserver(
             CFNotificationCenterGetDarwinNotifyCenter(),
             NULL,
-            (CFNotificationCallback)powerdCheckTemperatureAndControl,
+            (CFNotificationCallback)daemonCheckTemperatureAndControl,
             CFSTR(kPrefChangedNotification),
             NULL,
             CFNotificationSuspensionBehaviorCoalesce
         );
 
         [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:YES block:^(NSTimer *timer) {
-            powerdCheckTemperatureAndControl();
+            daemonCheckTemperatureAndControl();
         }];
         return;
     }
