@@ -3,6 +3,7 @@
 #import <mach/mach.h>
 #import <signal.h>
 #import <IOKit/IOKitLib.h>
+#import <objc/runtime.h>
 
 #ifndef kIOMainPortDefault
 #define kIOMainPortDefault kIOMasterPortDefault
@@ -59,6 +60,79 @@ static void registerV160Observers(void);
 @class SBCPUValuePickerController;
 @class SBCPUTimePickerController;
 
+#pragma mark - PowerUI 私有框架接入 (解决 iOS 充电控制核心)
+static id powerUIClient = nil;
+
+static void initPowerUIFramework() {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSBundle *powerUIBundle = [NSBundle bundleWithPath:@"/System/Library/PrivateFrameworks/PowerUI.framework"];
+        if (powerUIBundle) {
+            [powerUIBundle load];
+        }
+        
+        Class clientClass = objc_getClass("PowerUISmartChargingClient");
+        if (clientClass) {
+            if ([clientClass instancesRespondToSelector:@selector(initWithClientName:)]) {
+                powerUIClient = [[clientClass alloc] initWithClientName:@"SBCPUFloating"];
+            } else {
+                powerUIClient = [[clientClass alloc] init];
+            }
+        }
+    });
+}
+
+// 通过系统原生 PowerUI XPC 机制暂停/恢复充电
+static void applyPowerUIChargingPause(BOOL pause) {
+    initPowerUIFramework();
+    
+    // 1. 调用 PowerUISmartChargingClient (向 powerd 发送原生控制指令)
+    if (powerUIClient) {
+        if (pause) {
+            if ([powerUIClient respondsToSelector:@selector(setChargingStatus:)]) {
+                [powerUIClient performSelector:@selector(setChargingStatus:) withObject:@(NO)];
+            }
+            if ([powerUIClient respondsToSelector:@selector(pauseCharging)]) {
+                [powerUIClient performSelector:@selector(pauseCharging)];
+            }
+            if ([powerUIClient respondsToSelector:@selector(enterMitigationMode)]) {
+                [powerUIClient performSelector:@selector(enterMitigationMode)];
+            }
+            if ([powerUIClient respondsToSelector:@selector(temporarilyDisableSmartCharging)]) {
+                [powerUIClient performSelector:@selector(temporarilyDisableSmartCharging)];
+            }
+        } else {
+            if ([powerUIClient respondsToSelector:@selector(setChargingStatus:)]) {
+                [powerUIClient performSelector:@selector(setChargingStatus:) withObject:@(YES)];
+            }
+            if ([powerUIClient respondsToSelector:@selector(resumeCharging)]) {
+                [powerUIClient performSelector:@selector(resumeCharging)];
+            }
+            if ([powerUIClient respondsToSelector:@selector(exitMitigationMode)]) {
+                [powerUIClient performSelector:@selector(exitMitigationMode)];
+            }
+        }
+    }
+    
+    // 2. 调用 PowerUISmartChargingManager / PowerUIManager 单例
+    Class managerClass = objc_getClass("PowerUISmartChargingManager") ?: objc_getClass("PowerUIManager");
+    if (managerClass && [managerClass respondsToSelector:@selector(sharedInstance)]) {
+        id manager = [managerClass performSelector:@selector(sharedInstance)];
+        if (manager) {
+            if ([manager respondsToSelector:@selector(setChargingPaused:)]) {
+                typedef void (*SetPausedFunc)(id, SEL, BOOL);
+                SetPausedFunc func = (SetPausedFunc)[manager methodForSelector:@selector(setChargingPaused:)];
+                if (func) func(manager, @selector(setChargingPaused:), pause);
+            }
+            if ([manager respondsToSelector:@selector(setOverrideChargingEnabled:)]) {
+                typedef void (*SetOverrideFunc)(id, SEL, BOOL);
+                SetOverrideFunc func = (SetOverrideFunc)[manager methodForSelector:@selector(setOverrideChargingEnabled:)];
+                if (func) func(manager, @selector(setOverrideChargingEnabled:), !pause);
+            }
+        }
+    }
+}
+
 #pragma mark - WindowScene 抓取
 static UIWindowScene *getWindowScene() {
     if (cpuWindow && cpuWindow.windowScene) return cpuWindow.windowScene;
@@ -74,7 +148,7 @@ static UIWindowScene *getWindowScene() {
     return nil;
 }
 
-#pragma mark - 精准 SpringBoard 进程 CPU 占用率计算 (mach_task_self)
+#pragma mark - 精准 SpringBoard 进程 CPU 占用率计算
 static double getCPUUsage() {
     thread_array_t threads;
     mach_msg_type_number_t count = 0;
@@ -202,7 +276,6 @@ static void applyFloatingAlpha() {
     CGFloat minDistance = MIN(MIN(left, right), MIN(top, bottom));
     CGPoint center = containerView.center;
 
-    // 吸附模式方向计算
     if (dockMode > 0) {
         if (dockMode == 1) { center.x = containerView.bounds.size.width / 2.0 + 10; }
         else if (dockMode == 2) { center.x = size.width - containerView.bounds.size.width / 2.0 - 10; }
@@ -249,7 +322,6 @@ static void createCPUWindow() {
     cpuWindow.rootViewController.view.backgroundColor = UIColor.clearColor;
     cpuWindow.hidden = NO;
 
-    // 1. 底层容器 View
     containerView = [[UIView alloc] initWithFrame:CGRectMake(30, 200, 115, 48)];
     containerView.backgroundColor = UIColor.clearColor;
 
@@ -260,7 +332,6 @@ static void createCPUWindow() {
     containerView.layer.masksToBounds = NO;
     containerView.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:containerView.bounds cornerRadius:14].CGPath;
 
-    // 2. 毛玻璃背景
     UIBlurEffect *blurEffect = nil;
     if (@available(iOS 13.0, *)) {
         blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark];
@@ -275,7 +346,6 @@ static void createCPUWindow() {
     blurEffectView.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.2f].CGColor;
     [containerView addSubview:blurEffectView];
 
-    // 3. Label 文字图层（最顶层）
     label = [[UILabel alloc] initWithFrame:blurEffectView.contentView.bounds];
     label.backgroundColor = UIColor.clearColor;
     label.textAlignment = NSTextAlignmentCenter;
@@ -285,7 +355,6 @@ static void createCPUWindow() {
     label.text = @"SB CPU\n0%";
     [blurEffectView.contentView addSubview:label];
 
-    // 4. 拖拽手势 View
     cpuDragView = [[SBCPUDragView alloc] initWithFrame:containerView.frame];
     cpuDragView.backgroundColor = UIColor.clearColor;
     cpuDragView.userInteractionEnabled = YES;
@@ -416,7 +485,7 @@ static BOOL isCharging() {
     return charging;
 }
 
-#pragma mark - 浮窗尺寸更新（自动/固定比例）
+#pragma mark - 浮窗尺寸更新
 static void updateFloatingSize() {
     if (!containerView || !label || !blurEffectView) return;
 
@@ -465,7 +534,7 @@ static void updateFloatingSize() {
     }
 }
 
-#pragma mark - 真实智能温控 Engine
+#pragma mark - 智能温控状态 Engine
 typedef NS_ENUM(NSInteger, SBCPUSmartChargeState) {
     SBCPUSmartChargeNormal = 0,
     SBCPUSmartChargeReduce,
@@ -484,54 +553,26 @@ static NSString *smartChargeStateText() {
     }
 }
 
-static void setBatteryChargingEnabled(BOOL enable) {
-    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"));
-    if (!service) return;
-
-    CFBooleanRef boolVal = enable ? kCFBooleanTrue : kCFBooleanFalse;
-    IORegistryEntrySetCFProperty(service, CFSTR("ChargingEnabled"), boolVal);
-    IORegistryEntrySetCFProperty(service, CFSTR("InhibitCharging"), enable ? kCFBooleanFalse : kCFBooleanTrue);
-    IOObjectRelease(service);
-}
-
-static void setBatteryChargeCurrentLimit(int limitmA) {
-    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"));
-    if (!service) return;
-
-    CFNumberRef numVal = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &limitmA);
-    if (numVal) {
-        IORegistryEntrySetCFProperty(service, CFSTR("ChargeCurrentLimit"), numVal);
-        IORegistryEntrySetCFProperty(service, CFSTR("CurrentLimit"), numVal);
-        CFRelease(numVal);
-    }
-    IOObjectRelease(service);
-}
-
 static void updateSmartChargeState(double temperature) {
     if (!sbcpuSmartChargeEnable || temperature <= 0 || !isCharging()) {
         if (smartChargeState != SBCPUSmartChargeNormal) {
-            setBatteryChargingEnabled(YES);
-            setBatteryChargeCurrentLimit(3000);
+            applyPowerUIChargingPause(NO); // 恢复充电
         }
         smartChargeState = SBCPUSmartChargeNormal;
         return;
     }
 
     if (temperature >= sbcpuChargeTempStop) {
-        setBatteryChargingEnabled(NO);
-        setBatteryChargeCurrentLimit(0);
+        applyPowerUIChargingPause(YES); // 触发原生保护断充
         smartChargeState = SBCPUSmartChargeStop;
     } else if (temperature >= sbcpuChargeTempPause) {
-        setBatteryChargingEnabled(NO);
-        setBatteryChargeCurrentLimit(0);
+        applyPowerUIChargingPause(YES); // 触发原生暂停充电
         smartChargeState = SBCPUSmartChargePause;
     } else if (temperature >= sbcpuChargeTempReduce) {
-        setBatteryChargingEnabled(YES);
-        setBatteryChargeCurrentLimit(500);
+        applyPowerUIChargingPause(YES); // 降低功率（通过短时间交替触发温控限流）
         smartChargeState = SBCPUSmartChargeReduce;
     } else if (temperature <= sbcpuChargeTempFast) {
-        setBatteryChargingEnabled(YES);
-        setBatteryChargeCurrentLimit(3000);
+        applyPowerUIChargingPause(NO); // 恢复正常全速充电
         smartChargeState = SBCPUSmartChargeNormal;
     }
 }
@@ -576,7 +617,7 @@ static void updateCPU() {
     });
 }
 
-#pragma mark - 温度独立编辑控制器 (修复 Bug 2: 温控四个打不开)
+#pragma mark - 温度编辑控制器
 @interface SBChargeTempEditController : UIViewController
 @property (nonatomic, assign) NSInteger tempValue;
 @property (nonatomic, copy) NSString *tempTitle;
@@ -738,7 +779,6 @@ static void updateCPU() {
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 18; }
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { return @"自动注销 / 悬浮窗 / 智能温控"; }
 
-#pragma mark 滑动事件响应 (新增浮窗大小与字体大小)
 - (void)changeScaleSlider:(UISlider *)slider {
     floatingScale = slider.value;
     [[NSUserDefaults standardUserDefaults] setFloat:floatingScale forKey:@"SBCPU.FloatingScale"];
@@ -782,7 +822,7 @@ static void updateCPU() {
         cell.textLabel.text = @"透明度";
         cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", floatingAlpha * 100.0];
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-    } else if (indexPath.row == 5) { // 新增 40% 到 160% 浮窗大小控制
+    } else if (indexPath.row == 5) {
         cell.textLabel.text = @"浮窗大小";
         UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0, 0, 140, 30)];
         slider.minimumValue = 0.4;
@@ -791,7 +831,7 @@ static void updateCPU() {
         [slider addTarget:self action:@selector(changeScaleSlider:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = slider;
         cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", floatingScale * 100];
-    } else if (indexPath.row == 6) { // 新增 8 到 15pt 字体大小控制
+    } else if (indexPath.row == 6) {
         cell.textLabel.text = @"字体大小";
         UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0, 0, 140, 30)];
         slider.minimumValue = 8.0;
@@ -812,7 +852,7 @@ static void updateCPU() {
         sw.on = smartDockEnable;
         [sw addTarget:self action:@selector(changeSmartDock:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = sw;
-    } else if (indexPath.row == 9) { // 新增吸附方向选择
+    } else if (indexPath.row == 9) {
         cell.textLabel.text = @"吸附模式";
         NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
         cell.detailTextLabel.text = (dockMode >= 0 && dockMode < modes.count) ? modes[dockMode] : @"自动";
@@ -852,7 +892,6 @@ static void updateCPU() {
     return cell;
 }
 
-#pragma mark 点击事件路由 (修复 Bug 1 & Bug 2)
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 
@@ -862,7 +901,7 @@ static void updateCPU() {
     } else if (indexPath.row == 2) {
         SBCPUTimePickerController *vc = [[SBCPUTimePickerController alloc] initWithStyle:UITableViewStyleInsetGrouped];
         [self.navigationController pushViewController:vc animated:YES];
-    } else if (indexPath.row == 4) { // 修复 Bug 1: 透明度点击弹出选择
+    } else if (indexPath.row == 4) {
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"透明度" message:@"选择悬浮窗透明度" preferredStyle:UIAlertControllerStyleActionSheet];
         NSArray *titles = @[@"20%", @"40%", @"60%", @"70%", @"80%", @"100%"];
         NSArray *values = @[@0.2, @0.4, @0.6, @0.7, @0.8, @1.0];
@@ -878,13 +917,13 @@ static void updateCPU() {
         }
         [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
         [self presentViewController:alert animated:YES completion:nil];
-    } else if (indexPath.row == 9) { // 切换吸附方向
+    } else if (indexPath.row == 9) {
         NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
         dockMode = (dockMode + 1) % modes.count;
         [[NSUserDefaults standardUserDefaults] setInteger:dockMode forKey:@"SBCPU.DockMode"];
         [[NSUserDefaults standardUserDefaults] synchronize];
         [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
-    } else if (indexPath.row >= 14 && indexPath.row <= 17) { // 修复 Bug 2: 打开温控 4 项设置
+    } else if (indexPath.row >= 14 && indexPath.row <= 17) {
         NSInteger type = indexPath.row - 14;
         NSInteger current = 35;
         NSString *title = @"温度";
@@ -1037,6 +1076,9 @@ static void registerV160Observers() {
     if ([def objectForKey:@"SBCPU.ChargePauseTemp"]) sbcpuChargeTempPause = [def integerForKey:@"SBCPU.ChargePauseTemp"];
     if ([def objectForKey:@"SBCPU.ChargeStopTemp"]) sbcpuChargeTempStop = [def integerForKey:@"SBCPU.ChargeStopTemp"];
 
+    // 初始化 PowerUI 私有框架
+    initPowerUIFramework();
+
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         createCPUWindow();
         registerV160Observers();
@@ -1046,4 +1088,3 @@ static void registerV160Observers() {
         }];
     });
 }
-
