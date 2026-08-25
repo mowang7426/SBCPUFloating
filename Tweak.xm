@@ -61,7 +61,7 @@ static DeviceSpec getDeviceSpec(void) {
     return (DeviceSpec){machine, "iPhone", "Apple Silicon", activeCores, 3460.0, 4000};
 }
 
-#pragma mark - 2. 前置声明
+#pragma mark - 2. 前置声明与类定义
 
 @interface SpringBoard : UIApplication
 - (UIInterfaceOrientation)activeInterfaceOrientation;
@@ -189,8 +189,8 @@ static BOOL rememberPositionEnable = YES;
 
 static BOOL showCpuFrequency = YES;
 static BOOL showFps = YES;                       // 📊 显示 FPS 帧率开关
-static BOOL force120HzEnable = NO;               // 🎮 强制 120Hz 高刷
-static BOOL thermalProtectionEnable = YES;       // 🛡️ 智能温控降频保护开关（可关闭以解除限制）
+static BOOL force120HzEnable = NO;               // 🎮 强制 120Hz 高刷模式
+static BOOL thermalProtectionEnable = YES;       // 🛡️ 智能温控降频保护开关（可关闭解除限制）
 
 static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
@@ -1426,7 +1426,7 @@ static double getCPUFrequencyMHz(double currentCpuUsage) {
 
 @end
 
-@implementation SBCPUWindow
+@implementation SBCCPUWindow
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     if (settingsShowing || detailShowing) return [super hitTest:point withEvent:event];
 
@@ -1759,7 +1759,7 @@ static void updateCPU(void) {
 
 #pragma mark - 10. 设置级联控制器选择器实现
 
-@implementation SBCCPUValuePickerController
+@implementation SBCPUValuePickerController
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { 
     (void)tableView;
     (void)section;
@@ -2125,7 +2125,6 @@ static void updateCPU(void) {
 
 #pragma mark - 12. 通知监听与 Tweak 入口 (%ctor)
 
-// 定义符合 C 语言标准签名的通知回调函数，避免 ARC 下将 Block 强转函数指针导致的编译报错
 static void onCCNotificationReceived(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
     (void)center;
     (void)observer;
@@ -2177,7 +2176,6 @@ static void registerV160Observers(void) {
             }
         }];
 
-        // 使用标准的 C 函数指针注册控制中心 Darwin 广播
         CFNotificationCenterAddObserver(
             CFNotificationCenterGetDarwinNotifyCenter(),
             NULL,
