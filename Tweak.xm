@@ -569,7 +569,7 @@ static void applySystemRefreshRate(void) {
     [[SBCPUFPSHelper sharedInstance] updateFrameRate];
 }
 
-#pragma mark - 10. SBCPUFloatingView 悬浮窗控件 (完整保留原版布局与紧凑 FPS)
+#pragma mark - 10. SBCPUFloatingView 悬浮窗主控件 (完整保留原版布局与紧凑 FPS)
 
 @implementation SBCPUFloatingView
 
@@ -723,17 +723,22 @@ static void applySystemRefreshRate(void) {
         _currentSubLabel.font = [UIFont systemFontOfSize:8.0f weight:UIFontWeightMedium];
         [content addSubview:_currentSubLabel];
 
+        // 充电状态胶囊背景容器
         _bottomCapsule = [[UIView alloc] init];
         _bottomCapsule.backgroundColor = [UIColor colorWithWhite:1.0f alpha:0.10f];
         _bottomCapsule.layer.cornerRadius = 10.0f;
         _bottomCapsule.layer.masksToBounds = YES;
+        _bottomCapsule.layer.borderWidth = 0.5f;
+        _bottomCapsule.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.12f].CGColor;
         [content addSubview:_bottomCapsule];
 
+        // 🔋 与电量严格同步的绿色进度指示条
         _batteryProgressView = [[UIView alloc] init];
         _batteryProgressView.backgroundColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:0.32f];
         _batteryProgressView.layer.cornerRadius = 10.0f;
         [_bottomCapsule addSubview:_batteryProgressView];
 
+        // 充电状态文字（悬浮在进度条上层）
         _statusLabel = [[UILabel alloc] init];
         _statusLabel.textColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
         _statusLabel.font = [UIFont systemFontOfSize:10 weight:UIFontWeightMedium];
@@ -753,6 +758,7 @@ static void applySystemRefreshRate(void) {
         _miniCpuLabel = [[UILabel alloc] initWithFrame:CGRectMake(22, 5, 36, 18)];
         _miniCpuLabel.textColor = [UIColor whiteColor];
         _miniCpuLabel.font = [UIFont monospacedDigitSystemFontOfSize:11.5f weight:UIFontWeightBold];
+        _miniCpuLabel.textAlignment = NSTextAlignmentLeft;
         [_collapsedContainerView addSubview:_miniCpuLabel];
 
         [self resetInactivityTimer];
@@ -765,19 +771,31 @@ static void applySystemRefreshRate(void) {
         UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
         [generator prepare];
         [generator impactOccurred];
-        dispatch_async(dispatch_get_main_queue(), ^{ openDetailView(); });
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            openDetailView();
+        });
     }
 }
 
 - (void)resetInactivityTimer {
-    if (_inactivityTimer) { [_inactivityTimer invalidate]; _inactivityTimer = nil; }
+    if (_inactivityTimer) {
+        [_inactivityTimer invalidate];
+        _inactivityTimer = nil;
+    }
     if (autoCollapseEnable && !_isCollapsed && !settingsShowing && !detailShowing) {
-        _inactivityTimer = [NSTimer scheduledTimerWithTimeInterval:autoCollapseDelay target:self selector:@selector(inactivityTimerFired) userInfo:nil repeats:NO];
+        _inactivityTimer = [NSTimer scheduledTimerWithTimeInterval:autoCollapseDelay
+                                                             target:self
+                                                           selector:@selector(inactivityTimerFired)
+                                                           userInfo:nil
+                                                            repeats:NO];
     }
 }
 
 - (void)inactivityTimerFired {
-    if (!settingsShowing && !detailShowing && !_isCollapsed) [self collapseToEdgeAnimated:YES];
+    if (!settingsShowing && !detailShowing && !_isCollapsed) {
+        [self collapseToEdgeAnimated:YES];
+    }
 }
 
 - (void)collapseToEdgeAnimated:(BOOL)animated {
@@ -787,10 +805,19 @@ static void applySystemRefreshRate(void) {
     UIView *parent = self.superview;
     CGRect containerBounds = parent ? parent.bounds : [UIScreen mainScreen].bounds;
 
-    CGFloat targetW = 64.0f, targetH = 28.0f;
+    CGFloat targetW = 64.0f;
+    CGFloat targetH = 28.0f;
+    CGFloat targetHalfW = targetW / 2.0f;
+    CGFloat targetHalfH = targetH / 2.0f;
+
     BOOL isLeft = (self.center.x <= containerBounds.size.width / 2.0f);
-    CGFloat targetX = isLeft ? (targetW / 2.0f + 4.0f) : (containerBounds.size.width - targetW / 2.0f - 4.0f);
-    CGPoint targetCenter = CGPointMake(targetX, self.center.y);
+    CGFloat targetX = isLeft ? (targetHalfW + 4.0f) : (containerBounds.size.width - targetHalfW - 4.0f);
+    
+    CGFloat minY = targetHalfH + 20.0f;
+    CGFloat maxY = containerBounds.size.height - targetHalfH - 10.0f;
+    CGFloat targetY = MIN(MAX(self.center.y, minY), maxY);
+
+    CGPoint targetCenter = CGPointMake(targetX, targetY);
 
     self.collapsedContainerView.hidden = NO;
 
@@ -817,33 +844,107 @@ static void applySystemRefreshRate(void) {
 
         self.collapsedContainerView.alpha = 1.0;
         self.collapsedContainerView.frame = CGRectMake(0, 0, targetW, targetH);
+
         self.blurView.frame = CGRectMake(0, 0, targetW, targetH);
         self.blurView.layer.cornerRadius = 14.0f;
         self.bounds = CGRectMake(0, 0, targetW, targetH);
         self.center = targetCenter;
+
+        self.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, targetW, targetH) cornerRadius:14.0f].CGPath;
+        self.marqueeLayer.frame = self.blurView.bounds;
+        self.marqueeLayer.path = [UIBezierPath bezierPathWithRoundedRect:self.blurView.bounds cornerRadius:14.0f].CGPath;
     };
 
-    if (animated) [UIView animateWithDuration:0.45 delay:0 usingSpringWithDamping:0.75 initialSpringVelocity:0.4 options:UIViewAnimationOptionAllowUserInteraction animations:animationsBlock completion:nil];
-    else animationsBlock();
+    void (^completionBlock)(BOOL) = ^(BOOL finished) {
+        (void)finished;
+        if (self.isCollapsed) {
+            self.cpuTitleLabel.hidden = YES;
+            self.cpuValueLabel.hidden = YES;
+            self.cpuFreqLabel.hidden = YES;
+            self.div1.hidden = YES;
+            self.fpsValueLabel.hidden = YES;
+            self.fpsSubLabel.hidden = YES;
+            self.divFps.hidden = YES;
+            self.batteryIconLabel.hidden = YES;
+            self.batteryValueLabel.hidden = YES;
+            self.batterySubLabel.hidden = YES;
+            self.div2.hidden = YES;
+            self.tempIconLabel.hidden = YES;
+            self.tempValueLabel.hidden = YES;
+            self.tempSubLabel.hidden = YES;
+            self.div3.hidden = YES;
+            self.currentIconLabel.hidden = YES;
+            self.currentValueLabel.hidden = YES;
+            self.currentSubLabel.hidden = YES;
+            self.bottomCapsule.hidden = YES;
+        }
+    };
+
+    if (animated) {
+        [UIView animateWithDuration:0.45 delay:0 usingSpringWithDamping:0.75 initialSpringVelocity:0.4 options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState animations:animationsBlock completion:completionBlock];
+    } else {
+        animationsBlock();
+        completionBlock(YES);
+    }
 }
 
 - (void)expandFromEdgeAnimated:(BOOL)animated {
-    if (!_isCollapsed) { [self resetInactivityTimer]; return; }
+    if (!_isCollapsed) {
+        [self resetInactivityTimer];
+        return;
+    }
     _isCollapsed = NO;
 
     BOOL charging = isChargingInternal();
     UIView *parent = self.superview;
     CGRect containerBounds = parent ? parent.bounds : [UIScreen mainScreen].bounds;
 
-    [self updateLayoutWithShowCpuFreq:showCpuFrequency showFps:showFps showBatteryPercent:showBatteryPercent showBatteryTemp:showBatteryTemperature showBatteryCurrent:showBatteryCurrent isCharging:charging];
+    self.cpuTitleLabel.hidden = NO;
+    self.cpuValueLabel.hidden = NO;
+    self.cpuFreqLabel.hidden = !showCpuFrequency;
+    self.div1.hidden = NO;
+    
+    self.fpsValueLabel.hidden = !showFps;
+    self.fpsSubLabel.hidden = !showFps;
+
+    self.batteryIconLabel.hidden = !showBatteryPercent;
+    self.batteryValueLabel.hidden = !showBatteryPercent;
+    self.batterySubLabel.hidden = !showBatteryPercent;
+    
+    self.tempIconLabel.hidden = !showBatteryTemperature;
+    self.tempValueLabel.hidden = !showBatteryTemperature;
+    self.tempSubLabel.hidden = !showBatteryTemperature;
+
+    BOOL actualShowCurrent = showBatteryCurrent && charging;
+    self.currentIconLabel.hidden = !actualShowCurrent;
+    self.currentValueLabel.hidden = !actualShowCurrent;
+    self.currentSubLabel.hidden = !actualShowCurrent;
+    self.bottomCapsule.hidden = !charging;
+
+    [self updateLayoutWithShowCpuFreq:showCpuFrequency
+                               showFps:showFps
+                    showBatteryPercent:showBatteryPercent
+                       showBatteryTemp:showBatteryTemperature
+                    showBatteryCurrent:showBatteryCurrent
+                            isCharging:charging];
 
     CGFloat expandedW = self.bounds.size.width;
+    CGFloat expandedH = self.bounds.size.height;
+    CGFloat expandedHalfW = expandedW / 2.0f;
+    CGFloat expandedHalfH = expandedH / 2.0f;
+
     BOOL isLeft = (self.center.x <= containerBounds.size.width / 2.0f);
-    CGFloat targetX = isLeft ? (expandedW / 2.0f + 4.0f) : (containerBounds.size.width - expandedW / 2.0f - 4.0f);
-    CGPoint targetCenter = CGPointMake(targetX, self.center.y);
+    CGFloat targetX = isLeft ? (expandedHalfW + 4.0f) : (containerBounds.size.width - expandedHalfW - 4.0f);
+    
+    CGFloat minY = expandedHalfH + 20.0f;
+    CGFloat maxY = containerBounds.size.height - expandedHalfH - 10.0f;
+    CGFloat targetY = MIN(MAX(self.center.y, minY), maxY);
+
+    CGPoint targetCenter = CGPointMake(targetX, targetY);
 
     void (^animationsBlock)(void) = ^{
         self.collapsedContainerView.alpha = 0.0;
+
         self.cpuTitleLabel.alpha = 1.0;
         self.cpuValueLabel.alpha = 1.0;
         self.cpuFreqLabel.alpha = 1.0;
@@ -863,11 +964,24 @@ static void applySystemRefreshRate(void) {
         self.currentValueLabel.alpha = 1.0;
         self.currentSubLabel.alpha = 1.0;
         self.bottomCapsule.alpha = 1.0;
+
         self.center = targetCenter;
     };
 
-    if (animated) [UIView animateWithDuration:0.45 delay:0 usingSpringWithDamping:0.75 initialSpringVelocity:0.5 options:UIViewAnimationOptionAllowUserInteraction animations:animationsBlock completion:nil];
-    else animationsBlock();
+    void (^completionBlock)(BOOL) = ^(BOOL finished) {
+        (void)finished;
+        if (!self.isCollapsed) {
+            self.collapsedContainerView.hidden = YES;
+        }
+        [self resetInactivityTimer];
+    };
+
+    if (animated) {
+        [UIView animateWithDuration:0.45 delay:0 usingSpringWithDamping:0.75 initialSpringVelocity:0.5 options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState animations:animationsBlock completion:completionBlock];
+    } else {
+        animationsBlock();
+        completionBlock(YES);
+    }
 }
 
 - (void)handleSingleTap:(UITapGestureRecognizer *)tap {
@@ -879,13 +993,39 @@ static void applySystemRefreshRate(void) {
 
 - (void)handlePan:(UIPanGestureRecognizer *)pan {
     [self resetInactivityTimer];
+
     if (pan.state == UIGestureRecognizerStateBegan) {
         if (_isCollapsed) [self expandFromEdgeAnimated:NO];
         self.lastPoint = self.center;
     } else if (pan.state == UIGestureRecognizerStateChanged) {
         CGPoint translation = [pan translationInView:self.superview];
-        self.center = CGPointMake(self.lastPoint.x + translation.x, self.lastPoint.y + translation.y);
-    } else if (pan.state == UIGestureRecognizerStateEnded) {
+        CGPoint targetCenter = CGPointMake(self.lastPoint.x + translation.x, self.lastPoint.y + translation.y);
+
+        UIView *parent = self.superview;
+        CGRect containerBounds = parent ? parent.bounds : [UIScreen mainScreen].bounds;
+        CGRect realFrame = self.frame;
+        CGFloat halfW = realFrame.size.width / 2.0f;
+        CGFloat halfH = realFrame.size.height / 2.0f;
+
+        CGFloat minX = halfW + 2.0f;
+        CGFloat maxX = containerBounds.size.width - halfW - 2.0f;
+        CGFloat minY = halfH + 20.0f;
+        CGFloat maxY = containerBounds.size.height - halfH - 10.0f;
+
+        if (maxX < minX) minX = maxX = containerBounds.size.width / 2.0f;
+        if (maxY < minY) minY = maxY = containerBounds.size.height / 2.0f;
+
+        if (targetCenter.x < minX) targetCenter.x = minX;
+        if (targetCenter.x > maxX) targetCenter.x = maxX;
+        if (targetCenter.y < minY) targetCenter.y = minY;
+        if (targetCenter.y > maxY) targetCenter.y = maxY;
+
+        self.center = targetCenter;
+    } else if (pan.state == UIGestureRecognizerStateEnded || pan.state == UIGestureRecognizerStateCancelled) {
+        if (rememberPositionEnable) {
+            [[NSUserDefaults standardUserDefaults] setObject:NSStringFromCGRect(self.frame) forKey:@"SBCPU.LastFrame"];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+        }
         clampAndPositionFloatingView(self.center, YES);
         [self resetInactivityTimer];
     }
@@ -898,56 +1038,131 @@ static void applySystemRefreshRate(void) {
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    (void)gestureRecognizer;
+    (void)otherGestureRecognizer;
     return YES;
 }
 
 - (void)triggerPlugAnimation {
     CAKeyframeAnimation *animation = [CAKeyframeAnimation animationWithKeyPath:@"transform.scale"];
     animation.values = @[@1.0, @1.08, @0.96, @1.02, @1.0];
+    animation.keyTimes = @[@0.0, @0.35, @0.65, @0.85, @1.0];
     animation.duration = 0.45;
+    animation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
     [_blurView.layer addAnimation:animation forKey:@"plugBounce"];
+
+    CABasicAnimation *glowAnim = [CABasicAnimation animationWithKeyPath:@"borderColor"];
+    glowAnim.fromValue = (id)[UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f].CGColor;
+    glowAnim.toValue = (id)[UIColor colorWithWhite:1.0f alpha:0.30f].CGColor;
+    glowAnim.duration = 0.7;
+    [_blurView.layer addAnimation:glowAnim forKey:@"borderGlow"];
 }
 
-- (void)updateLayoutWithShowCpuFreq:(BOOL)showFreq showFps:(BOOL)showF showBatteryPercent:(BOOL)showB showBatteryTemp:(BOOL)showT showBatteryCurrent:(BOOL)showC isCharging:(BOOL)isCharging {
+- (void)updateLayoutWithShowCpuFreq:(BOOL)showFreq
+                            showFps:(BOOL)showFps
+                 showBatteryPercent:(BOOL)showBattery
+                    showBatteryTemp:(BOOL)showTemp
+                 showBatteryCurrent:(BOOL)showCurrent
+                         isCharging:(BOOL)isCharging {
     if (_isCollapsed) return;
+
+    _cpuFreqLabel.hidden = !showFreq;
+    _fpsValueLabel.hidden = !showFps;
+    _fpsSubLabel.hidden = !showFps;
+
+    _batteryIconLabel.hidden = !showBattery;
+    _batteryValueLabel.hidden = !showBattery;
+    _batterySubLabel.hidden = !showBattery;
+
+    _tempIconLabel.hidden = !showTemp;
+    _tempValueLabel.hidden = !showTemp;
+    _tempSubLabel.hidden = !showTemp;
+
+    BOOL actualShowCurrent = showBatteryCurrent && isCharging;
+    _currentIconLabel.hidden = !actualShowCurrent;
+    _currentValueLabel.hidden = !actualShowCurrent;
+    _currentSubLabel.hidden = !actualShowCurrent;
+
+    _bottomCapsule.hidden = !isCharging;
 
     CGFloat currentX = 8.0f;
     CGFloat padY = 7.0f;
-    CGFloat cpuW = 62.0f;
 
+    CGFloat cpuW = 62.0f;
     _cpuTitleLabel.frame = CGRectMake(currentX, padY, 26, 14);
     _cpuValueLabel.frame = CGRectMake(currentX + 26, padY, cpuW - 26, 14);
-    _cpuFreqLabel.frame = showFreq ? CGRectMake(currentX, padY + 14, cpuW, 14) : CGRectZero;
+
+    if (showFreq) _cpuFreqLabel.frame = CGRectMake(currentX, padY + 14, cpuW, 14);
+    else _cpuFreqLabel.frame = CGRectZero;
     currentX += cpuW + 4.0f;
 
-    _div1.frame = CGRectMake(currentX, padY + 2, 0.5f, 24.0f);
-    currentX += 4.5f;
+    if (showFps || showBattery || showTemp || actualShowCurrent) {
+        _div1.hidden = NO;
+        _div1.frame = CGRectMake(currentX, padY + 2, 0.5f, 24.0f);
+        currentX += 4.5f;
+    } else {
+        _div1.hidden = YES;
+    }
 
-    if (showF) {
-        CGFloat fpsW = 34.0f;
+    if (showFps) {
+        CGFloat fpsW = 34.0f; // 🔥 紧凑型宽度
         _fpsValueLabel.frame = CGRectMake(currentX, padY, fpsW, 14);
         _fpsSubLabel.frame = CGRectMake(currentX, padY + 14, fpsW, 11);
         currentX += fpsW + 4.0f;
-        _divFps.frame = CGRectMake(currentX, padY + 2, 0.5f, 24.0f);
-        currentX += 4.5f;
+
+        if (showBattery || showTemp || actualShowCurrent) {
+            _divFps.hidden = NO;
+            _divFps.frame = CGRectMake(currentX, padY + 2, 0.5f, 24.0f);
+            currentX += 4.5f;
+        } else {
+            _divFps.hidden = YES;
+        }
+    } else {
+        _divFps.hidden = YES;
     }
 
-    if (showB) {
+    if (showBattery) {
         CGFloat batW = 44.0f;
         _batteryIconLabel.frame = CGRectMake(currentX, padY + 2, 14, 20);
         _batteryValueLabel.frame = CGRectMake(currentX + 15, padY, batW - 15, 14);
         _batterySubLabel.frame = CGRectMake(currentX + 15, padY + 14, batW - 15, 11);
         currentX += batW + 4.0f;
-        _div2.frame = CGRectMake(currentX, padY + 2, 0.5f, 24.0f);
-        currentX += 4.5f;
+
+        if (showTemp || actualShowCurrent) {
+            _div2.hidden = NO;
+            _div2.frame = CGRectMake(currentX, padY + 2, 0.5f, 24.0f);
+            currentX += 4.5f;
+        } else {
+            _div2.hidden = YES;
+        }
+    } else {
+        _div2.hidden = YES;
     }
 
-    if (showT) {
+    if (showTemp) {
         CGFloat tempW = 46.0f;
         _tempIconLabel.frame = CGRectMake(currentX, padY + 2, 14, 20);
         _tempValueLabel.frame = CGRectMake(currentX + 15, padY, tempW - 15, 14);
         _tempSubLabel.frame = CGRectMake(currentX + 15, padY + 14, tempW - 15, 11);
         currentX += tempW + 4.0f;
+
+        if (actualShowCurrent) {
+            _div3.hidden = NO;
+            _div3.frame = CGRectMake(currentX, padY + 2, 0.5f, 24.0f);
+            currentX += 4.5f;
+        } else {
+            _div3.hidden = YES;
+        }
+    } else {
+        _div3.hidden = YES;
+    }
+
+    if (actualShowCurrent) {
+        CGFloat curW = 54.0f;
+        _currentIconLabel.frame = CGRectMake(currentX, padY + 2, 14, 20);
+        _currentValueLabel.frame = CGRectMake(currentX + 15, padY, curW - 15, 14);
+        _currentSubLabel.frame = CGRectMake(currentX + 15, padY + 14, curW - 15, 11);
+        currentX += curW + 4.0f;
     }
 
     CGFloat finalW = currentX + 6.0f;
@@ -959,22 +1174,70 @@ static void applySystemRefreshRate(void) {
         _statusLabel.frame = CGRectMake(0, 0, finalW - 16.0f, 20.0f);
         currentY += 20.0f;
     }
+
     currentY += 5.0f;
 
     _blurView.frame = CGRectMake(0, 0, finalW, currentY);
     _blurView.layer.cornerRadius = 18.0f;
+    self.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, finalW, currentY) cornerRadius:18.0f].CGPath;
+
+    _marqueeLayer.frame = _blurView.bounds;
+    _marqueeLayer.path = [UIBezierPath bezierPathWithRoundedRect:_blurView.bounds cornerRadius:18.0f].CGPath;
+
+    if (isCharging) {
+        _marqueeLayer.hidden = NO;
+        if (![_marqueeLayer animationForKey:@"marqueeDashAnim"]) {
+            CABasicAnimation *dashAnim = [CABasicAnimation animationWithKeyPath:@"lineDashPhase"];
+            dashAnim.fromValue = @(0);
+            dashAnim.toValue = @(-40);
+            dashAnim.duration = 0.8;
+            dashAnim.repeatCount = HUGE_VALF;
+            [_marqueeLayer addAnimation:dashAnim forKey:@"marqueeDashAnim"];
+        }
+    } else {
+        _marqueeLayer.hidden = YES;
+        [_marqueeLayer removeAnimationForKey:@"marqueeDashAnim"];
+    }
+
     self.bounds = CGRectMake(0, 0, finalW, currentY);
 }
 
-- (void)updateDataWithCPU:(double)cpu cpuFreq:(double)freq fps:(double)fps battery:(NSInteger)bat temp:(double)temp current:(double)cur isCharging:(BOOL)charging {
+- (void)updateDataWithCPU:(double)cpu 
+                  cpuFreq:(double)cpuFreq
+                      fps:(double)fps
+                  battery:(NSInteger)battery 
+                     temp:(double)temp 
+                  current:(double)current 
+               isCharging:(BOOL)isCharging {
+    
     _cpuValueLabel.text = [NSString stringWithFormat:@"%.1f%%", cpu];
-    _cpuFreqLabel.text = [NSString stringWithFormat:@"%.0f MHz", freq];
+    _cpuValueLabel.textColor = (cpu >= 80.0) ? [UIColor systemRedColor] : [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
+
+    _cpuFreqLabel.text = [NSString stringWithFormat:@"%.0f MHz", cpuFreq];
     _fpsValueLabel.text = [NSString stringWithFormat:@"%.0f", fps];
-    _batteryValueLabel.text = [NSString stringWithFormat:@"%ld%%", (long)bat];
-    _tempValueLabel.text = [NSString stringWithFormat:@"%.1f°C", temp];
-    _currentValueLabel.text = [NSString stringWithFormat:@"%.0fmA", cur];
-    _statusLabel.text = charging ? @"🟢 正在充电" : @"⚪ 未在充电";
+    _batteryValueLabel.text = [NSString stringWithFormat:@"%ld%%", (long)battery];
+    _tempValueLabel.text = (temp > 0) ? [NSString stringWithFormat:@"%.1f°C", temp] : @"--°C";
+    _currentValueLabel.text = [NSString stringWithFormat:@"%.0fmA", current];
+    _statusLabel.text = isCharging ? @"🟢 正在充电" : @"⚪ 未在充电";
+
+    if (isCharging) {
+        CGFloat capsuleW = _bottomCapsule.bounds.size.width;
+        CGFloat capsuleH = _bottomCapsule.bounds.size.height > 0 ? _bottomCapsule.bounds.size.height : 20.0f;
+        CGFloat targetProgressW = MAX(0, MIN(capsuleW, capsuleW * (battery / 100.0f)));
+        
+        [UIView animateWithDuration:0.35 animations:^{
+            self.batteryProgressView.frame = CGRectMake(0, 0, targetProgressW, capsuleH);
+        }];
+    }
+
     _miniCpuLabel.text = [NSString stringWithFormat:@"%.0f%%", cpu];
+    
+    UIColor *statusColor = [UIColor colorWithRed:0.22f green:0.74f blue:0.97f alpha:1.0f];
+    if (isCharging) statusColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
+    else if (cpu >= 80.0 || temp >= 42.0) statusColor = [UIColor colorWithRed:1.0f green:0.23f blue:0.19f alpha:1.0f];
+    else if (temp >= 38.0) statusColor = [UIColor colorWithRed:1.0f green:0.62f blue:0.04f alpha:1.0f];
+    
+    _statusDot.backgroundColor = statusColor;
 }
 
 @end
@@ -1225,7 +1488,7 @@ static void applySystemRefreshRate(void) {
     _labelsDict[@"设备运行"].text = [NSString stringWithFormat:@"%ld天 %ld小时 %ld分", (long)days, (long)hours, (long)mins];
 }
 
-#pragma mark - 12. 🔥 真实硬件测频与同步引擎 (彻底解决电话助手与主频不一致问题)
+#pragma mark - 12. 真实硬件测频与同步引擎 (🔥 彻底解决电话助手与主频不一致问题)
 
 static double getRealHardwareCPUFrequency(void) {
     DeviceSpec spec = getDeviceSpec();
@@ -1515,7 +1778,7 @@ static void updateCPU(void) {
 
 @end
 
-#pragma mark - 15. 配置持久化与构造入口 (%ctor 必须在最外层)
+#pragma mark - 15. 配置持久化与构造入口 (%ctor 放置在绝对全局顶层作用域)
 
 static void LoadPreferences(void) {
     NSDictionary *dict = [NSDictionary dictionaryWithContentsOfFile:kPlistPath];
