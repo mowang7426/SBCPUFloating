@@ -275,49 +275,53 @@ static BOOL getBoolPref(CFStringRef key, BOOL defaultVal) {
 
 static float getFloatPref(CFStringRef key, float defaultVal) {
     CFPropertyListRef val = CFPreferencesCopyAppValue(key, kPrefAppID);
-    if (val && CFGetTypeID(val) == CFNumberGetTypeID()) {
-        float res;
-        CFNumberGetValue((CFNumberRef)val, kCFNumberFloatType, &res);
+    if (val) {
+        if (CFGetTypeID(val) == CFNumberGetTypeID()) {
+            float res;
+            CFNumberGetValue((CFNumberRef)val, kCFNumberFloatType, &res);
+            CFRelease(val);
+            return res;
+        }
         CFRelease(val);
-        return res;
     }
-    if (val) CFRelease(val);
     return defaultVal;
 }
 
 static NSInteger getIntPref(CFStringRef key, NSInteger defaultVal) {
     CFPropertyListRef val = CFPreferencesCopyAppValue(key, kPrefAppID);
-    if (val && CFGetTypeID(val) == CFNumberGetTypeID()) {
-        NSInteger res;
-        CFNumberGetValue((CFNumberRef)val, kCFNumberNSIntegerType, &res);
+    if (val) {
+        if (CFGetTypeID(val) == CFNumberGetTypeID()) {
+            NSInteger res;
+            CFNumberGetValue((CFNumberRef)val, kCFNumberNSIntegerType, &res);
+            CFRelease(val);
+            return res;
+        }
         CFRelease(val);
-        return res;
     }
-    if (val) CFRelease(val);
     return defaultVal;
 }
 
 static void setBoolPref(CFStringRef key, BOOL value) {
-    CFPreferencesSetAppValue(key, value ? kCFBooleanTrue : kCFBooleanFalse, kPrefAppID);
+    CFPreferencesSetValue(key, value ? kCFBooleanTrue : kCFBooleanFalse, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
 }
 
 static void setFloatPref(CFStringRef key, float value) {
     CFNumberRef num = CFNumberCreate(NULL, kCFNumberFloatType, &value);
-    CFPreferencesSetAppValue(key, num, kPrefAppID);
+    CFPreferencesSetValue(key, num, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
     CFRelease(num);
 }
 
 static void setIntPref(CFStringRef key, NSInteger value) {
     CFNumberRef num = CFNumberCreate(NULL, kCFNumberNSIntegerType, &value);
-    CFPreferencesSetAppValue(key, num, kPrefAppID);
+    CFPreferencesSetValue(key, num, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
     CFRelease(num);
 }
 
 static void LoadPreferences(void) {
-    // 强制同步最新配置，全局穿透沙盒读取
     CFPreferencesAppSynchronize(kPrefAppID);
 
-    isEnabled = YES; 
+    // ✅ 修复 Bug 1：动态读取 isEnabled 开关，不再硬编码为 YES
+    isEnabled = getBoolPref(CFSTR("isEnabled"), YES); 
     autoCollapseEnable = getBoolPref(CFSTR("autoCollapseEnable"), YES);
     autoCollapseDelay = getIntPref(CFSTR("autoCollapseDelay"), 4);
 
@@ -405,7 +409,8 @@ static void SavePreferencesAndNotify(void) {
     setBoolPref(CFSTR("smartChargeLimitEnable"), smartChargeLimitEnable);
     setFloatPref(CFSTR("smartChargeLimitTemp"), smartChargeLimitTemp);
     
-    CFPreferencesAppSynchronize(kPrefAppID);
+    // ✅ 修复 Bug 1：强制落盘写入，绝对不再丢失配置
+    CFPreferencesSynchronize(kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
 
     if (showFps || force120HzEnable) {
         [[SBCPUFPSHelper sharedInstance] startMonitoring];
@@ -655,7 +660,8 @@ static void createCPUWindow(void) {
 
     cpuWindow = [[SBCPUWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     cpuWindow.windowScene = scene;
-    cpuWindow.windowLevel = UIWindowLevelStatusBar + 1;
+    // ✅ 修复 Bug 4：彻底提升 Window Level，保证完美悬浮在锁屏与控制中心上方
+    cpuWindow.windowLevel = UIWindowLevelAlert + 100.0; 
     cpuWindow.backgroundColor = UIColor.clearColor;
     cpuWindow.opaque = NO;
     cpuWindow.rootViewController = [[SBCPURootViewController alloc] init];
@@ -1405,6 +1411,7 @@ static void applySystemRefreshRate(void) {
         self.center = targetCenter;
     } else if (pan.state == UIGestureRecognizerStateEnded || pan.state == UIGestureRecognizerStateCancelled) {
         if (rememberPositionEnable) {
+            // 这里我们通过 UserDefaults 在 SpringBoard 内保存位置，不影响沙盒内 App 也能读取 kPrefAppID
             [[NSUserDefaults standardUserDefaults] setObject:NSStringFromCGRect(self.frame) forKey:@"SBCPU.LastFrame"];
             [[NSUserDefaults standardUserDefaults] synchronize];
         }
@@ -1502,10 +1509,11 @@ static void applySystemRefreshRate(void) {
     }
 
     if (showBattery) {
-        CGFloat batW = 48.0f;
-        _batteryIconLabel.frame = CGRectMake(currentX, padY + 3, 16, 22);
-        _batteryValueLabel.frame = CGRectMake(currentX + 18, padY, batW - 18, 14);
-        _batterySubLabel.frame = CGRectMake(currentX + 18, padY + 14, batW - 18, 11);
+        // ✅ 修复：微调电池宽度给大数字或特殊图标让位
+        CGFloat batW = 50.0f; 
+        _batteryIconLabel.frame = CGRectMake(currentX, padY + 3, 18, 22);
+        _batteryValueLabel.frame = CGRectMake(currentX + 20, padY, batW - 20, 14);
+        _batterySubLabel.frame = CGRectMake(currentX + 20, padY + 14, batW - 20, 11);
         currentX += batW + 6.0f;
 
         if (showTemp || actualShowCurrent) {
@@ -1520,10 +1528,11 @@ static void applySystemRefreshRate(void) {
     }
 
     if (showTemp) {
-        CGFloat tempW = 52.0f;
-        _tempIconLabel.frame = CGRectMake(currentX, padY + 3, 16, 22);
-        _tempValueLabel.frame = CGRectMake(currentX + 18, padY, tempW - 18, 14);
-        _tempSubLabel.frame = CGRectMake(currentX + 18, padY + 14, tempW - 18, 11);
+        // ✅ 修复 Bug 2：扩大温度 Emoji 的宽度，从 16 扩大到 20 像素，防止被截断
+        CGFloat tempW = 56.0f;
+        _tempIconLabel.frame = CGRectMake(currentX, padY + 3, 20, 22);
+        _tempValueLabel.frame = CGRectMake(currentX + 22, padY, tempW - 22, 14);
+        _tempSubLabel.frame = CGRectMake(currentX + 22, padY + 14, tempW - 22, 11);
         currentX += tempW + 6.0f;
 
         if (actualShowCurrent) {
@@ -1538,10 +1547,10 @@ static void applySystemRefreshRate(void) {
     }
 
     if (actualShowCurrent) {
-        CGFloat curW = 58.0f;
-        _currentIconLabel.frame = CGRectMake(currentX, padY + 3, 14, 22);
-        _currentValueLabel.frame = CGRectMake(currentX + 16, padY, curW - 16, 14);
-        _currentSubLabel.frame = CGRectMake(currentX + 16, padY + 14, curW - 16, 11);
+        CGFloat curW = 62.0f;
+        _currentIconLabel.frame = CGRectMake(currentX, padY + 3, 16, 22);
+        _currentValueLabel.frame = CGRectMake(currentX + 18, padY, curW - 18, 14);
+        _currentSubLabel.frame = CGRectMake(currentX + 18, padY + 14, curW - 18, 11);
         currentX += curW + 6.0f;
     }
 
@@ -1600,7 +1609,6 @@ static void applySystemRefreshRate(void) {
     _tempValueLabel.text = (temp > 0) ? [NSString stringWithFormat:@"%.1f°C", temp] : @"--°C";
     _currentValueLabel.text = [NSString stringWithFormat:@"%.0fmA", current];
     
-    // 如果不在断充状态，才显示正常的充电文字（否则保留上面的⚠️橘色警告）
     if (!isCurrentlyChargeInhibited) {
         _statusLabel.text = isCharging ? @"🟢 正在充电" : @"⚪ 未在充电";
         _statusLabel.textColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
@@ -1832,6 +1840,7 @@ static void applySystemRefreshRate(void) {
     _labelsDict[@"内网地址"].text = address;
 
     struct ifaddrs *ifa_list = NULL;
+    // ✅ 修复 Bug 3：扩大 4G/5G 网络接点的检测范围，涵盖所有现代蜂窝数据节点，彻底修复读取不准
     if (getifaddrs(&ifa_list) >= 0) {
         uint64_t wifiIn = 0, wifiOut = 0, cellIn = 0, cellOut = 0;
         for (struct ifaddrs *ifa = ifa_list; ifa; ifa = ifa->ifa_next) {
@@ -1839,8 +1848,12 @@ static void applySystemRefreshRate(void) {
             struct if_data *if_data = (struct if_data *)ifa->ifa_data;
             if (!if_data) continue;
             NSString *name = [NSString stringWithUTF8String:ifa->ifa_name];
-            if ([name hasPrefix:@"en"]) { wifiIn += if_data->ifi_ibytes; wifiOut += if_data->ifi_obytes; }
-            else if ([name hasPrefix:@"pdp_ip"]) { cellIn += if_data->ifi_ibytes; cellOut += if_data->ifi_obytes; }
+            if ([name hasPrefix:@"en"]) { 
+                wifiIn += if_data->ifi_ibytes; wifiOut += if_data->ifi_obytes; 
+            }
+            else if ([name hasPrefix:@"pdp_ip"] || [name hasPrefix:@"ipsec"] || [name hasPrefix:@"rmnet"] || [name hasPrefix:@"pdp"]) { 
+                cellIn += if_data->ifi_ibytes; cellOut += if_data->ifi_obytes; 
+            }
         }
         freeifaddrs(ifa_list);
         CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
@@ -2050,7 +2063,7 @@ static void applySystemRefreshRate(void) {
     if (section == 3) return 3;
     if (section == 4) return 2;
     if (section == 5) return 5;
-    if (section == 6) return 2; // 🔌 电池温控与断充
+    if (section == 6) return 2;
     return 6;
 }
 
@@ -2091,7 +2104,6 @@ static void applySystemRefreshRate(void) {
     [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:3 inSection:2]] withRowAnimation:UITableViewRowAnimationNone];
 }
 
-// 🔌 智能断充温度阈值调节
 - (void)changeChargeTempSlider:(UISlider *)slider {
     smartChargeLimitTemp = slider.value;
     SavePreferencesAndNotify();
@@ -2221,7 +2233,6 @@ static void applySystemRefreshRate(void) {
             cell.accessoryView = sw;
         }
     } else if (indexPath.section == 6) {
-        // 🔌 新增电池智能温控断充模块
         if (indexPath.row == 0) {
             cell.textLabel.text = @"开启高温智能断充";
             UISwitch *sw = [UISwitch new];
@@ -2387,12 +2398,10 @@ static void applySystemRefreshRate(void) {
 - (void)changeInsulationPocket:(UISwitch *)sw { insulationDisablePocketTemp = sw.isOn; SavePreferencesAndNotify(); }
 - (void)changeInsulationSunlight:(UISwitch *)sw { insulationLockSunlight = sw.isOn; SavePreferencesAndNotify(); }
 
-// 🔌 断充触发保存事件
 - (void)changeSmartChargeLimit:(UISwitch *)sw { 
     smartChargeLimitEnable = sw.isOn; 
     SavePreferencesAndNotify(); 
     if (!smartChargeLimitEnable && isCurrentlyChargeInhibited) {
-        // 关闭时立刻恢复供电
         setHardwareChargingInhibit(NO);
         isCurrentlyChargeInhibited = NO;
     }
@@ -2517,10 +2526,8 @@ static void registerV160Observers(void) {
 %end
 
 %ctor {
-    // 💡 保证每一个被注入的进程（包括 SpringBoard、游戏、App）都会先去读取最新配置
     LoadPreferences();
     
-    // 全局监听：只要在桌面修改了设置，其他 App 会立即收到系统通知并应用最新策略
     CFNotificationCenterAddObserver(
         CFNotificationCenterGetDarwinNotifyCenter(),
         NULL,
@@ -2530,7 +2537,6 @@ static void registerV160Observers(void) {
         CFNotificationSuspensionBehaviorDeliverImmediately
     );
 
-    // 仅在主桌面加载悬浮窗 UI 和时钟循环引擎
     NSString *processName = [NSProcessInfo processInfo].processName;
     if ([processName isEqualToString:@"SpringBoard"]) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
