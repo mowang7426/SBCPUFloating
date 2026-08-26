@@ -608,16 +608,21 @@ static double getRealCPUFrequency(void) {
     return spec.maxFreqMHz;
 }
 
+// ⚠️ 核心修复 1: 放宽对 UIWindowScene 的筛选条件，防止 iOS 15 SpringBoard 中因状态不符导致返回 nil
 static UIWindowScene *getWindowScene(void) {
     if (cpuWindow && cpuWindow.windowScene) return cpuWindow.windowScene;
     UIApplication *app = UIApplication.sharedApplication;
+    UIWindowScene *fallbackScene = nil;
     for (UIScene *scene in app.connectedScenes) {
         if ([scene isKindOfClass:UIWindowScene.class]) {
             UIWindowScene *ws = (UIWindowScene *)scene;
-            if (ws.activationState != UISceneActivationStateUnattached) return ws;
+            if (ws.activationState != UISceneActivationStateUnattached) {
+                return ws;
+            }
+            if (!fallbackScene) fallbackScene = ws;
         }
     }
-    return nil;
+    return fallbackScene; // 即便找不到活跃的 Scene，也随便拿一个来兜底
 }
 
 static UIInterfaceOrientation getActiveInterfaceOrientation(void) {
@@ -715,14 +720,17 @@ static void updateFloatingSize(void) {
     clampAndPositionFloatingView(floatingView.center, NO);
 }
 
+// ⚠️ 核心修复 1: 强行创建 UIWindow，即使在 iOS 15 SpringBoard 中找不到 WindowScene
 static void createCPUWindow(void) {
     if (cpuWindow) return;
 
-    UIWindowScene *scene = getWindowScene();
-    if (!scene) return;
-
     cpuWindow = [[SBCPUWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
-    cpuWindow.windowScene = scene;
+    
+    UIWindowScene *scene = getWindowScene();
+    if (scene) {
+        cpuWindow.windowScene = scene;
+    }
+    
     cpuWindow.windowLevel = UIWindowLevelAlert + 100.0; 
     cpuWindow.backgroundColor = UIColor.clearColor;
     cpuWindow.opaque = NO;
@@ -2586,6 +2594,24 @@ static void registerV160Observers(void) {
 }
 %end
 
+// ⚠️ 核心修复 2: 取消 %ctor 中不安全的粗暴延时，转为 Hook SpringBoard 生命周期来执行初始化
+%hook SpringBoard
+- (void)applicationDidFinishLaunching:(id)application {
+    %orig;
+    
+    // 给系统留出 2 秒呼吸时间确保 UI 层已完全展开
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        createCPUWindow();
+        registerV160Observers();
+
+        [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *timer) {
+            updateCPU();
+        }];
+    });
+}
+%end
+
+
 %ctor {
     LoadPreferences();
     
@@ -2597,17 +2623,7 @@ static void registerV160Observers(void) {
         NULL,
         CFNotificationSuspensionBehaviorDeliverImmediately
     );
-
-    NSString *processName = [NSProcessInfo processInfo].processName;
-    if ([processName isEqualToString:@"SpringBoard"]) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            createCPUWindow();
-            registerV160Observers();
-
-            [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *timer) {
-                updateCPU();
-            }];
-        });
-    }
+    
+    // 注意：已将注入逻辑移动到了上方的 %hook SpringBoard 的 applicationDidFinishLaunching: 阶段
 }
 
