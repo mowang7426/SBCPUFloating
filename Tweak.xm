@@ -38,7 +38,6 @@
 - (float)minimumRefreshRate;
 - (float)maximumRefreshRate;
 - (float)idealRefreshRate;
-- (void)setUserBrightness:(float)brightness;
 @end
 
 #pragma mark - 2. Insulation 温控破限系统类声明
@@ -243,7 +242,7 @@ static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
 
-// 🔥 Insulation 专属状态变量
+// 🔥 Insulation 专属控制变量
 static NSInteger cpuMode = 2;                     // 0: 原生, 1: 模拟低电, 2: 防降频
 static BOOL disableThermalDimming = YES;          // 温控暗屏
 static BOOL blockThermalAlert = NO;               // 禁温度计弹窗
@@ -287,7 +286,7 @@ static BOOL isDeviceOverheated(void);
 static void applySystemRefreshRate(void);
 static void applyHardwareCpuGovernor(NSInteger mode);
 
-#pragma mark - 6. 🔥 真实系统级温控 Hook 与低电限频实现
+#pragma mark - 6. 🔥 Insulation 温控与低电限频内核 Hook 注入
 
 %hook NSProcessInfo
 - (NSProcessInfoThermalState)thermalState {
@@ -295,7 +294,6 @@ static void applyHardwareCpuGovernor(NSInteger mode);
     if (cpuMode == 1) return NSProcessInfoThermalStateFair;
     return %orig;
 }
-
 - (BOOL)isLowPowerModeEnabled {
     if (cpuMode == 1) return YES;
     if (cpuMode == 2) return NO;
@@ -1232,7 +1230,7 @@ static void applySystemRefreshRate(void) {
 
 @end
 
-#pragma mark - 13. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
+#pragma mark - 11. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
 
 @implementation SBCPUDetailViewController
 
@@ -1352,7 +1350,7 @@ static void applySystemRefreshRate(void) {
     }];
 }
 
-#pragma mark - 14. 真实系统底层 API 数据解析刷新
+#pragma mark - 11. 真实系统底层 API 数据解析刷新
 
 - (void)refreshAllDetailData {
     DeviceSpec spec = getDeviceSpec();
