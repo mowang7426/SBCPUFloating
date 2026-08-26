@@ -51,7 +51,6 @@ typedef struct {
 
 #pragma mark - 2. 所有类的极严格前置声明 (防止编译找不到 Identifier)
 
-// 🟢 [修复编译] 将 MitigationController 声明提升到最顶部，让编译器提前认识它
 @interface MitigationController : NSObject
 - (void)setPowerSaveActive:(BOOL)arg1;
 - (void)setCPULevel:(int)arg1;
@@ -208,7 +207,6 @@ static CFAbsoluteTime lastNetSpeedTime = 0;
 static host_cpu_load_info_data_t prev_cpu_load;
 static BOOL has_prev_cpu_load = NO;
 
-// 🟢 [修复编译] 改为强类型指针，让编译器彻底放心
 static __weak MitigationController *sharedMitigationController = nil;
 static const int InsulationUnrestrictedPowerTarget = 65000;
 
@@ -249,7 +247,7 @@ static NSString *getNetworkType(void);
 
 static void applyMitigationState(void);
 
-#pragma mark - 5. 底层 C 函数具体实现与 CFPreferences 全局引流引擎
+#pragma mark - 5. 底层 C 函数具体实现与跨进程通信引流引擎
 
 static void applyMitigationState(void) {
     if (!sharedMitigationController) return;
@@ -314,62 +312,59 @@ static DeviceSpec getDeviceSpec(void) {
     return (DeviceSpec){machine, "iPhone", "Apple Silicon", activeCores, 3468.0, 4000};
 }
 
-static BOOL getBoolPref(CFStringRef key, BOOL defaultVal) {
-    CFPropertyListRef val = CFPreferencesCopyValue(key, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
-    if (val) {
-        BOOL res = defaultVal;
-        if (CFGetTypeID(val) == CFBooleanGetTypeID()) {
-            res = CFBooleanGetValue((CFBooleanRef)val);
-        } else if (CFGetTypeID(val) == CFNumberGetTypeID()) {
-            int intVal; CFNumberGetValue((CFNumberRef)val, kCFNumberIntType, &intVal); res = (intVal != 0);
-        }
-        CFRelease(val); return res;
+// 🟢 [核心修复] 重写配置读写引擎，使用硬编码绝对路径进行读写，彻底打通 SpringBoard 与 thermalmonitord 的沙盒隔离墙
+static NSMutableDictionary *globalPrefs = nil;
+
+static NSString *getPrefPath(void) {
+    // 兼容 Rootless 和 Rootful
+    if ([[NSFileManager defaultManager] fileExistsAtPath:@"/var/jb"]) {
+        return @"/var/jb/var/mobile/Library/Preferences/com.yourname.sbcpufloating.plist";
     }
+    return @"/var/mobile/Library/Preferences/com.yourname.sbcpufloating.plist";
+}
+
+static BOOL getBoolPref(CFStringRef keyRef, BOOL defaultVal) {
+    NSString *key = (__bridge NSString *)keyRef;
+    if (!globalPrefs) globalPrefs = [NSMutableDictionary dictionaryWithContentsOfFile:getPrefPath()] ?: [NSMutableDictionary dictionary];
+    if (globalPrefs[key]) return [globalPrefs[key] boolValue];
     return defaultVal;
 }
 
-static float getFloatPref(CFStringRef key, float defaultVal) {
-    CFPropertyListRef val = CFPreferencesCopyValue(key, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
-    if (val) {
-        float res = defaultVal;
-        if (CFGetTypeID(val) == CFNumberGetTypeID()) {
-            CFNumberGetValue((CFNumberRef)val, kCFNumberFloatType, &res);
-        }
-        CFRelease(val); return res;
-    }
+static float getFloatPref(CFStringRef keyRef, float defaultVal) {
+    NSString *key = (__bridge NSString *)keyRef;
+    if (!globalPrefs) globalPrefs = [NSMutableDictionary dictionaryWithContentsOfFile:getPrefPath()] ?: [NSMutableDictionary dictionary];
+    if (globalPrefs[key]) return [globalPrefs[key] floatValue];
     return defaultVal;
 }
 
-static NSInteger getIntPref(CFStringRef key, NSInteger defaultVal) {
-    CFPropertyListRef val = CFPreferencesCopyValue(key, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
-    if (val) {
-        NSInteger res = defaultVal;
-        if (CFGetTypeID(val) == CFNumberGetTypeID()) {
-            CFNumberGetValue((CFNumberRef)val, kCFNumberNSIntegerType, &res);
-        }
-        CFRelease(val); return res;
-    }
+static NSInteger getIntPref(CFStringRef keyRef, NSInteger defaultVal) {
+    NSString *key = (__bridge NSString *)keyRef;
+    if (!globalPrefs) globalPrefs = [NSMutableDictionary dictionaryWithContentsOfFile:getPrefPath()] ?: [NSMutableDictionary dictionary];
+    if (globalPrefs[key]) return [globalPrefs[key] integerValue];
     return defaultVal;
 }
 
-static void setBoolPref(CFStringRef key, BOOL value) {
-    CFPreferencesSetValue(key, value ? kCFBooleanTrue : kCFBooleanFalse, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+static void setBoolPref(CFStringRef keyRef, BOOL value) {
+    NSString *key = (__bridge NSString *)keyRef;
+    if (!globalPrefs) globalPrefs = [NSMutableDictionary dictionaryWithContentsOfFile:getPrefPath()] ?: [NSMutableDictionary dictionary];
+    globalPrefs[key] = @(value);
 }
 
-static void setFloatPref(CFStringRef key, float value) {
-    CFNumberRef num = CFNumberCreate(NULL, kCFNumberFloatType, &value);
-    CFPreferencesSetValue(key, num, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
-    CFRelease(num);
+static void setFloatPref(CFStringRef keyRef, float value) {
+    NSString *key = (__bridge NSString *)keyRef;
+    if (!globalPrefs) globalPrefs = [NSMutableDictionary dictionaryWithContentsOfFile:getPrefPath()] ?: [NSMutableDictionary dictionary];
+    globalPrefs[key] = @(value);
 }
 
-static void setIntPref(CFStringRef key, NSInteger value) {
-    CFNumberRef num = CFNumberCreate(NULL, kCFNumberNSIntegerType, &value);
-    CFPreferencesSetValue(key, num, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
-    CFRelease(num);
+static void setIntPref(CFStringRef keyRef, NSInteger value) {
+    NSString *key = (__bridge NSString *)keyRef;
+    if (!globalPrefs) globalPrefs = [NSMutableDictionary dictionaryWithContentsOfFile:getPrefPath()] ?: [NSMutableDictionary dictionary];
+    globalPrefs[key] = @(value);
 }
 
 static void LoadPreferences(void) {
-    CFPreferencesAppSynchronize(kPrefAppID);
+    // 强制从磁盘重新加载跨进程数据
+    globalPrefs = [NSMutableDictionary dictionaryWithContentsOfFile:getPrefPath()] ?: [NSMutableDictionary dictionary];
 
     isEnabled = getBoolPref(CFSTR("isEnabled"), YES); 
     autoCollapseEnable = getBoolPref(CFSTR("autoCollapseEnable"), YES);
@@ -418,7 +413,7 @@ static void LoadPreferences(void) {
         applySystemRefreshRate();
     }
     
-    // 🟢 [新接入] 配置读取完毕后，立即触发主动刷新下发底层
+    // 配置读取完毕后，立即触发主动刷新下发底层
     applyMitigationState();
 }
 
@@ -459,7 +454,8 @@ static void SavePreferencesAndNotify(void) {
     setBoolPref(CFSTR("smartChargeLimitEnable"), smartChargeLimitEnable);
     setFloatPref(CFSTR("smartChargeLimitTemp"), smartChargeLimitTemp);
     
-    CFPreferencesSynchronize(kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    // 🟢 物理保存到跨进程共享文件
+    [globalPrefs writeToFile:getPrefPath() atomically:YES];
 
     if (showFps || force120HzEnable) {
         [[SBCPUFPSHelper sharedInstance] startMonitoring];
@@ -2639,6 +2635,23 @@ static void registerV160Observers(void) {
 %group MitigationHooks
 %hook MitigationController
 
+// 🟢 [核心修复] Hook 进程启动时的初始化，第一时间拿到底层调度器的引用
+- (instancetype)init {
+    id orig = %orig;
+    sharedMitigationController = orig;
+    // 延迟 2 秒主动打入配置（防止进程刚启动时没准备好）
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        applyMitigationState();
+    });
+    return orig;
+}
+
+// 🟢 [核心修复] 持续捕获引用，只要系统尝试更新 CPU 频率，我们就把它拦截
+- (void)updateCPU {
+    sharedMitigationController = self;
+    %orig;
+}
+
 - (void)setPowerSaveActive:(BOOL)active {
     sharedMitigationController = self;
     if (insulationCpuMode == 2) {
@@ -2691,11 +2704,11 @@ static void registerV160Observers(void) {
 
 
 %ctor {
-    // 🟢 [必须接入] 这里的 %init; 用于初始化您原有的全局 Hook（如 NSProcessInfo, SBBacklightController），防止它们丢失失效
     %init;
     
     LoadPreferences();
     
+    // 🟢 [核心修复] 将通知监听提取到外部，保证 SpringBoard 和 thermalmonitord 两边都能接收到配置更新指令！
     CFNotificationCenterAddObserver(
         CFNotificationCenterGetDarwinNotifyCenter(),
         NULL,
@@ -2716,7 +2729,6 @@ static void registerV160Observers(void) {
             }];
         });
     } else if ([processName isEqualToString:@"thermalmonitord"]) {
-        // 🟢 [新接入] 如果在底层温控进程中，则挂载刚才写的防降频策略
         %init(MitigationHooks);
     }
 }
