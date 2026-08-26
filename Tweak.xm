@@ -13,15 +13,18 @@
 #import <net/if.h>
 #import <arpa/inet.h>
 #import <CoreMotion/CoreMotion.h>
+#import <notify.h> // 🟢 [终极修复] 引入底层内核通信框架
 
 #ifndef kIOMainPortDefault
 #define kIOMainPortDefault kIOMasterPortDefault
 #endif
 
-// 💡 升级为系统级偏好设置 ID，穿透沙盒，让游戏进程也能读取到模拟低电配置
 #define kPrefAppID CFSTR("com.yourname.sbcpufloating")
 #define kPrefChangedNotification CFSTR("com.yourname.sbcpufloating.prefschanged")
 #define kToggleNotification CFSTR("com.yourname.sbcpufloating.toggle")
+
+// 🟢 定义专用的跨进程通信频道
+#define NOTIFY_CPU_MODE "com.yourname.sbcpufloating.cpumode"
 
 #pragma mark - 1. QuartzCore 私有类及数据结构声明
 
@@ -247,7 +250,17 @@ static NSString *getNetworkType(void);
 
 static void applyMitigationState(void);
 
-#pragma mark - 5. 底层 C 函数具体实现与跨进程通信引流引擎
+// 🟢 [终极修复] 跨进程通知发送器 (仅 SpringBoard 使用)
+static void SendCPUModeToDaemon(NSInteger mode) {
+    int token;
+    if (notify_register_check(NOTIFY_CPU_MODE, &token) == NOTIFY_STATUS_OK) {
+        notify_set_state(token, (uint64_t)mode); // 写入内核状态
+        notify_post(NOTIFY_CPU_MODE);            // 发送广播唤醒守护进程
+        notify_cancel(token);
+    }
+}
+
+#pragma mark - 5. 底层 C 函数具体实现与 CFPreferences 全局引流引擎
 
 static void applyMitigationState(void) {
     if (!sharedMitigationController) return;
@@ -312,59 +325,62 @@ static DeviceSpec getDeviceSpec(void) {
     return (DeviceSpec){machine, "iPhone", "Apple Silicon", activeCores, 3468.0, 4000};
 }
 
-// 🟢 [核心修复] 重写配置读写引擎，使用硬编码绝对路径进行读写，彻底打通 SpringBoard 与 thermalmonitord 的沙盒隔离墙
-static NSMutableDictionary *globalPrefs = nil;
-
-static NSString *getPrefPath(void) {
-    // 兼容 Rootless 和 Rootful
-    if ([[NSFileManager defaultManager] fileExistsAtPath:@"/var/jb"]) {
-        return @"/var/jb/var/mobile/Library/Preferences/com.yourname.sbcpufloating.plist";
+static BOOL getBoolPref(CFStringRef key, BOOL defaultVal) {
+    CFPropertyListRef val = CFPreferencesCopyValue(key, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    if (val) {
+        BOOL res = defaultVal;
+        if (CFGetTypeID(val) == CFBooleanGetTypeID()) {
+            res = CFBooleanGetValue((CFBooleanRef)val);
+        } else if (CFGetTypeID(val) == CFNumberGetTypeID()) {
+            int intVal; CFNumberGetValue((CFNumberRef)val, kCFNumberIntType, &intVal); res = (intVal != 0);
+        }
+        CFRelease(val); return res;
     }
-    return @"/var/mobile/Library/Preferences/com.yourname.sbcpufloating.plist";
-}
-
-static BOOL getBoolPref(CFStringRef keyRef, BOOL defaultVal) {
-    NSString *key = (__bridge NSString *)keyRef;
-    if (!globalPrefs) globalPrefs = [NSMutableDictionary dictionaryWithContentsOfFile:getPrefPath()] ?: [NSMutableDictionary dictionary];
-    if (globalPrefs[key]) return [globalPrefs[key] boolValue];
     return defaultVal;
 }
 
-static float getFloatPref(CFStringRef keyRef, float defaultVal) {
-    NSString *key = (__bridge NSString *)keyRef;
-    if (!globalPrefs) globalPrefs = [NSMutableDictionary dictionaryWithContentsOfFile:getPrefPath()] ?: [NSMutableDictionary dictionary];
-    if (globalPrefs[key]) return [globalPrefs[key] floatValue];
+static float getFloatPref(CFStringRef key, float defaultVal) {
+    CFPropertyListRef val = CFPreferencesCopyValue(key, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    if (val) {
+        float res = defaultVal;
+        if (CFGetTypeID(val) == CFNumberGetTypeID()) {
+            CFNumberGetValue((CFNumberRef)val, kCFNumberFloatType, &res);
+        }
+        CFRelease(val); return res;
+    }
     return defaultVal;
 }
 
-static NSInteger getIntPref(CFStringRef keyRef, NSInteger defaultVal) {
-    NSString *key = (__bridge NSString *)keyRef;
-    if (!globalPrefs) globalPrefs = [NSMutableDictionary dictionaryWithContentsOfFile:getPrefPath()] ?: [NSMutableDictionary dictionary];
-    if (globalPrefs[key]) return [globalPrefs[key] integerValue];
+static NSInteger getIntPref(CFStringRef key, NSInteger defaultVal) {
+    CFPropertyListRef val = CFPreferencesCopyValue(key, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    if (val) {
+        NSInteger res = defaultVal;
+        if (CFGetTypeID(val) == CFNumberGetTypeID()) {
+            CFNumberGetValue((CFNumberRef)val, kCFNumberNSIntegerType, &res);
+        }
+        CFRelease(val); return res;
+    }
     return defaultVal;
 }
 
-static void setBoolPref(CFStringRef keyRef, BOOL value) {
-    NSString *key = (__bridge NSString *)keyRef;
-    if (!globalPrefs) globalPrefs = [NSMutableDictionary dictionaryWithContentsOfFile:getPrefPath()] ?: [NSMutableDictionary dictionary];
-    globalPrefs[key] = @(value);
+static void setBoolPref(CFStringRef key, BOOL value) {
+    CFPreferencesSetValue(key, value ? kCFBooleanTrue : kCFBooleanFalse, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
 }
 
-static void setFloatPref(CFStringRef keyRef, float value) {
-    NSString *key = (__bridge NSString *)keyRef;
-    if (!globalPrefs) globalPrefs = [NSMutableDictionary dictionaryWithContentsOfFile:getPrefPath()] ?: [NSMutableDictionary dictionary];
-    globalPrefs[key] = @(value);
+static void setFloatPref(CFStringRef key, float value) {
+    CFNumberRef num = CFNumberCreate(NULL, kCFNumberFloatType, &value);
+    CFPreferencesSetValue(key, num, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    CFRelease(num);
 }
 
-static void setIntPref(CFStringRef keyRef, NSInteger value) {
-    NSString *key = (__bridge NSString *)keyRef;
-    if (!globalPrefs) globalPrefs = [NSMutableDictionary dictionaryWithContentsOfFile:getPrefPath()] ?: [NSMutableDictionary dictionary];
-    globalPrefs[key] = @(value);
+static void setIntPref(CFStringRef key, NSInteger value) {
+    CFNumberRef num = CFNumberCreate(NULL, kCFNumberNSIntegerType, &value);
+    CFPreferencesSetValue(key, num, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    CFRelease(num);
 }
 
 static void LoadPreferences(void) {
-    // 强制从磁盘重新加载跨进程数据
-    globalPrefs = [NSMutableDictionary dictionaryWithContentsOfFile:getPrefPath()] ?: [NSMutableDictionary dictionary];
+    CFPreferencesAppSynchronize(kPrefAppID);
 
     isEnabled = getBoolPref(CFSTR("isEnabled"), YES); 
     autoCollapseEnable = getBoolPref(CFSTR("autoCollapseEnable"), YES);
@@ -411,10 +427,10 @@ static void LoadPreferences(void) {
             [[SBCPUFPSHelper sharedInstance] stopMonitoring];
         }
         applySystemRefreshRate();
+        
+        // 🟢 [终极修复] 每次 SpringBoard 重新加载配置，强制推送到内核，同步给守护进程
+        SendCPUModeToDaemon(insulationCpuMode);
     }
-    
-    // 配置读取完毕后，立即触发主动刷新下发底层
-    applyMitigationState();
 }
 
 static void SavePreferencesAndNotify(void) {
@@ -454,8 +470,7 @@ static void SavePreferencesAndNotify(void) {
     setBoolPref(CFSTR("smartChargeLimitEnable"), smartChargeLimitEnable);
     setFloatPref(CFSTR("smartChargeLimitTemp"), smartChargeLimitTemp);
     
-    // 🟢 物理保存到跨进程共享文件
-    [globalPrefs writeToFile:getPrefPath() atomically:YES];
+    CFPreferencesSynchronize(kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
 
     if (showFps || force120HzEnable) {
         [[SBCPUFPSHelper sharedInstance] startMonitoring];
@@ -464,7 +479,13 @@ static void SavePreferencesAndNotify(void) {
     }
     applySystemRefreshRate();
 
+    // 通知本进程（UI更新）
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), kPrefChangedNotification, NULL, NULL, YES);
+    
+    // 🟢 [终极修复] 每当用户在 UI 中修改配置，立刻将值打入内核频道，瞬间同步
+    if ([[NSProcessInfo processInfo].processName isEqualToString:@"SpringBoard"]) {
+        SendCPUModeToDaemon(insulationCpuMode);
+    }
 }
 
 // 🔌 硬件级旁路断充接口
@@ -2632,25 +2653,10 @@ static void registerV160Observers(void) {
 }
 %end
 
+
 %group MitigationHooks
+
 %hook MitigationController
-
-// 🟢 [核心修复] Hook 进程启动时的初始化，第一时间拿到底层调度器的引用
-- (instancetype)init {
-    id orig = %orig;
-    sharedMitigationController = orig;
-    // 延迟 2 秒主动打入配置（防止进程刚启动时没准备好）
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        applyMitigationState();
-    });
-    return orig;
-}
-
-// 🟢 [核心修复] 持续捕获引用，只要系统尝试更新 CPU 频率，我们就把它拦截
-- (void)updateCPU {
-    sharedMitigationController = self;
-    %orig;
-}
 
 - (void)setPowerSaveActive:(BOOL)active {
     sharedMitigationController = self;
@@ -2668,7 +2674,7 @@ static void registerV160Observers(void) {
     if (insulationCpuMode == 2) {
         %orig(0);
     } else if (insulationCpuMode == 1) {
-        %orig(2); // 严格还原提取代码中的限制，强行锁定在 2 级
+        %orig(2); // 严格锁定低频
     } else {
         %orig(level);
     }
@@ -2698,28 +2704,29 @@ static void registerV160Observers(void) {
         %orig(power);
     }
 }
-
 %end
+
 %end // MitigationHooks
 
 
 %ctor {
     %init;
     
-    LoadPreferences();
-    
-    // 🟢 [核心修复] 将通知监听提取到外部，保证 SpringBoard 和 thermalmonitord 两边都能接收到配置更新指令！
-    CFNotificationCenterAddObserver(
-        CFNotificationCenterGetDarwinNotifyCenter(),
-        NULL,
-        onCCNotificationReceived,
-        kPrefChangedNotification,
-        NULL,
-        CFNotificationSuspensionBehaviorDeliverImmediately
-    );
-
     NSString *processName = [NSProcessInfo processInfo].processName;
+
     if ([processName isEqualToString:@"SpringBoard"]) {
+        // UI 和本地监听初始化
+        LoadPreferences();
+        
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            NULL,
+            onCCNotificationReceived,
+            kPrefChangedNotification,
+            NULL,
+            CFNotificationSuspensionBehaviorDeliverImmediately
+        );
+        
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             createCPUWindow();
             registerV160Observers();
@@ -2728,8 +2735,28 @@ static void registerV160Observers(void) {
                 updateCPU();
             }];
         });
+        
     } else if ([processName isEqualToString:@"thermalmonitord"]) {
+        // 🟢 [终极修复核心] 守护进程的沙盒击穿方案！
         %init(MitigationHooks);
+
+        // 1. 注册内核调度频道的监听
+        int token;
+        notify_register_dispatch(NOTIFY_CPU_MODE, &token, dispatch_get_main_queue(), ^(int t) {
+            uint64_t state = 0;
+            notify_get_state(t, &state);             // 从内核读取最新模式
+            insulationCpuMode = (NSInteger)state;    // 赋值给本进程
+            applyMitigationState();                  // 瞬间拉平频率！
+        });
+
+        // 2. 初始化时主动抓取一次状态（应对手机刚开机的情况）
+        uint64_t initialState = 0;
+        if (notify_get_state(token, &initialState) == NOTIFY_STATUS_OK) {
+            insulationCpuMode = (NSInteger)initialState;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                applyMitigationState();
+            });
+        }
     }
 }
 
