@@ -28,7 +28,7 @@
 #define kPrefChangedNotification "com.yourname.sbcpufloating.prefschanged"
 #define kToggleNotification "com.yourname.sbcpufloating.toggle"
 
-#pragma mark - 1. IOKit 纯净 C 接口声明 (杜绝 Theos IOKitLib 符号冲突)
+#pragma mark - 1. IOKit 纯净 C 接口声明 (彻底避免 Theos 头文件符号冲突)
 
 typedef mach_port_t io_object_t;
 typedef io_object_t io_service_t;
@@ -272,7 +272,7 @@ static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
 
-// 🔥 Insulation (温控绝缘) 5大真实生效破限变量 🔥
+// 🔥 Insulation (温控绝缘) 5大核心变量 🔥
 // 0: 苹果原生温控, 1: 模拟低电频率, 2: 防止温控降频
 static NSInteger cpuMode = 2;                     
 static BOOL disableThermalDimming = YES;          // 屏幕: 温控暗屏
@@ -1607,7 +1607,7 @@ static double getCPUFrequencyMHz(double currentCpuUsage) {
     if (loadFactor > 1.0) loadFactor = 1.0;
 
     double dynamicFreq = minMHz + (maxMHz - minMHz) * (0.2 + 0.8 * loadFactor);
-    dynamicFreq += ((double)(arc4random() % 20) - 10.0);
+    dynamicFreq += ((double)(arc4random() % 30) - 15.0);
 
     if (dynamicFreq > maxMHz) dynamicFreq = maxMHz;
     if (dynamicFreq < minMHz) dynamicFreq = minMHz;
@@ -2607,9 +2607,9 @@ static void registerV160Observers(void) {
 
 %ctor {
     NSString *processName = [NSProcessInfo processInfo].processName;
-    if ([processName isEqualToString:@"SpringBoard"]) {
-        LoadPreferences();
+    LoadPreferences();
 
+    if ([processName isEqualToString:@"SpringBoard"]) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             createCPUWindow();
             registerV160Observers();
