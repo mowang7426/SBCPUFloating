@@ -181,7 +181,7 @@ static BOOL insulationLockSunlight = NO;
 // 🔌 智能温控断充 全局变量
 static BOOL smartChargeLimitEnable = NO;
 static float smartChargeLimitTemp = 38.0f;
-static BOOL isCurrentlyChargeInhibited = NO;
+static BOOL isCurrentlyChargeInhibited = NO;      
 
 static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
@@ -267,7 +267,6 @@ static DeviceSpec getDeviceSpec(void) {
     return (DeviceSpec){machine, "iPhone", "Apple Silicon", activeCores, 3468.0, 4000};
 }
 
-// ✅ 修复 Bug 1 (配置丢失)：通过精准对应 kCFPreferencesCurrentUser 实现绝对持久化
 static BOOL getBoolPref(CFStringRef key, BOOL defaultVal) {
     CFPropertyListRef val = CFPreferencesCopyValue(key, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
     if (val) {
@@ -422,12 +421,77 @@ static void SavePreferencesAndNotify(void) {
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), kPrefChangedNotification, NULL, NULL, YES);
 }
 
+// 🔌 硬件级旁路断充接口
 static void setHardwareChargingInhibit(BOOL inhibit) {
     io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBatteryManager"));
     if (service) {
         IORegistryEntrySetCFProperty(service, CFSTR("ChargeInhibit"), inhibit ? kCFBooleanTrue : kCFBooleanFalse);
         IOObjectRelease(service);
     }
+}
+
+// ✅ 修复 Bug 3: 绝对精准的底层网络检测，支持双卡并优先获取当前数据卡
+static NSString *getNetworkType(void) {
+    struct ifaddrs *interfaces = NULL;
+    int wifi = 0;
+    int cell = 0;
+    if (getifaddrs(&interfaces) == 0) {
+        struct ifaddrs *temp_addr = interfaces;
+        while (temp_addr != NULL) {
+            if (temp_addr->ifa_addr && (temp_addr->ifa_addr->sa_family == AF_INET || temp_addr->ifa_addr->sa_family == AF_INET6)) {
+                NSString *name = [NSString stringWithUTF8String:temp_addr->ifa_name];
+                if ([name isEqualToString:@"en0"]) wifi = 1;
+                // 覆盖所有的现代蜂窝数据节点，解决 4G/5G 切换不刷新的问题
+                else if ([name hasPrefix:@"pdp_ip"] || [name hasPrefix:@"ipsec"] || [name hasPrefix:@"rmnet"] || [name hasPrefix:@"pdp"]) cell = 1;
+            }
+            temp_addr = temp_addr->ifa_next;
+        }
+        freeifaddrs(interfaces);
+    }
+    
+    if (wifi) return @"Wi-Fi 在线";
+    if (cell) {
+        @try {
+            static id networkInfo = nil;
+            static dispatch_once_t onceToken;
+            dispatch_once(&onceToken, ^{
+                Class CTClass = NSClassFromString(@"CTTelephonyNetworkInfo");
+                if (CTClass) networkInfo = [[CTClass alloc] init];
+            });
+            
+            if (networkInfo) {
+                NSString *tech = nil;
+                // 核心修复：优先读取当前正在使用数据流量的 SIM 卡
+                if ([networkInfo respondsToSelector:@selector(dataServiceIdentifier)] && [networkInfo respondsToSelector:@selector(serviceCurrentRadioAccessTechnology)]) {
+                    NSString *dataServiceId = [networkInfo valueForKey:@"dataServiceIdentifier"];
+                    NSDictionary *dict = [networkInfo valueForKey:@"serviceCurrentRadioAccessTechnology"];
+                    if (dataServiceId && [dict isKindOfClass:[NSDictionary class]]) {
+                        tech = dict[dataServiceId];
+                    }
+                } 
+                
+                if (!tech && [networkInfo respondsToSelector:@selector(serviceCurrentRadioAccessTechnology)]) {
+                    NSDictionary *dict = [networkInfo valueForKey:@"serviceCurrentRadioAccessTechnology"];
+                    if ([dict isKindOfClass:[NSDictionary class]] && dict.allValues.count > 0) {
+                        tech = dict.allValues.firstObject;
+                    }
+                }
+                
+                if (!tech && [networkInfo respondsToSelector:@selector(currentRadioAccessTechnology)]) {
+                    tech = [networkInfo valueForKey:@"currentRadioAccessTechnology"];
+                }
+                
+                if (tech) {
+                    if ([tech isEqualToString:@"CTRadioAccessTechnologyNRNSA"] || [tech isEqualToString:@"CTRadioAccessTechnologyNR"]) return @"5G 网络";
+                    if ([tech isEqualToString:@"CTRadioAccessTechnologyLTE"]) return @"4G 网络";
+                    if ([tech isEqualToString:@"CTRadioAccessTechnologyWCDMA"] || [tech isEqualToString:@"CTRadioAccessTechnologyHSDPA"] || [tech isEqualToString:@"CTRadioAccessTechnologyHSUPA"] || [tech isEqualToString:@"CTRadioAccessTechnologyCDMA1x"] || [tech isEqualToString:@"CTRadioAccessTechnologyCDMAEVDORev0"] || [tech isEqualToString:@"CTRadioAccessTechnologyCDMAEVDORevA"] || [tech isEqualToString:@"CTRadioAccessTechnologyCDMAEVDORevB"] || [tech isEqualToString:@"CTRadioAccessTechnologyeHRPD"]) return @"3G 网络";
+                    if ([tech isEqualToString:@"CTRadioAccessTechnologyEdge"] || [tech isEqualToString:@"CTRadioAccessTechnologyGPRS"]) return @"2G 网络";
+                }
+            }
+        } @catch (NSException *e) {}
+        return @"蜂窝移动网络";
+    }
+    return @"无网络连接";
 }
 
 static NSDictionary *getRealBatteryDetails(void) {
@@ -542,60 +606,6 @@ static double getRealCPUFrequency(void) {
     }
     DeviceSpec spec = getDeviceSpec();
     return spec.maxFreqMHz;
-}
-
-// ✅ 修复 Bug 3 (4G/5G 显示不准)：绝对精准的底层网络探测函数
-static NSString *getNetworkType(void) {
-    struct ifaddrs *interfaces = NULL;
-    int wifi = 0;
-    int cell = 0;
-    if (getifaddrs(&interfaces) == 0) {
-        struct ifaddrs *temp_addr = interfaces;
-        while (temp_addr != NULL) {
-            if (temp_addr->ifa_addr && (temp_addr->ifa_addr->sa_family == AF_INET || temp_addr->ifa_addr->sa_family == AF_INET6)) {
-                NSString *name = [NSString stringWithUTF8String:temp_addr->ifa_name];
-                if ([name isEqualToString:@"en0"]) wifi = 1;
-                // 覆盖所有的现代蜂窝数据节点，解决 4G/5G 不刷新的问题
-                else if ([name hasPrefix:@"pdp_ip"] || [name hasPrefix:@"ipsec"] || [name hasPrefix:@"rmnet"] || [name hasPrefix:@"pdp"]) cell = 1;
-            }
-            temp_addr = temp_addr->ifa_next;
-        }
-        freeifaddrs(interfaces);
-    }
-    
-    if (wifi) return @"Wi-Fi 在线";
-    if (cell) {
-        @try {
-            static id networkInfo = nil;
-            static dispatch_once_t onceToken;
-            dispatch_once(&onceToken, ^{
-                Class CTClass = NSClassFromString(@"CTTelephonyNetworkInfo");
-                if (CTClass) networkInfo = [[CTClass alloc] init];
-            });
-            
-            if (networkInfo) {
-                NSString *tech = nil;
-                if ([networkInfo respondsToSelector:@selector(serviceCurrentRadioAccessTechnology)]) {
-                    NSDictionary *dict = [networkInfo valueForKey:@"serviceCurrentRadioAccessTechnology"];
-                    if ([dict isKindOfClass:[NSDictionary class]] && dict.allValues.count > 0) {
-                        tech = dict.allValues.firstObject;
-                    }
-                } 
-                if (!tech && [networkInfo respondsToSelector:@selector(currentRadioAccessTechnology)]) {
-                    tech = [networkInfo valueForKey:@"currentRadioAccessTechnology"];
-                }
-                
-                if (tech) {
-                    if ([tech isEqualToString:@"CTRadioAccessTechnologyNRNSA"] || [tech isEqualToString:@"CTRadioAccessTechnologyNR"]) return @"5G 网络";
-                    if ([tech isEqualToString:@"CTRadioAccessTechnologyLTE"]) return @"4G 网络";
-                    if ([tech isEqualToString:@"CTRadioAccessTechnologyWCDMA"] || [tech isEqualToString:@"CTRadioAccessTechnologyHSDPA"] || [tech isEqualToString:@"CTRadioAccessTechnologyHSUPA"] || [tech isEqualToString:@"CTRadioAccessTechnologyCDMA1x"] || [tech isEqualToString:@"CTRadioAccessTechnologyCDMAEVDORev0"] || [tech isEqualToString:@"CTRadioAccessTechnologyCDMAEVDORevA"] || [tech isEqualToString:@"CTRadioAccessTechnologyCDMAEVDORevB"] || [tech isEqualToString:@"CTRadioAccessTechnologyeHRPD"]) return @"3G 网络";
-                    if ([tech isEqualToString:@"CTRadioAccessTechnologyEdge"] || [tech isEqualToString:@"CTRadioAccessTechnologyGPRS"]) return @"2G 网络";
-                }
-            }
-        } @catch (NSException *e) {}
-        return @"蜂窝移动网络";
-    }
-    return @"无网络连接";
 }
 
 static UIWindowScene *getWindowScene(void) {
@@ -713,14 +723,7 @@ static void createCPUWindow(void) {
 
     cpuWindow = [[SBCPUWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     cpuWindow.windowScene = scene;
-    
-    // ✅ 修复 Bug 4：层级拔高到一千万，并且注入防覆盖安全层级，确保穿透锁屏与控制中心
-    cpuWindow.windowLevel = 10000000.0; 
-    if ([cpuWindow respondsToSelector:@selector(_setSecure:)]) {
-        void (*setSecure)(id, SEL, BOOL) = (void (*)(id, SEL, BOOL))[cpuWindow methodForSelector:@selector(_setSecure:)];
-        setSecure(cpuWindow, @selector(_setSecure:), YES);
-    }
-    
+    cpuWindow.windowLevel = UIWindowLevelAlert + 100.0; 
     cpuWindow.backgroundColor = UIColor.clearColor;
     cpuWindow.opaque = NO;
     cpuWindow.rootViewController = [[SBCPURootViewController alloc] init];
@@ -1130,10 +1133,10 @@ static void applySystemRefreshRate(void) {
         _div2.backgroundColor = [UIColor colorWithWhite:1.0f alpha:0.18f];
         [content addSubview:_div2];
 
-        // ✅ 修复 Bug 2 (温度图标被截断)：调整字体与排版确保不被截断
+        // ✅ 修复 Bug 2 (温度图标摆正)：新增文本居中对齐，确保图标不歪
         _tempIconLabel = [[UILabel alloc] init];
         _tempIconLabel.text = @"🌡";
-        _tempIconLabel.font = [UIFont systemFontOfSize:15];
+        _tempIconLabel.font = [UIFont systemFontOfSize:16];
         _tempIconLabel.textAlignment = NSTextAlignmentCenter;
         _tempIconLabel.adjustsFontSizeToFitWidth = YES;
         _tempIconLabel.minimumScaleFactor = 0.5f;
@@ -1589,11 +1592,11 @@ static void applySystemRefreshRate(void) {
     }
 
     if (showTemp) {
-        // ✅ 修复 Bug 2：重新调整 Emoji 宽度至 20 像素确保彻底居中不截断
-        CGFloat tempW = 56.0f;
+        // ✅ 修复 Bug 2：进一步扩宽温度模块，彻底解决 Emoji 宽度遮挡和偏斜的排版问题
+        CGFloat tempW = 60.0f;
         _tempIconLabel.frame = CGRectMake(currentX, padY + 2, 20, 22);
-        _tempValueLabel.frame = CGRectMake(currentX + 20, padY, tempW - 20, 14);
-        _tempSubLabel.frame = CGRectMake(currentX + 20, padY + 14, tempW - 20, 11);
+        _tempValueLabel.frame = CGRectMake(currentX + 22, padY, tempW - 22, 14);
+        _tempSubLabel.frame = CGRectMake(currentX + 22, padY + 14, tempW - 22, 11);
         currentX += tempW + 6.0f;
 
         if (actualShowCurrent) {
@@ -2121,7 +2124,7 @@ static void applySystemRefreshRate(void) {
     if (section == 3) return 3;
     if (section == 4) return 2;
     if (section == 5) return 5;
-    if (section == 6) return 2; // 🔌 电池温控与断充
+    if (section == 6) return 2; 
     return 6;
 }
 
@@ -2607,3 +2610,4 @@ static void registerV160Observers(void) {
         });
     }
 }
+
