@@ -210,7 +210,7 @@ static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate);
 static void applyVisibility(void);
 static void applyFloatingAlpha(void);
 static void updateFloatingSize(void);
-static void createCPUWindow(void);
+static void createCPUWindow(UIWindowScene *scene); // ✅ 修复：传入确定的 Scene
 static void openDetailView(void);
 static void openSettings(void);
 static void checkHighCPU(double cpu);
@@ -430,7 +430,6 @@ static void setHardwareChargingInhibit(BOOL inhibit) {
     }
 }
 
-// ✅ 修复 Bug 3: 绝对精准的底层网络检测，支持双卡并优先获取当前数据卡
 static NSString *getNetworkType(void) {
     struct ifaddrs *interfaces = NULL;
     int wifi = 0;
@@ -441,7 +440,6 @@ static NSString *getNetworkType(void) {
             if (temp_addr->ifa_addr && (temp_addr->ifa_addr->sa_family == AF_INET || temp_addr->ifa_addr->sa_family == AF_INET6)) {
                 NSString *name = [NSString stringWithUTF8String:temp_addr->ifa_name];
                 if ([name isEqualToString:@"en0"]) wifi = 1;
-                // 覆盖所有的现代蜂窝数据节点，解决 4G/5G 切换不刷新的问题
                 else if ([name hasPrefix:@"pdp_ip"] || [name hasPrefix:@"ipsec"] || [name hasPrefix:@"rmnet"] || [name hasPrefix:@"pdp"]) cell = 1;
             }
             temp_addr = temp_addr->ifa_next;
@@ -461,7 +459,6 @@ static NSString *getNetworkType(void) {
             
             if (networkInfo) {
                 NSString *tech = nil;
-                // 核心修复：优先读取当前正在使用数据流量的 SIM 卡
                 if ([networkInfo respondsToSelector:@selector(dataServiceIdentifier)] && [networkInfo respondsToSelector:@selector(serviceCurrentRadioAccessTechnology)]) {
                     NSString *dataServiceId = [networkInfo valueForKey:@"dataServiceIdentifier"];
                     NSDictionary *dict = [networkInfo valueForKey:@"serviceCurrentRadioAccessTechnology"];
@@ -608,21 +605,17 @@ static double getRealCPUFrequency(void) {
     return spec.maxFreqMHz;
 }
 
-// ⚠️ 核心修复 1: 放宽对 UIWindowScene 的筛选条件，防止 iOS 15 SpringBoard 中因状态不符导致返回 nil
+// 当被动需要获取 Scene 时使用的兜底方法
 static UIWindowScene *getWindowScene(void) {
     if (cpuWindow && cpuWindow.windowScene) return cpuWindow.windowScene;
     UIApplication *app = UIApplication.sharedApplication;
-    UIWindowScene *fallbackScene = nil;
     for (UIScene *scene in app.connectedScenes) {
         if ([scene isKindOfClass:UIWindowScene.class]) {
             UIWindowScene *ws = (UIWindowScene *)scene;
-            if (ws.activationState != UISceneActivationStateUnattached) {
-                return ws;
-            }
-            if (!fallbackScene) fallbackScene = ws;
+            if (ws.activationState != UISceneActivationStateUnattached) return ws;
         }
     }
-    return fallbackScene; // 即便找不到活跃的 Scene，也随便拿一个来兜底
+    return nil;
 }
 
 static UIInterfaceOrientation getActiveInterfaceOrientation(void) {
@@ -720,18 +713,13 @@ static void updateFloatingSize(void) {
     clampAndPositionFloatingView(floatingView.center, NO);
 }
 
-// ⚠️ 核心修复 1: 强行创建 UIWindow，即使在 iOS 15 SpringBoard 中找不到 WindowScene
-static void createCPUWindow(void) {
-    if (cpuWindow) return;
+// ✅ 核心修复：重构函数签名，直接传入确定激活的 UIWindowScene
+static void createCPUWindow(UIWindowScene *scene) {
+    if (cpuWindow) return; // 已创建则不再创建
 
     cpuWindow = [[SBCPUWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
-    
-    UIWindowScene *scene = getWindowScene();
-    if (scene) {
-        cpuWindow.windowScene = scene;
-    }
-    
-    cpuWindow.windowLevel = UIWindowLevelAlert + 100.0; 
+    cpuWindow.windowScene = scene; // iOS 15 强制要求 Window 必须挂载在活跃的 Scene 上
+    cpuWindow.windowLevel = UIWindowLevelStatusBar + 1500.0; // 极高层级，防止被灵动岛或状态栏遮挡
     cpuWindow.backgroundColor = UIColor.clearColor;
     cpuWindow.opaque = NO;
     cpuWindow.rootViewController = [[SBCPURootViewController alloc] init];
@@ -752,6 +740,14 @@ static void createCPUWindow(void) {
 
     applyFloatingAlpha();
     updateFloatingSize();
+    
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        registerV160Observers();
+        [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *timer) {
+            updateCPU();
+        }];
+    });
 }
 
 static void openDetailView(void) {
@@ -843,18 +839,15 @@ static void updateCPU(void) {
 
         // 🔌 智能温控断充核心逻辑
         if (smartChargeLimitEnable && temp > 0) {
-            // 温度超过设定阈值，且尚未断充时 -> 强制断充
             if (temp >= smartChargeLimitTemp && !isCurrentlyChargeInhibited) {
                 setHardwareChargingInhibit(YES);
                 isCurrentlyChargeInhibited = YES;
             } 
-            // 温度回落 1.5 度以下（防止来回横跳），且处于断充状态时 -> 恢复充电
             else if (temp <= (smartChargeLimitTemp - 1.5f) && isCurrentlyChargeInhibited) {
                 setHardwareChargingInhibit(NO);
                 isCurrentlyChargeInhibited = NO;
             }
         } 
-        // 如果功能被关闭了，但底层还在断充，赶紧恢复
         else if (!smartChargeLimitEnable && isCurrentlyChargeInhibited) {
             setHardwareChargingInhibit(NO);
             isCurrentlyChargeInhibited = NO;
@@ -1141,7 +1134,6 @@ static void applySystemRefreshRate(void) {
         _div2.backgroundColor = [UIColor colorWithWhite:1.0f alpha:0.18f];
         [content addSubview:_div2];
 
-        // ✅ 修复 Bug 2 (温度图标摆正)：新增文本居中对齐，确保图标不歪
         _tempIconLabel = [[UILabel alloc] init];
         _tempIconLabel.text = @"🌡";
         _tempIconLabel.font = [UIFont systemFontOfSize:16];
@@ -1185,7 +1177,6 @@ static void applySystemRefreshRate(void) {
         _currentSubLabel.font = [UIFont systemFontOfSize:8.5f weight:UIFontWeightMedium];
         [content addSubview:_currentSubLabel];
 
-        // 充电状态胶囊背景容器
         _bottomCapsule = [[UIView alloc] init];
         _bottomCapsule.backgroundColor = [UIColor colorWithWhite:1.0f alpha:0.10f];
         _bottomCapsule.layer.cornerRadius = 10.0f;
@@ -1194,13 +1185,11 @@ static void applySystemRefreshRate(void) {
         _bottomCapsule.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.12f].CGColor;
         [content addSubview:_bottomCapsule];
 
-        // 🔋 与电量严格同步的绿色进度指示条
         _batteryProgressView = [[UIView alloc] init];
         _batteryProgressView.backgroundColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:0.32f];
         _batteryProgressView.layer.cornerRadius = 10.0f;
         [_bottomCapsule addSubview:_batteryProgressView];
 
-        // 充电状态文字
         _statusLabel = [[UILabel alloc] init];
         _statusLabel.textColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
         _statusLabel.font = [UIFont systemFontOfSize:10 weight:UIFontWeightMedium];
@@ -1600,7 +1589,6 @@ static void applySystemRefreshRate(void) {
     }
 
     if (showTemp) {
-        // ✅ 修复 Bug 2：进一步扩宽温度模块，彻底解决 Emoji 宽度遮挡和偏斜的排版问题
         CGFloat tempW = 60.0f;
         _tempIconLabel.frame = CGRectMake(currentX, padY + 2, 20, 22);
         _tempValueLabel.frame = CGRectMake(currentX + 22, padY, tempW - 22, 14);
@@ -2594,21 +2582,30 @@ static void registerV160Observers(void) {
 }
 %end
 
-// ⚠️ 核心修复 2: 取消 %ctor 中不安全的粗暴延时，转为 Hook SpringBoard 生命周期来执行初始化
+
+// ✅ 核心修复：彻底解决 iOS 15 下不弹出的问题，靠监听 Scene 通知来激活窗口
 %hook SpringBoard
+
 - (void)applicationDidFinishLaunching:(id)application {
     %orig;
     
-    // 给系统留出 2 秒呼吸时间确保 UI 层已完全展开
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        createCPUWindow();
-        registerV160Observers();
-
-        [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *timer) {
-            updateCPU();
-        }];
-    });
+    // 方案 1：监听 iOS 15 系统发送的 Scene 激活通知，哪怕开机多慢也能准确抓住激活瞬间
+    [[NSNotificationCenter defaultCenter] addObserverForName:UISceneDidActivateNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification * _Nonnull note) {
+        UIScene *scene = note.object;
+        if ([scene isKindOfClass:[UIWindowScene class]]) {
+            createCPUWindow((UIWindowScene *)scene);
+        }
+    }];
+    
+    // 方案 2：应对软重启 (Respring) 场景，此时的 Scene 已经提前处于激活状态
+    for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+        if ([scene isKindOfClass:[UIWindowScene class]] && scene.activationState == UISceneActivationStateForegroundActive) {
+            createCPUWindow((UIWindowScene *)scene);
+            break;
+        }
+    }
 }
+
 %end
 
 
@@ -2623,7 +2620,6 @@ static void registerV160Observers(void) {
         NULL,
         CFNotificationSuspensionBehaviorDeliverImmediately
     );
-    
-    // 注意：已将注入逻辑移动到了上方的 %hook SpringBoard 的 applicationDidFinishLaunching: 阶段
+    // ⚠️ 注意：此处原有的 dispatch_after(5秒) 已被彻底移除！已交由上方的 SpringBoard Hook 进行精确的生命周期接管。
 }
 
