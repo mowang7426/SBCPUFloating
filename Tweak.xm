@@ -5,7 +5,6 @@
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #pragma clang diagnostic ignored "-Wunused-variable"
 #pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wunknown-warning-option"
 
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
@@ -28,7 +27,11 @@
 #define kPrefChangedNotification "com.yourname.sbcpufloating.prefschanged"
 #define kToggleNotification "com.yourname.sbcpufloating.toggle"
 
-#pragma mark - 1. IOKit 纯净 C 接口声明 (彻底避免 Theos 头文件符号冲突)
+#pragma mark - 1. IOKit 纯净 C 符号声明 (使用 extern "C" 解决 C++ Name Mangling 链接错误)
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef mach_port_t io_object_t;
 typedef io_object_t io_service_t;
@@ -41,12 +44,16 @@ typedef io_object_t io_registry_entry_t;
 #define kIOMasterPortDefault ((mach_port_t)0)
 #endif
 
-extern CFMutableDictionaryRef IOServiceMatching(const char *name);
-extern io_service_t IOServiceGetMatchingService(mach_port_t mainPort, CFDictionaryRef matching);
-extern CFTypeRef IORegistryEntryCreateCFProperty(io_registry_entry_t entry, CFStringRef key, CFAllocatorRef allocator, uint32_t options);
-extern kern_return_t IORegistryEntryCreateCFProperties(io_registry_entry_t entry, CFMutableDictionaryRef *properties, CFAllocatorRef allocator, uint32_t options);
-extern kern_return_t IORegistryEntrySetCFProperty(io_registry_entry_t entry, CFStringRef key, CFTypeRef property);
-extern kern_return_t IOObjectRelease(io_object_t object);
+CFMutableDictionaryRef IOServiceMatching(const char *name);
+io_service_t IOServiceGetMatchingService(mach_port_t mainPort, CFDictionaryRef matching);
+CFTypeRef IORegistryEntryCreateCFProperty(io_registry_entry_t entry, CFStringRef key, CFAllocatorRef allocator, uint32_t options);
+kern_return_t IORegistryEntryCreateCFProperties(io_registry_entry_t entry, CFMutableDictionaryRef *properties, CFAllocatorRef allocator, uint32_t options);
+kern_return_t IORegistryEntrySetCFProperty(io_registry_entry_t entry, CFStringRef key, CFTypeRef property);
+kern_return_t IOObjectRelease(io_object_t object);
+
+#ifdef __cplusplus
+}
+#endif
 
 #pragma mark - 2. 系统与私有类声明
 
@@ -272,7 +279,7 @@ static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
 
-// 🔥 Insulation (温控绝缘) 5大核心变量 🔥
+// 🔥 Insulation (温控绝缘) 5大真实生效破限变量 🔥
 // 0: 苹果原生温控, 1: 模拟低电频率, 2: 防止温控降频
 static NSInteger cpuMode = 2;                     
 static BOOL disableThermalDimming = YES;          // 屏幕: 温控暗屏
@@ -1228,6 +1235,7 @@ static void applySystemRefreshRate(void) {
     _currentValueLabel.text = [NSString stringWithFormat:@"%.0fmA", current];
     _statusLabel.text = isCharging ? @"🟢 正在充电" : @"⚪ 未在充电";
 
+    // 🔋 实时根据当前电量百分比计算绿色指示条宽度
     if (isCharging) {
         CGFloat capsuleW = _bottomCapsule.bounds.size.width;
         CGFloat capsuleH = _bottomCapsule.bounds.size.height > 0 ? _bottomCapsule.bounds.size.height : 22.0f;
@@ -2607,9 +2615,9 @@ static void registerV160Observers(void) {
 
 %ctor {
     NSString *processName = [NSProcessInfo processInfo].processName;
-    LoadPreferences();
-
     if ([processName isEqualToString:@"SpringBoard"]) {
+        LoadPreferences();
+
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             createCPUWindow();
             registerV160Observers();
