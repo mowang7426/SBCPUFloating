@@ -5,6 +5,7 @@
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #pragma clang diagnostic ignored "-Wunused-variable"
 #pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wunknown-warning-option"
 
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
@@ -27,7 +28,7 @@
 #define kPrefChangedNotification "com.yourname.sbcpufloating.prefschanged"
 #define kToggleNotification "com.yourname.sbcpufloating.toggle"
 
-#pragma mark - 1. IOKit 纯净 C 符号声明 (使用 extern "C" 解决 C++ Name Mangling 链接错误)
+#pragma mark - 1. 纯净 C 接口声明 (IOKit 基础电源接口)
 
 #ifdef __cplusplus
 extern "C" {
@@ -55,7 +56,24 @@ kern_return_t IOObjectRelease(io_object_t object);
 }
 #endif
 
-#pragma mark - 2. 系统与私有类声明
+#pragma mark - 2. Insulation 专属底层破限头文件声明 (对应 com.be-huge.insulation 核心类)
+
+@interface ContextAwareMitigationManager : NSObject
+- (int)currentMitigationLevel;
+- (BOOL)isLowPowerModeActive;
+@end
+
+@interface ComponentControl : NSObject
+- (int)calculateMitigationLevel;
+- (BOOL)isInPocket;
+- (BOOL)isInSunlight;
+@end
+
+@interface CPUPowerControl : NSObject
+- (int)getMitigationLevel;
+@end
+
+#pragma mark - 3. 系统与私有类声明
 
 @interface CAWindowServer : NSObject
 + (id)serverIfRunning;
@@ -108,7 +126,7 @@ kern_return_t IOObjectRelease(io_object_t object);
 - (BOOL)shouldShowInEmergencyCall;
 @end
 
-#pragma mark - 3. 设备规格与 SoC 识别数据结构
+#pragma mark - 4. 设备规格与 SoC 识别数据结构
 
 typedef struct {
     const char *platform;
@@ -147,7 +165,7 @@ static DeviceSpec getDeviceSpec(void) {
     return (DeviceSpec){machine, "iPhone", "Apple Silicon", activeCores, 3460.0, 4000};
 }
 
-#pragma mark - 4. 类接口前置声明
+#pragma mark - 5. 类接口前置声明
 
 @class SBCPUDetailViewController;
 
@@ -180,7 +198,7 @@ static DeviceSpec getDeviceSpec(void) {
 @property (nonatomic, strong) UILabel *currentSubLabel;
 
 @property (nonatomic, strong) UIView *bottomCapsule;
-@property (nonatomic, strong) UIView *batteryProgressView; // 🔋 充电进度条
+@property (nonatomic, strong) UIView *batteryProgressView;
 @property (nonatomic, strong) UILabel *statusLabel;
 
 @property (nonatomic, strong) UIView *collapsedContainerView;
@@ -239,7 +257,7 @@ static DeviceSpec getDeviceSpec(void) {
 - (void)refreshAllDetailData;
 @end
 
-#pragma mark - 5. 全局状态变量与配置定义
+#pragma mark - 6. 全局状态变量与配置定义
 
 static UIWindow *cpuWindow = nil;
 static SBCPUFloatingView *floatingView = nil;
@@ -271,15 +289,15 @@ static NSInteger dockMode = 0;
 static BOOL rememberPositionEnable = YES;
 
 static BOOL showCpuFrequency = YES;
-static BOOL showFps = YES;                       // 📊 显示 FPS 帧率开关
-static BOOL force120HzEnable = NO;               // 🎮 强制 120Hz 高刷模式
-static BOOL thermalProtectionEnable = YES;       // 🛡️ 智能温控降频保护开关
+static BOOL showFps = YES;
+static BOOL force120HzEnable = NO;
+static BOOL thermalProtectionEnable = YES;
 
 static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
 
-// 🔥 Insulation (温控绝缘) 5大真实生效破限变量 🔥
+// 🔥 Insulation (温控绝缘) 5大核心变量
 // 0: 苹果原生温控, 1: 模拟低电频率, 2: 防止温控降频
 static NSInteger cpuMode = 2;                     
 static BOOL disableThermalDimming = YES;          // 屏幕: 温控暗屏
@@ -290,12 +308,9 @@ static BOOL lockSunlightExposure = YES;           // 高级功能: 锁定阳光�
 static CGRect keyboardBeforeFrame;
 static BOOL keyboardMoved = NO;
 
-static uint64_t lastWifiInBytes = 0;
-static uint64_t lastWifiOutBytes = 0;
-static uint64_t lastCellInBytes = 0;
-static uint64_t lastCellOutBytes = 0;
-static uint64_t speedUpBytesPerSec = 0;
-static uint64_t speedDownBytesPerSec = 0;
+static uint64_t lastWifiInBytes = 0, lastWifiOutBytes = 0;
+static uint64_t lastCellInBytes = 0, lastCellOutBytes = 0;
+static uint64_t speedUpBytesPerSec = 0, speedDownBytesPerSec = 0;
 static CFAbsoluteTime lastNetSpeedTime = 0;
 
 static host_cpu_load_info_data_t prev_cpu_load;
@@ -304,7 +319,7 @@ static BOOL has_prev_cpu_load = NO;
 static UIWindowScene *getWindowScene(void);
 static UIInterfaceOrientation getActiveInterfaceOrientation(void);
 static double getSystemCPUUsage(void);
-static double getCPUFrequencyMHz(double currentCpuUsage);
+static double getRealHardwareCPUFrequency(void);
 static double getBatteryTemperatureInternal(void);
 static double getBatteryCurrentInternal(void);
 static BOOL isChargingInternal(void);
@@ -324,7 +339,50 @@ static BOOL isDeviceOverheated(void);
 static void applySystemRefreshRate(void);
 static void applyHardwareCpuGovernor(NSInteger mode);
 
-#pragma mark - 6. 🔥 系统温控与调频 Hook 组 🔥
+#pragma mark - 7. 🔥 双进程守护拦截 (SpringBoard + thermalmonitord) 🔥
+
+%group ThermalMonitorHooks
+
+%hook ContextAwareMitigationManager
+- (int)currentMitigationLevel {
+    if (cpuMode == 2) return 0;
+    if (cpuMode == 1) return 1;
+    return %orig;
+}
+- (BOOL)isLowPowerModeActive {
+    if (cpuMode == 1) return YES;
+    if (cpuMode == 2) return NO;
+    return %orig;
+}
+%end
+
+%hook ComponentControl
+- (int)calculateMitigationLevel {
+    if (cpuMode == 2) return 0;
+    if (cpuMode == 1) return 1;
+    return %orig;
+}
+- (BOOL)isInPocket {
+    if (disablePocketThermal) return NO;
+    return %orig;
+}
+- (BOOL)isInSunlight {
+    if (lockSunlightExposure) return YES;
+    return %orig;
+}
+%end
+
+%hook CPUPowerControl
+- (int)getMitigationLevel {
+    if (cpuMode == 2) return 0;
+    if (cpuMode == 1) return 1;
+    return %orig;
+}
+%end
+
+%end // ThermalMonitorHooks
+
+%group SpringBoardHooks
 
 %hook NSProcessInfo
 - (NSProcessInfoThermalState)thermalState {
@@ -408,7 +466,9 @@ static void applyHardwareCpuGovernor(NSInteger mode);
 }
 %end
 
-#pragma mark - 7. 真实系统级 CPU 调频与能耗调度
+%end // SpringBoardHooks
+
+#pragma mark - 8. 真实系统级 CPU 调频与能耗调度
 
 static void applyHardwareCpuGovernor(NSInteger mode) {
     static dispatch_once_t onceToken;
@@ -417,7 +477,6 @@ static void applyHardwareCpuGovernor(NSInteger mode) {
         dlopen("/System/Library/PrivateFrameworks/BatterySaver.framework/BatterySaver", RTLD_NOW);
     });
 
-    // 1. 设置 IOPMrootDomain 硬件电源域
     io_service_t rootDomain = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"));
     if (rootDomain) {
         if (mode == 1) {
@@ -431,7 +490,6 @@ static void applyHardwareCpuGovernor(NSInteger mode) {
         IOObjectRelease(rootDomain);
     }
 
-    // 2. 调用 _CDBatterySaver
     Class cdSaverClass = NSClassFromString(@"_CDBatterySaver");
     if (cdSaverClass && [cdSaverClass respondsToSelector:@selector(batterySaver)]) {
         _CDBatterySaver *saver = [cdSaverClass batterySaver];
@@ -440,7 +498,6 @@ static void applyHardwareCpuGovernor(NSInteger mode) {
         }
     }
 
-    // 3. 联动 SpringBoard 低电控制器
     Class sbLpmClass = NSClassFromString(@"SBLowPowerModeController");
     if (sbLpmClass && [sbLpmClass respondsToSelector:@selector(sharedInstance)]) {
         SBLowPowerModeController *lpm = [sbLpmClass sharedInstance];
@@ -451,7 +508,6 @@ static void applyHardwareCpuGovernor(NSInteger mode) {
         }
     }
 
-    // 4. 广播 Darwin 通知
     notify_post("com.apple.system.lowpowermode.changed");
 }
 
@@ -465,7 +521,7 @@ static BOOL isDeviceOverheated(void) {
     return (temp >= 43.0);
 }
 
-#pragma mark - 8. CADisplayLink 帧率监控与 ProMotion 微驱动
+#pragma mark - 9. CADisplayLink 帧率监控与 ProMotion 微驱动
 
 @interface SBCPUFPSHelper : NSObject
 + (instancetype)sharedInstance;
@@ -595,7 +651,7 @@ static void applySystemRefreshRate(void) {
     [[SBCPUFPSHelper sharedInstance] updateFrameRate];
 }
 
-#pragma mark - 9. SBCPUFloatingView 悬浮窗控件实现
+#pragma mark - 10. SBCPUFloatingView 悬浮窗控件实现
 
 @implementation SBCPUFloatingView
 
@@ -800,20 +856,33 @@ static void applySystemRefreshRate(void) {
 - (void)handleLongPress:(UILongPressGestureRecognizer *)longPress {
     if (longPress.state == UIGestureRecognizerStateBegan) {
         UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+        [generator prepare];
         [generator impactOccurred];
-        dispatch_async(dispatch_get_main_queue(), ^{ openDetailView(); });
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            openDetailView();
+        });
     }
 }
 
 - (void)resetInactivityTimer {
-    if (_inactivityTimer) { [_inactivityTimer invalidate]; _inactivityTimer = nil; }
+    if (_inactivityTimer) {
+        [_inactivityTimer invalidate];
+        _inactivityTimer = nil;
+    }
     if (autoCollapseEnable && !_isCollapsed && !settingsShowing && !detailShowing) {
-        _inactivityTimer = [NSTimer scheduledTimerWithTimeInterval:autoCollapseDelay target:self selector:@selector(inactivityTimerFired) userInfo:nil repeats:NO];
+        _inactivityTimer = [NSTimer scheduledTimerWithTimeInterval:autoCollapseDelay
+                                                             target:self
+                                                           selector:@selector(inactivityTimerFired)
+                                                           userInfo:nil
+                                                            repeats:NO];
     }
 }
 
 - (void)inactivityTimerFired {
-    if (!settingsShowing && !detailShowing && !_isCollapsed) [self collapseToEdgeAnimated:YES];
+    if (!settingsShowing && !detailShowing && !_isCollapsed) {
+        [self collapseToEdgeAnimated:YES];
+    }
 }
 
 - (void)collapseToEdgeAnimated:(BOOL)animated {
@@ -836,6 +905,7 @@ static void applySystemRefreshRate(void) {
     CGFloat targetY = MIN(MAX(self.center.y, minY), maxY);
 
     CGPoint targetCenter = CGPointMake(targetX, targetY);
+
     self.collapsedContainerView.hidden = NO;
 
     void (^animationsBlock)(void) = ^{
@@ -898,7 +968,7 @@ static void applySystemRefreshRate(void) {
     };
 
     if (animated) {
-        [UIView animateWithDuration:0.45 delay:0 usingSpringWithDamping:0.75 initialSpringVelocity:0.4 options:UIViewAnimationOptionAllowUserInteraction animations:animationsBlock completion:completionBlock];
+        [UIView animateWithDuration:0.45 delay:0 usingSpringWithDamping:0.75 initialSpringVelocity:0.4 options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState animations:animationsBlock completion:completionBlock];
     } else {
         animationsBlock();
         completionBlock(YES);
@@ -994,7 +1064,7 @@ static void applySystemRefreshRate(void) {
     };
 
     if (animated) {
-        [UIView animateWithDuration:0.45 delay:0 usingSpringWithDamping:0.75 initialSpringVelocity:0.5 options:UIViewAnimationOptionAllowUserInteraction animations:animationsBlock completion:completionBlock];
+        [UIView animateWithDuration:0.45 delay:0 usingSpringWithDamping:0.75 initialSpringVelocity:0.5 options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState animations:animationsBlock completion:completionBlock];
     } else {
         animationsBlock();
         completionBlock(YES);
@@ -1231,11 +1301,10 @@ static void applySystemRefreshRate(void) {
     _cpuFreqLabel.text = [NSString stringWithFormat:@"%.0f MHz", cpuFreq];
     _fpsValueLabel.text = [NSString stringWithFormat:@"%.0f", fps];
     _batteryValueLabel.text = [NSString stringWithFormat:@"%ld%%", (long)battery];
-    _tempValueLabel.text = (temp > 0) ? [NSString stringWithFormat:@"%.1f°C", temp] : @"--°C";
+    _tempValueLabel.text = [NSString stringWithFormat:@"%.1f°C", temp];
     _currentValueLabel.text = [NSString stringWithFormat:@"%.0fmA", current];
     _statusLabel.text = isCharging ? @"🟢 正在充电" : @"⚪ 未在充电";
 
-    // 🔋 实时根据当前电量百分比计算绿色指示条宽度
     if (isCharging) {
         CGFloat capsuleW = _bottomCapsule.bounds.size.width;
         CGFloat capsuleH = _bottomCapsule.bounds.size.height > 0 ? _bottomCapsule.bounds.size.height : 22.0f;
@@ -1432,7 +1501,7 @@ static void applySystemRefreshRate(void) {
     _labelsDict[@"电池当前电压"].text = (voltage > 0) ? [NSString stringWithFormat:@"%.2fV", voltage] : @"3.95V";
 
     double temp = getBatteryTemperatureInternal();
-    _labelsDict[@"电池当前温度"].text = (temp > -10) ? [NSString stringWithFormat:@"%.1f°C", temp] : @"--°C";
+    _labelsDict[@"电池当前温度"].text = [NSString stringWithFormat:@"%.1f°C", temp];
 
     _labelsDict[@"电池当前电量"].text = [NSString stringWithFormat:@"%ld%%", (long)batPercent];
 
@@ -2456,7 +2525,7 @@ static void updateCPU(void) {
             [self.navigationController pushViewController:vc animated:YES];
         } else if (indexPath.row == 2) {
             SBCPUTimePickerController *vc = [[SBCPUTimePickerController alloc] initWithStyle:UITableViewStyleInsetGrouped];
-            [self.navigationController pushViewController:vc animated:YES];
+            [self.navigationController pushViewController:vc];
         }
     } else if (indexPath.section == 2) {
         if (indexPath.row == 1) {
@@ -2549,7 +2618,7 @@ static void updateCPU(void) {
 
 @end
 
-#pragma mark - 17. 通知监听与 Tweak 入口 (%ctor)
+#pragma mark - 18. 通知监听与双进程入口 (%ctor)
 
 static void onCCNotificationReceived(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
     (void)center;
@@ -2587,6 +2656,7 @@ static void registerV160Observers(void) {
                     keyboardHeight = MIN(320.0, keyboardFrame.size.height);
                 }
 
+                Grid:
                 CGRect f = keyboardBeforeFrame;
                 f.origin.y = MAX(20.0, f.origin.y - keyboardHeight);
                 [UIView animateWithDuration:0.25 animations:^{ floatingView.frame = f; }];
@@ -2615,9 +2685,19 @@ static void registerV160Observers(void) {
 
 %ctor {
     NSString *processName = [NSProcessInfo processInfo].processName;
-    if ([processName isEqualToString:@"SpringBoard"]) {
-        LoadPreferences();
+    LoadPreferences();
 
+    CFNotificationCenterAddObserver(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        NULL,
+        onCCNotificationReceived,
+        CFSTR(kPrefChangedNotification),
+        NULL,
+        CFNotificationSuspensionBehaviorDeliverImmediately
+    );
+
+    if ([processName isEqualToString:@"SpringBoard"]) {
+        %init(SpringBoardHooks);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             createCPUWindow();
             registerV160Observers();
@@ -2626,6 +2706,8 @@ static void registerV160Observers(void) {
                 updateCPU();
             }];
         });
+    } else if ([processName isEqualToString:@"thermalmonitord"]) {
+        %init(ThermalMonitorHooks);
     }
 }
 
