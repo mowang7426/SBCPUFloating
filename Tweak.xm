@@ -234,6 +234,7 @@ static BOOL isChargingInternal(void);
 static double getSystemCPUUsage(void);
 static double getRealCPUFrequency(void);
 static void setHardwareChargingInhibit(BOOL inhibit);
+static NSString *getNetworkType(void);
 
 
 #pragma mark - 5. 底层 C 函数具体实现与 CFPreferences 全局引流引擎
@@ -266,37 +267,41 @@ static DeviceSpec getDeviceSpec(void) {
     return (DeviceSpec){machine, "iPhone", "Apple Silicon", activeCores, 3468.0, 4000};
 }
 
+// ✅ 修复 Bug 1 (配置丢失)：通过精准对应 kCFPreferencesCurrentUser 实现绝对持久化
 static BOOL getBoolPref(CFStringRef key, BOOL defaultVal) {
-    Boolean valid = NO;
-    Boolean val = CFPreferencesGetAppBooleanValue(key, kPrefAppID, &valid);
-    if (!valid) return defaultVal;
-    return val;
+    CFPropertyListRef val = CFPreferencesCopyValue(key, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    if (val) {
+        BOOL res = defaultVal;
+        if (CFGetTypeID(val) == CFBooleanGetTypeID()) {
+            res = CFBooleanGetValue((CFBooleanRef)val);
+        } else if (CFGetTypeID(val) == CFNumberGetTypeID()) {
+            int intVal; CFNumberGetValue((CFNumberRef)val, kCFNumberIntType, &intVal); res = (intVal != 0);
+        }
+        CFRelease(val); return res;
+    }
+    return defaultVal;
 }
 
 static float getFloatPref(CFStringRef key, float defaultVal) {
-    CFPropertyListRef val = CFPreferencesCopyAppValue(key, kPrefAppID);
+    CFPropertyListRef val = CFPreferencesCopyValue(key, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
     if (val) {
+        float res = defaultVal;
         if (CFGetTypeID(val) == CFNumberGetTypeID()) {
-            float res;
             CFNumberGetValue((CFNumberRef)val, kCFNumberFloatType, &res);
-            CFRelease(val);
-            return res;
         }
-        CFRelease(val);
+        CFRelease(val); return res;
     }
     return defaultVal;
 }
 
 static NSInteger getIntPref(CFStringRef key, NSInteger defaultVal) {
-    CFPropertyListRef val = CFPreferencesCopyAppValue(key, kPrefAppID);
+    CFPropertyListRef val = CFPreferencesCopyValue(key, kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
     if (val) {
+        NSInteger res = defaultVal;
         if (CFGetTypeID(val) == CFNumberGetTypeID()) {
-            NSInteger res;
             CFNumberGetValue((CFNumberRef)val, kCFNumberNSIntegerType, &res);
-            CFRelease(val);
-            return res;
         }
-        CFRelease(val);
+        CFRelease(val); return res;
     }
     return defaultVal;
 }
@@ -320,7 +325,6 @@ static void setIntPref(CFStringRef key, NSInteger value) {
 static void LoadPreferences(void) {
     CFPreferencesAppSynchronize(kPrefAppID);
 
-    // ✅ 修复 Bug 1：动态读取 isEnabled 开关，不再硬编码为 YES
     isEnabled = getBoolPref(CFSTR("isEnabled"), YES); 
     autoCollapseEnable = getBoolPref(CFSTR("autoCollapseEnable"), YES);
     autoCollapseDelay = getIntPref(CFSTR("autoCollapseDelay"), 4);
@@ -348,14 +352,12 @@ static void LoadPreferences(void) {
     showBatteryTemperature = getBoolPref(CFSTR("showBatteryTemperature"), YES);
     showBatteryCurrent = getBoolPref(CFSTR("showBatteryCurrent"), YES);
 
-    // 💡 Insulation 温控核心配置
     insulationCpuMode = getIntPref(CFSTR("insulationCpuMode"), 0);
     insulationDimmingEnable = getBoolPref(CFSTR("insulationDimmingEnable"), YES);
     insulationDisableThermometer = getBoolPref(CFSTR("insulationDisableThermometer"), NO);
     insulationDisablePocketTemp = getBoolPref(CFSTR("insulationDisablePocketTemp"), NO);
     insulationLockSunlight = getBoolPref(CFSTR("insulationLockSunlight"), NO);
 
-    // 🔌 智能断充读取
     smartChargeLimitEnable = getBoolPref(CFSTR("smartChargeLimitEnable"), NO);
     smartChargeLimitTemp = getFloatPref(CFSTR("smartChargeLimitTemp"), 38.0f);
 
@@ -405,11 +407,9 @@ static void SavePreferencesAndNotify(void) {
     setBoolPref(CFSTR("insulationDisablePocketTemp"), insulationDisablePocketTemp);
     setBoolPref(CFSTR("insulationLockSunlight"), insulationLockSunlight);
 
-    // 🔌 智能断充保存
     setBoolPref(CFSTR("smartChargeLimitEnable"), smartChargeLimitEnable);
     setFloatPref(CFSTR("smartChargeLimitTemp"), smartChargeLimitTemp);
     
-    // ✅ 修复 Bug 1：强制落盘写入，绝对不再丢失配置
     CFPreferencesSynchronize(kPrefAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
 
     if (showFps || force120HzEnable) {
@@ -422,7 +422,6 @@ static void SavePreferencesAndNotify(void) {
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), kPrefChangedNotification, NULL, NULL, YES);
 }
 
-// 🔌 硬件级旁路断充接口
 static void setHardwareChargingInhibit(BOOL inhibit) {
     io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBatteryManager"));
     if (service) {
@@ -545,6 +544,60 @@ static double getRealCPUFrequency(void) {
     return spec.maxFreqMHz;
 }
 
+// ✅ 修复 Bug 3 (4G/5G 显示不准)：绝对精准的底层网络探测函数
+static NSString *getNetworkType(void) {
+    struct ifaddrs *interfaces = NULL;
+    int wifi = 0;
+    int cell = 0;
+    if (getifaddrs(&interfaces) == 0) {
+        struct ifaddrs *temp_addr = interfaces;
+        while (temp_addr != NULL) {
+            if (temp_addr->ifa_addr && (temp_addr->ifa_addr->sa_family == AF_INET || temp_addr->ifa_addr->sa_family == AF_INET6)) {
+                NSString *name = [NSString stringWithUTF8String:temp_addr->ifa_name];
+                if ([name isEqualToString:@"en0"]) wifi = 1;
+                // 覆盖所有的现代蜂窝数据节点，解决 4G/5G 不刷新的问题
+                else if ([name hasPrefix:@"pdp_ip"] || [name hasPrefix:@"ipsec"] || [name hasPrefix:@"rmnet"] || [name hasPrefix:@"pdp"]) cell = 1;
+            }
+            temp_addr = temp_addr->ifa_next;
+        }
+        freeifaddrs(interfaces);
+    }
+    
+    if (wifi) return @"Wi-Fi 在线";
+    if (cell) {
+        @try {
+            static id networkInfo = nil;
+            static dispatch_once_t onceToken;
+            dispatch_once(&onceToken, ^{
+                Class CTClass = NSClassFromString(@"CTTelephonyNetworkInfo");
+                if (CTClass) networkInfo = [[CTClass alloc] init];
+            });
+            
+            if (networkInfo) {
+                NSString *tech = nil;
+                if ([networkInfo respondsToSelector:@selector(serviceCurrentRadioAccessTechnology)]) {
+                    NSDictionary *dict = [networkInfo valueForKey:@"serviceCurrentRadioAccessTechnology"];
+                    if ([dict isKindOfClass:[NSDictionary class]] && dict.allValues.count > 0) {
+                        tech = dict.allValues.firstObject;
+                    }
+                } 
+                if (!tech && [networkInfo respondsToSelector:@selector(currentRadioAccessTechnology)]) {
+                    tech = [networkInfo valueForKey:@"currentRadioAccessTechnology"];
+                }
+                
+                if (tech) {
+                    if ([tech isEqualToString:@"CTRadioAccessTechnologyNRNSA"] || [tech isEqualToString:@"CTRadioAccessTechnologyNR"]) return @"5G 网络";
+                    if ([tech isEqualToString:@"CTRadioAccessTechnologyLTE"]) return @"4G 网络";
+                    if ([tech isEqualToString:@"CTRadioAccessTechnologyWCDMA"] || [tech isEqualToString:@"CTRadioAccessTechnologyHSDPA"] || [tech isEqualToString:@"CTRadioAccessTechnologyHSUPA"] || [tech isEqualToString:@"CTRadioAccessTechnologyCDMA1x"] || [tech isEqualToString:@"CTRadioAccessTechnologyCDMAEVDORev0"] || [tech isEqualToString:@"CTRadioAccessTechnologyCDMAEVDORevA"] || [tech isEqualToString:@"CTRadioAccessTechnologyCDMAEVDORevB"] || [tech isEqualToString:@"CTRadioAccessTechnologyeHRPD"]) return @"3G 网络";
+                    if ([tech isEqualToString:@"CTRadioAccessTechnologyEdge"] || [tech isEqualToString:@"CTRadioAccessTechnologyGPRS"]) return @"2G 网络";
+                }
+            }
+        } @catch (NSException *e) {}
+        return @"蜂窝移动网络";
+    }
+    return @"无网络连接";
+}
+
 static UIWindowScene *getWindowScene(void) {
     if (cpuWindow && cpuWindow.windowScene) return cpuWindow.windowScene;
     UIApplication *app = UIApplication.sharedApplication;
@@ -660,8 +713,14 @@ static void createCPUWindow(void) {
 
     cpuWindow = [[SBCPUWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     cpuWindow.windowScene = scene;
-    // ✅ 修复 Bug 4：彻底提升 Window Level，保证完美悬浮在锁屏与控制中心上方
-    cpuWindow.windowLevel = UIWindowLevelAlert + 100.0; 
+    
+    // ✅ 修复 Bug 4：层级拔高到一千万，并且注入防覆盖安全层级，确保穿透锁屏与控制中心
+    cpuWindow.windowLevel = 10000000.0; 
+    if ([cpuWindow respondsToSelector:@selector(_setSecure:)]) {
+        void (*setSecure)(id, SEL, BOOL) = (void (*)(id, SEL, BOOL))[cpuWindow methodForSelector:@selector(_setSecure:)];
+        setSecure(cpuWindow, @selector(_setSecure:), YES);
+    }
+    
     cpuWindow.backgroundColor = UIColor.clearColor;
     cpuWindow.opaque = NO;
     cpuWindow.rootViewController = [[SBCPURootViewController alloc] init];
@@ -1071,9 +1130,13 @@ static void applySystemRefreshRate(void) {
         _div2.backgroundColor = [UIColor colorWithWhite:1.0f alpha:0.18f];
         [content addSubview:_div2];
 
+        // ✅ 修复 Bug 2 (温度图标被截断)：调整字体与排版确保不被截断
         _tempIconLabel = [[UILabel alloc] init];
         _tempIconLabel.text = @"🌡";
-        _tempIconLabel.font = [UIFont systemFontOfSize:16];
+        _tempIconLabel.font = [UIFont systemFontOfSize:15];
+        _tempIconLabel.textAlignment = NSTextAlignmentCenter;
+        _tempIconLabel.adjustsFontSizeToFitWidth = YES;
+        _tempIconLabel.minimumScaleFactor = 0.5f;
         [content addSubview:_tempIconLabel];
 
         _tempValueLabel = [[UILabel alloc] init];
@@ -1411,7 +1474,6 @@ static void applySystemRefreshRate(void) {
         self.center = targetCenter;
     } else if (pan.state == UIGestureRecognizerStateEnded || pan.state == UIGestureRecognizerStateCancelled) {
         if (rememberPositionEnable) {
-            // 这里我们通过 UserDefaults 在 SpringBoard 内保存位置，不影响沙盒内 App 也能读取 kPrefAppID
             [[NSUserDefaults standardUserDefaults] setObject:NSStringFromCGRect(self.frame) forKey:@"SBCPU.LastFrame"];
             [[NSUserDefaults standardUserDefaults] synchronize];
         }
@@ -1509,11 +1571,10 @@ static void applySystemRefreshRate(void) {
     }
 
     if (showBattery) {
-        // ✅ 修复：微调电池宽度给大数字或特殊图标让位
-        CGFloat batW = 50.0f; 
-        _batteryIconLabel.frame = CGRectMake(currentX, padY + 3, 18, 22);
-        _batteryValueLabel.frame = CGRectMake(currentX + 20, padY, batW - 20, 14);
-        _batterySubLabel.frame = CGRectMake(currentX + 20, padY + 14, batW - 20, 11);
+        CGFloat batW = 48.0f;
+        _batteryIconLabel.frame = CGRectMake(currentX, padY + 3, 16, 22);
+        _batteryValueLabel.frame = CGRectMake(currentX + 18, padY, batW - 18, 14);
+        _batterySubLabel.frame = CGRectMake(currentX + 18, padY + 14, batW - 18, 11);
         currentX += batW + 6.0f;
 
         if (showTemp || actualShowCurrent) {
@@ -1528,11 +1589,11 @@ static void applySystemRefreshRate(void) {
     }
 
     if (showTemp) {
-        // ✅ 修复 Bug 2：扩大温度 Emoji 的宽度，从 16 扩大到 20 像素，防止被截断
+        // ✅ 修复 Bug 2：重新调整 Emoji 宽度至 20 像素确保彻底居中不截断
         CGFloat tempW = 56.0f;
-        _tempIconLabel.frame = CGRectMake(currentX, padY + 3, 20, 22);
-        _tempValueLabel.frame = CGRectMake(currentX + 22, padY, tempW - 22, 14);
-        _tempSubLabel.frame = CGRectMake(currentX + 22, padY + 14, tempW - 22, 11);
+        _tempIconLabel.frame = CGRectMake(currentX, padY + 2, 20, 22);
+        _tempValueLabel.frame = CGRectMake(currentX + 20, padY, tempW - 20, 14);
+        _tempSubLabel.frame = CGRectMake(currentX + 20, padY + 14, tempW - 20, 11);
         currentX += tempW + 6.0f;
 
         if (actualShowCurrent) {
@@ -1547,10 +1608,10 @@ static void applySystemRefreshRate(void) {
     }
 
     if (actualShowCurrent) {
-        CGFloat curW = 62.0f;
-        _currentIconLabel.frame = CGRectMake(currentX, padY + 3, 16, 22);
-        _currentValueLabel.frame = CGRectMake(currentX + 18, padY, curW - 18, 14);
-        _currentSubLabel.frame = CGRectMake(currentX + 18, padY + 14, curW - 18, 11);
+        CGFloat curW = 58.0f;
+        _currentIconLabel.frame = CGRectMake(currentX, padY + 3, 14, 22);
+        _currentValueLabel.frame = CGRectMake(currentX + 16, padY, curW - 16, 14);
+        _currentSubLabel.frame = CGRectMake(currentX + 16, padY + 14, curW - 16, 11);
         currentX += curW + 6.0f;
     }
 
@@ -1819,7 +1880,9 @@ static void applySystemRefreshRate(void) {
 
     _labelsDict[@"设备名称"].text = [NSString stringWithUTF8String:spec.modelName];
     _labelsDict[@"软件版本"].text = [UIDevice currentDevice].systemVersion;
-    _labelsDict[@"网络信息"].text = @"[-42dBm] PDCN_5G";
+    
+    // ✅ 修复 Bug 3：注入底层的、绝对精准的动态获取 4G/5G/WiFi 的函数
+    _labelsDict[@"网络信息"].text = getNetworkType();
     
     NSString *address = @"127.0.0.1";
     struct ifaddrs *interfaces = NULL;
@@ -1840,7 +1903,6 @@ static void applySystemRefreshRate(void) {
     _labelsDict[@"内网地址"].text = address;
 
     struct ifaddrs *ifa_list = NULL;
-    // ✅ 修复 Bug 3：扩大 4G/5G 网络接点的检测范围，涵盖所有现代蜂窝数据节点，彻底修复读取不准
     if (getifaddrs(&ifa_list) >= 0) {
         uint64_t wifiIn = 0, wifiOut = 0, cellIn = 0, cellOut = 0;
         for (struct ifaddrs *ifa = ifa_list; ifa; ifa = ifa->ifa_next) {
@@ -1848,12 +1910,8 @@ static void applySystemRefreshRate(void) {
             struct if_data *if_data = (struct if_data *)ifa->ifa_data;
             if (!if_data) continue;
             NSString *name = [NSString stringWithUTF8String:ifa->ifa_name];
-            if ([name hasPrefix:@"en"]) { 
-                wifiIn += if_data->ifi_ibytes; wifiOut += if_data->ifi_obytes; 
-            }
-            else if ([name hasPrefix:@"pdp_ip"] || [name hasPrefix:@"ipsec"] || [name hasPrefix:@"rmnet"] || [name hasPrefix:@"pdp"]) { 
-                cellIn += if_data->ifi_ibytes; cellOut += if_data->ifi_obytes; 
-            }
+            if ([name hasPrefix:@"en"]) { wifiIn += if_data->ifi_ibytes; wifiOut += if_data->ifi_obytes; }
+            else if ([name hasPrefix:@"pdp_ip"] || [name hasPrefix:@"ipsec"] || [name hasPrefix:@"rmnet"] || [name hasPrefix:@"pdp"]) { cellIn += if_data->ifi_ibytes; cellOut += if_data->ifi_obytes; }
         }
         freeifaddrs(ifa_list);
         CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
@@ -2063,7 +2121,7 @@ static void applySystemRefreshRate(void) {
     if (section == 3) return 3;
     if (section == 4) return 2;
     if (section == 5) return 5;
-    if (section == 6) return 2;
+    if (section == 6) return 2; // 🔌 电池温控与断充
     return 6;
 }
 
@@ -2549,4 +2607,3 @@ static void registerV160Observers(void) {
         });
     }
 }
-
