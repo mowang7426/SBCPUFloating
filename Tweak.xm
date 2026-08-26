@@ -178,6 +178,11 @@ static BOOL insulationDisableThermometer = NO;
 static BOOL insulationDisablePocketTemp = NO;     
 static BOOL insulationLockSunlight = NO;          
 
+// 🔌 智能温控断充 全局变量
+static BOOL smartChargeLimitEnable = NO;
+static float smartChargeLimitTemp = 38.0f;
+static BOOL isCurrentlyChargeInhibited = NO;      // 记录当前是否处于底层断充状态
+
 static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
@@ -228,6 +233,7 @@ static double getBatteryCurrentInternal(void);
 static BOOL isChargingInternal(void);
 static double getSystemCPUUsage(void);
 static double getRealCPUFrequency(void);
+static void setHardwareChargingInhibit(BOOL inhibit);
 
 
 #pragma mark - 5. 底层 C 函数具体实现与 CFPreferences 全局引流引擎
@@ -345,6 +351,10 @@ static void LoadPreferences(void) {
     insulationDisablePocketTemp = getBoolPref(CFSTR("insulationDisablePocketTemp"), NO);
     insulationLockSunlight = getBoolPref(CFSTR("insulationLockSunlight"), NO);
 
+    // 🔌 智能断充配置
+    smartChargeLimitEnable = getBoolPref(CFSTR("smartChargeLimitEnable"), NO);
+    smartChargeLimitTemp = getFloatPref(CFSTR("smartChargeLimitTemp"), 38.0f);
+
     NSString *processName = [NSProcessInfo processInfo].processName;
     if ([processName isEqualToString:@"SpringBoard"]) {
         applyVisibility();
@@ -390,6 +400,10 @@ static void SavePreferencesAndNotify(void) {
     setBoolPref(CFSTR("insulationDisableThermometer"), insulationDisableThermometer);
     setBoolPref(CFSTR("insulationDisablePocketTemp"), insulationDisablePocketTemp);
     setBoolPref(CFSTR("insulationLockSunlight"), insulationLockSunlight);
+
+    // 🔌 智能断充保存
+    setBoolPref(CFSTR("smartChargeLimitEnable"), smartChargeLimitEnable);
+    setFloatPref(CFSTR("smartChargeLimitTemp"), smartChargeLimitTemp);
     
     CFPreferencesAppSynchronize(kPrefAppID);
 
@@ -402,6 +416,16 @@ static void SavePreferencesAndNotify(void) {
 
     // 通知所有 App 重新加载配置
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), kPrefChangedNotification, NULL, NULL, YES);
+}
+
+// 🔌 硬件级旁路断充接口
+static void setHardwareChargingInhibit(BOOL inhibit) {
+    // 写入 IOKit 屏蔽充电属性，这会在底层直接拦截电源 IC 的充电行为
+    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceNameMatching("AppleSmartBatteryManager"));
+    if (service) {
+        IORegistryEntrySetCFProperty(service, CFSTR("ChargeInhibit"), inhibit ? kCFBooleanTrue : kCFBooleanFalse);
+        IOObjectRelease(service);
+    }
 }
 
 static NSDictionary *getRealBatteryDetails(void) {
@@ -723,6 +747,7 @@ static void checkHighCPU(double cpu) {
     }
 }
 
+// 📌 更新循环：加入硬件断充检查逻辑
 static void updateCPU(void) {
     if (!isEnabled) return;
 
@@ -743,6 +768,25 @@ static void updateCPU(void) {
         double current = getBatteryCurrentInternal();
         BOOL charging = isChargingInternal();
 
+        // 🔌 智能温控断充核心逻辑
+        if (smartChargeLimitEnable && temp > 0) {
+            // 温度超过设定阈值，且尚未断充时 -> 强制断充
+            if (temp >= smartChargeLimitTemp && !isCurrentlyChargeInhibited) {
+                setHardwareChargingInhibit(YES);
+                isCurrentlyChargeInhibited = YES;
+            } 
+            // 温度回落 1.5 度以下（防止来回横跳），且处于断充状态时 -> 恢复充电
+            else if (temp <= (smartChargeLimitTemp - 1.5f) && isCurrentlyChargeInhibited) {
+                setHardwareChargingInhibit(NO);
+                isCurrentlyChargeInhibited = NO;
+            }
+        } 
+        // 如果功能被关闭了，但底层还在断充，赶紧恢复
+        else if (!smartChargeLimitEnable && isCurrentlyChargeInhibited) {
+            setHardwareChargingInhibit(NO);
+            isCurrentlyChargeInhibited = NO;
+        }
+
         if (charging && !previousChargingState) {
             if (floatingView.isCollapsed) {
                 [floatingView expandFromEdgeAnimated:YES];
@@ -750,6 +794,13 @@ static void updateCPU(void) {
             [floatingView triggerPlugAnimation];
         }
         previousChargingState = charging;
+
+        // 若处于断充状态，UI 提示
+        if (isCurrentlyChargeInhibited) {
+            floatingView.statusLabel.text = @"⚠️ 高温旁路供电中";
+            floatingView.statusLabel.textColor = [UIColor systemOrangeColor];
+            floatingView.statusDot.backgroundColor = [UIColor systemOrangeColor];
+        }
 
         [floatingView updateDataWithCPU:cpu 
                                 cpuFreq:cpuFreq
@@ -1551,7 +1602,12 @@ static void applySystemRefreshRate(void) {
     _batteryValueLabel.text = [NSString stringWithFormat:@"%ld%%", (long)battery];
     _tempValueLabel.text = (temp > 0) ? [NSString stringWithFormat:@"%.1f°C", temp] : @"--°C";
     _currentValueLabel.text = [NSString stringWithFormat:@"%.0fmA", current];
-    _statusLabel.text = isCharging ? @"🟢 正在充电" : @"⚪ 未在充电";
+    
+    // 如果不在断充状态，才显示正常的充电文字（否则保留之前的⚠️橘色警告）
+    if (!isCurrentlyChargeInhibited) {
+        _statusLabel.text = isCharging ? @"🟢 正在充电" : @"⚪ 未在充电";
+        _statusLabel.textColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
+    }
 
     if (isCharging) {
         CGFloat capsuleW = _bottomCapsule.bounds.size.width;
@@ -1565,131 +1621,18 @@ static void applySystemRefreshRate(void) {
 
     _miniCpuLabel.text = [NSString stringWithFormat:@"%.0f%%", cpu];
     
-    UIColor *statusColor = [UIColor colorWithRed:0.22f green:0.74f blue:0.97f alpha:1.0f];
-    if (isCharging) statusColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
-    else if (cpu >= 80.0 || temp >= 42.0) statusColor = [UIColor colorWithRed:1.0f green:0.23f blue:0.19f alpha:1.0f];
-    else if (temp >= 38.0) statusColor = [UIColor colorWithRed:1.0f green:0.62f blue:0.04f alpha:1.0f];
-    
-    _statusDot.backgroundColor = statusColor;
-}
-
-@end
-
-
-@implementation SBCPUPassthroughView
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    UIView *hitView = [super hitTest:point withEvent:event];
-    if (hitView == self) return nil;
-    return hitView;
-}
-@end
-
-
-@implementation SBCPURootViewController
-
-- (void)loadView {
-    SBCPUPassthroughView *passView = [[SBCPUPassthroughView alloc] initWithFrame:UIScreen.mainScreen.bounds];
-    passView.backgroundColor = UIColor.clearColor;
-    self.view = passView;
-}
-
-- (BOOL)shouldAutorotate { return YES; }
-- (UIInterfaceOrientationMask)supportedInterfaceOrientations { return UIInterfaceOrientationMaskAll; }
-- (BOOL)prefersStatusBarHidden { return YES; }
-
-- (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator {
-    [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
-    [coordinator animateAlongsideTransition:^(id<UIViewControllerTransitionCoordinatorContext> context) {
-        (void)context;
-        if (floatingView) updateFloatingSize();
-    } completion:nil];
-}
-
-@end
-
-
-@implementation SBCPUWindow
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    if (settingsShowing || detailShowing) return [super hitTest:point withEvent:event];
-
-    if (floatingView && !floatingView.hidden && floatingView.alpha > 0.01) {
-        CGPoint p = [self convertPoint:point toView:floatingView];
-        if ([floatingView pointInside:p withEvent:event]) return floatingView;
+    if (!isCurrentlyChargeInhibited) {
+        UIColor *statusColor = [UIColor colorWithRed:0.22f green:0.74f blue:0.97f alpha:1.0f];
+        if (isCharging) statusColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
+        else if (cpu >= 80.0 || temp >= 42.0) statusColor = [UIColor colorWithRed:1.0f green:0.23f blue:0.19f alpha:1.0f];
+        else if (temp >= 38.0) statusColor = [UIColor colorWithRed:1.0f green:0.62f blue:0.04f alpha:1.0f];
+        _statusDot.backgroundColor = statusColor;
     }
-    return nil;
 }
+
 @end
 
-
-@implementation SBCPUValuePickerController
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { 
-    (void)tableView;
-    (void)section;
-    return 7; 
-}
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { 
-    (void)tableView;
-    (void)section;
-    return @"CPU 触发值"; 
-}
-
-- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    (void)tableView;
-    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
-    NSArray *titles = @[@"80%", @"100%", @"120%", @"140%", @"160%", @"180%", @"200%"];
-    NSArray *values = @[@80, @100, @120, @140, @160, @180, @200];
-
-    cell.textLabel.text = titles[indexPath.row];
-    if ([values[indexPath.row] doubleValue] == logoutCPUThreshold) {
-        cell.accessoryType = UITableViewCellAccessoryCheckmark;
-    }
-    return cell;
-}
-
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
-    [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    NSArray *values = @[@80, @100, @120, @140, @160, @180, @200];
-    logoutCPUThreshold = [values[indexPath.row] doubleValue];
-    SavePreferencesAndNotify();
-    [tableView reloadData];
-}
-@end
-
-
-@implementation SBCPUTimePickerController
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { 
-    (void)tableView;
-    (void)section;
-    return 7; 
-}
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { 
-    (void)tableView;
-    (void)section;
-    return @"持续时间"; 
-}
-
-- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    (void)tableView;
-    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
-    NSArray *titles = @[@"10 秒", @"30 秒", @"60 秒", @"120 秒", @"180 秒", @"300 秒", @"600 秒"];
-    NSArray *values = @[@10, @30, @60, @120, @180, @300, @600];
-
-    cell.textLabel.text = titles[indexPath.row];
-    if ([values[indexPath.row] integerValue] == logoutDuration) {
-        cell.accessoryType = UITableViewCellAccessoryCheckmark;
-    }
-    return cell;
-}
-
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
-    [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    NSArray *values = @[@10, @30, @60, @120, @180, @300, @600];
-    logoutDuration = [values[indexPath.row] integerValue];
-    SavePreferencesAndNotify();
-    [tableView reloadData];
-}
-@end
-
+#pragma mark - 8. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
 
 @implementation SBCPUDetailViewController
 
@@ -1989,7 +1932,7 @@ static void applySystemRefreshRate(void) {
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { 
     (void)tableView;
-    return 7; 
+    return 8; // 💡 增加到 8 个区域
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
@@ -2000,7 +1943,8 @@ static void applySystemRefreshRate(void) {
     if (section == 3) return 3;
     if (section == 4) return 2;
     if (section == 5) return 5;
-    return 6;
+    if (section == 6) return 2; // 🔌 电池温控与断充 (新增的2个Row)
+    return 6; // 📍 位置与显示
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
@@ -2011,6 +1955,7 @@ static void applySystemRefreshRate(void) {
     if (section == 3) return @"🧠 智能选项";
     if (section == 4) return @"🎮 性能与高刷锁定";
     if (section == 5) return @"🌡️ Insulation (温控核心)"; 
+    if (section == 6) return @"🔌 电池温控与断充"; // 💡 新增区块标题
     return @"📍 位置与显示";
 }
 
@@ -2018,6 +1963,9 @@ static void applySystemRefreshRate(void) {
     (void)tableView;
     if (section == 4) {
         return @"💡 功能说明：\n1. 强制 120Hz 高刷模式：通过底层硬件合成器与微像素渲染驱动，全局锁定 120Hz 满帧，彻底杜绝屏幕静止降频。\n2. 智能温控降频保护：开启时若检测到电池温度 ≥43°C 或系统过热警报将自动降频保护；关闭后解除温控限制，发热也强行保持 120Hz。";
+    }
+    if (section == 6) {
+        return @"💡 边充边玩黄金组合：开启高温智能断充后，一旦温度超过阈值，系统将物理切断电池充电改为直接由电源线供电（旁路供电）。配合 Insulation 防降频模块，可实现：大型游戏满帧不暗屏 + 电池不发热鼓包！";
     }
     return nil;
 }
@@ -2034,6 +1982,13 @@ static void applySystemRefreshRate(void) {
     SavePreferencesAndNotify();
     updateFloatingSize();
     [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:3 inSection:2]] withRowAnimation:UITableViewRowAnimationNone];
+}
+
+// 🔌 智能断充温度阈值调节
+- (void)changeChargeTempSlider:(UISlider *)slider {
+    smartChargeLimitTemp = slider.value;
+    SavePreferencesAndNotify();
+    [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:1 inSection:6]] withRowAnimation:UITableViewRowAnimationNone];
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -2159,6 +2114,22 @@ static void applySystemRefreshRate(void) {
             cell.accessoryView = sw;
         }
     } else if (indexPath.section == 6) {
+        // 🔌 新增电池智能温控断充模块
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"开启高温智能断充";
+            UISwitch *sw = [UISwitch new];
+            sw.on = smartChargeLimitEnable;
+            [sw addTarget:self action:@selector(changeSmartChargeLimit:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"断充温度阈值";
+            UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,130,30)];
+            slider.minimumValue = 30.0; slider.maximumValue = 45.0; slider.value = smartChargeLimitTemp;
+            [slider addTarget:self action:@selector(changeChargeTempSlider:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = slider;
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%.1f°C", smartChargeLimitTemp];
+        }
+    } else if (indexPath.section == 7) {
         if (indexPath.row == 0) {
             cell.textLabel.text = @"记忆悬浮窗位置";
             UISwitch *sw = [UISwitch new];
@@ -2287,31 +2258,32 @@ static void applySystemRefreshRate(void) {
 - (void)changeKeyboardAvoid:(UISwitch *)sw { keyboardAvoidEnable = sw.isOn; SavePreferencesAndNotify(); }
 - (void)changeSmartDock:(UISwitch *)sw { smartDockEnable = sw.isOn; SavePreferencesAndNotify(); }
 - (void)changeRememberPosition:(UISwitch *)sw { rememberPositionEnable = sw.isOn; SavePreferencesAndNotify(); }
-
-- (void)changeForce120Hz:(UISwitch *)sw {
-    force120HzEnable = sw.isOn;
-    SavePreferencesAndNotify();
-}
-
-- (void)changeThermalProtection:(UISwitch *)sw {
-    thermalProtectionEnable = sw.isOn;
-    SavePreferencesAndNotify();
-}
-
+- (void)changeForce120Hz:(UISwitch *)sw { force120HzEnable = sw.isOn; SavePreferencesAndNotify(); }
+- (void)changeThermalProtection:(UISwitch *)sw { thermalProtectionEnable = sw.isOn; SavePreferencesAndNotify(); }
 - (void)changeShowCpuFreq:(UISwitch *)sw { showCpuFrequency = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
 - (void)changeShowFps:(UISwitch *)sw { showFps = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
 - (void)changeShowBattery:(UISwitch *)sw { showBatteryPercent = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
 - (void)changeShowTemp:(UISwitch *)sw { showBatteryTemperature = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
 - (void)changeShowCurrent:(UISwitch *)sw { showBatteryCurrent = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
-
 - (void)changeInsulationDimming:(UISwitch *)sw { insulationDimmingEnable = sw.isOn; SavePreferencesAndNotify(); }
 - (void)changeInsulationThermometer:(UISwitch *)sw { insulationDisableThermometer = sw.isOn; SavePreferencesAndNotify(); }
 - (void)changeInsulationPocket:(UISwitch *)sw { insulationDisablePocketTemp = sw.isOn; SavePreferencesAndNotify(); }
 - (void)changeInsulationSunlight:(UISwitch *)sw { insulationLockSunlight = sw.isOn; SavePreferencesAndNotify(); }
 
+// 🔌 断充触发保存事件
+- (void)changeSmartChargeLimit:(UISwitch *)sw { 
+    smartChargeLimitEnable = sw.isOn; 
+    SavePreferencesAndNotify(); 
+    if (!smartChargeLimitEnable && isCurrentlyChargeInhibited) {
+        // 关闭时立刻恢复供电
+        setHardwareChargingInhibit(NO);
+        isCurrentlyChargeInhibited = NO;
+    }
+}
+
 @end
 
-#pragma mark - 7. 跨进程监听注册
+#pragma mark - 13. 跨进程监听与 Tweak 全局注入入口
 
 static void onCCNotificationReceived(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
     (void)center;
@@ -2366,7 +2338,7 @@ static void registerV160Observers(void) {
     });
 }
 
-#pragma mark - 8. Insulation 模块核心注入 (防降频 / 模拟低电 / 防暗屏)
+#pragma mark - 14. Insulation 模块核心注入 (防降频 / 模拟低电 / 防暗屏)
 
 %hook NSProcessInfo
 - (NSProcessInfoThermalState)thermalState {
@@ -2427,8 +2399,6 @@ static void registerV160Observers(void) {
 }
 %end
 
-#pragma mark - 9. 插件初始化入口
-
 %ctor {
     // 💡 保证每一个被注入的进程（包括 SpringBoard、游戏、App）都会先去读取最新配置
     LoadPreferences();
@@ -2443,7 +2413,7 @@ static void registerV160Observers(void) {
         CFNotificationSuspensionBehaviorDeliverImmediately
     );
 
-    // 仅在主桌面加载悬浮窗 UI
+    // 仅在主桌面加载悬浮窗 UI 和时钟循环引擎
     NSString *processName = [NSProcessInfo processInfo].processName;
     if ([processName isEqualToString:@"SpringBoard"]) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
