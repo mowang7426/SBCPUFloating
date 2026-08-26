@@ -1,12 +1,4 @@
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunguarded-availability-new"
-#pragma clang diagnostic ignored "-Wunguarded-availability"
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#pragma clang diagnostic ignored "-Wunused-variable"
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wunknown-warning-option"
-
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 #import <mach/mach.h>
@@ -21,7 +13,6 @@
 #import <net/if.h>
 #import <arpa/inet.h>
 #import <CoreMotion/CoreMotion.h>
-#import <notify.h>
 
 #ifndef kIOMainPortDefault
 #define kIOMainPortDefault kIOMasterPortDefault
@@ -46,37 +37,9 @@
 - (float)minimumRefreshRate;
 - (float)maximumRefreshRate;
 - (float)idealRefreshRate;
-- (void)setUserBrightness:(float)brightness;
 @end
 
-#pragma mark - 2. Insulation 温控破限系统类声明
-
-@interface SBLowPowerModeController : NSObject
-+ (id)sharedInstance;
-- (BOOL)isLowPowerModeEnabled;
-- (void)setLowPowerModeEnabled:(BOOL)enabled;
-- (void)_setLowPowerModeEnabled:(BOOL)enabled;
-@end
-
-@interface SBBacklightController : NSObject
-+ (id)sharedInstance;
-- (void)setThermalWarningState:(NSInteger)state;
-- (void)_updateBacklightFactor:(float)factor;
-@end
-
-@interface SBThermalController : NSObject
-+ (id)sharedInstance;
-- (void)showThermalAlertIfNecessary;
-- (void)_respondToThermalCondition:(NSInteger)condition;
-- (BOOL)isInSunlight;
-- (BOOL)isInPocket;
-@end
-
-@interface SBThermalWarningAlertItem : NSObject
-- (BOOL)shouldShowInEmergencyCall;
-@end
-
-#pragma mark - 3. 设备规格与 SoC 识别数据结构
+#pragma mark - 2. 设备规格与 SoC 识别数据结构
 
 typedef struct {
     const char *platform;
@@ -115,7 +78,7 @@ static DeviceSpec getDeviceSpec(void) {
     return (DeviceSpec){machine, "iPhone", "Apple Silicon", activeCores, 3460.0, 4000};
 }
 
-#pragma mark - 4. 前置声明与类定义
+#pragma mark - 3. 前置声明与类定义
 
 @interface SpringBoard : UIApplication
 - (UIInterfaceOrientation)activeInterfaceOrientation;
@@ -211,7 +174,7 @@ static DeviceSpec getDeviceSpec(void) {
 - (void)refreshAllDetailData;
 @end
 
-#pragma mark - 5. 全局状态变量
+#pragma mark - 4. 全局状态变量
 
 static UIWindow *cpuWindow = nil;
 static SBCPUFloatingView *floatingView = nil;
@@ -251,13 +214,6 @@ static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
 
-// 🔥 Insulation 专属状态变量
-static NSInteger cpuMode = 2;                     // 0: 原生, 1: 模拟低电, 2: 防降频
-static BOOL disableThermalDimming = YES;          // 温控暗屏
-static BOOL blockThermalAlert = NO;               // 禁温度计弹窗
-static BOOL disablePocketThermal = YES;           // 禁用口袋高温
-static BOOL lockSunlightExposure = YES;           // 锁定阳光暴晒
-
 static CGRect keyboardBeforeFrame;
 static BOOL keyboardMoved = NO;
 
@@ -293,66 +249,10 @@ static void updateCPU(void);
 static void createCPUWindow(void);
 static BOOL isDeviceOverheated(void);
 static void applySystemRefreshRate(void);
-static void applyHardwareCpuGovernor(NSInteger mode);
 
-#pragma mark - 6. 🔥 真实系统级温控 Hook 与低电限频实现
-
-%hook NSProcessInfo
-- (NSProcessInfoThermalState)thermalState {
-    if (cpuMode == 2) return NSProcessInfoThermalStateNominal;
-    if (cpuMode == 1) return NSProcessInfoThermalStateFair;
-    return %orig;
-}
-
-- (BOOL)isLowPowerModeEnabled {
-    if (cpuMode == 1) return YES;
-    if (cpuMode == 2) return NO;
-    return %orig;
-}
-%end
-
-%hook SBThermalController
-- (void)showThermalAlertIfNecessary {
-    if (blockThermalAlert) return;
-    %orig;
-}
-- (void)_respondToThermalCondition:(NSInteger)condition {
-    if (cpuMode == 2) { %orig(0); return; }
-    if (cpuMode == 1) { %orig(1); return; }
-    %orig;
-}
-- (BOOL)isInSunlight {
-    if (lockSunlightExposure) return YES;
-    return %orig;
-}
-- (BOOL)isInPocket {
-    if (disablePocketThermal) return NO;
-    return %orig;
-}
-%end
-
-%hook SBThermalWarningAlertItem
-- (BOOL)shouldShowInEmergencyCall {
-    if (blockThermalAlert) return NO;
-    return %orig;
-}
-%end
-
-%hook SBBacklightController
-- (void)setThermalWarningState:(NSInteger)state {
-    if (disableThermalDimming) { %orig(0); return; }
-    %orig;
-}
-- (void)_updateBacklightFactor:(float)factor {
-    if (disableThermalDimming && factor < 1.0f) { %orig(1.0f); return; }
-    %orig;
-}
-%end
-
-#pragma mark - 7. 温控检测与底层 120Hz 全链路 Hook
+#pragma mark - 5. 温控检测与底层 120Hz 全链路 Hook
 
 static BOOL isDeviceOverheated(void) {
-    if (cpuMode == 2) return NO;
     if (@available(iOS 11.0, *)) {
         NSProcessInfoThermalState state = [NSProcessInfo processInfo].thermalState;
         if (state == NSProcessInfoThermalStateSerious || state == NSProcessInfoThermalStateCritical) {
@@ -366,6 +266,7 @@ static BOOL isDeviceOverheated(void) {
     return NO;
 }
 
+// Hook 1: 底层窗口合成器，锁定 120Hz 刷新率
 %hook CAWindowServerDisplay
 - (float)minimumRefreshRate {
     if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
@@ -389,6 +290,7 @@ static BOOL isDeviceOverheated(void) {
 }
 %end
 
+// Hook 2: 全局 CAAnimation 默认优先使用 120Hz
 %hook CAAnimation
 - (CAFrameRateRange)preferredFrameRateRange {
     if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
@@ -398,6 +300,7 @@ static BOOL isDeviceOverheated(void) {
 }
 %end
 
+// Hook 3: UIScreen 突破系统低电量或节能限制
 %hook UIScreen
 - (NSInteger)maximumFramesPerSecond {
     if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
@@ -407,22 +310,7 @@ static BOOL isDeviceOverheated(void) {
 }
 %end
 
-#pragma mark - 8. 真实系统调频守护下发
-
-static void applyHardwareCpuGovernor(NSInteger mode) {
-    Class sbLpmClass = NSClassFromString(@"SBLowPowerModeController");
-    if (sbLpmClass && [sbLpmClass respondsToSelector:@selector(sharedInstance)]) {
-        SBLowPowerModeController *lpm = [sbLpmClass sharedInstance];
-        if ([lpm respondsToSelector:@selector(setLowPowerModeEnabled:)]) {
-            [lpm setLowPowerModeEnabled:(mode == 1)];
-        } else if ([lpm respondsToSelector:@selector(_setLowPowerModeEnabled:)]) {
-            [lpm _setLowPowerModeEnabled:(mode == 1)];
-        }
-    }
-    notify_post("com.apple.system.lowpowermode.changed");
-}
-
-#pragma mark - 9. CADisplayLink 帧率监控与 ProMotion 微驱动引擎
+#pragma mark - 6. CADisplayLink 帧率监控与 ProMotion 微驱动引擎
 
 @interface SBCPUFPSHelper : NSObject
 + (instancetype)sharedInstance;
@@ -567,7 +455,7 @@ static void applySystemRefreshRate(void) {
     [[SBCPUFPSHelper sharedInstance] updateFrameRate];
 }
 
-#pragma mark - 10. SBCPUFloatingView 悬浮窗主控件 (完整保留原版布局与紧凑 FPS)
+#pragma mark - 7. SBCPUFloatingView 悬浮窗主控件
 
 @implementation SBCPUFloatingView
 
@@ -647,18 +535,17 @@ static void applySystemRefreshRate(void) {
         _div1.backgroundColor = [UIColor colorWithWhite:1.0f alpha:0.18f];
         [content addSubview:_div1];
 
-        // 🔥 调窄 FPS 宽度至 34px，排版紧凑
         _fpsValueLabel = [[UILabel alloc] init];
         _fpsValueLabel.textColor = [UIColor colorWithRed:0.85f green:0.55f blue:1.0f alpha:1.0f];
-        _fpsValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:12.5 weight:UIFontWeightBold];
-        _fpsValueLabel.textAlignment = NSTextAlignmentCenter;
+        _fpsValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:13 weight:UIFontWeightBold];
+        _fpsValueLabel.adjustsFontSizeToFitWidth = YES;
+        _fpsValueLabel.minimumScaleFactor = 0.5f;
         [content addSubview:_fpsValueLabel];
 
         _fpsSubLabel = [[UILabel alloc] init];
         _fpsSubLabel.text = @"FPS";
         _fpsSubLabel.textColor = [UIColor colorWithWhite:0.65f alpha:1.0f];
-        _fpsSubLabel.font = [UIFont systemFontOfSize:8.0f weight:UIFontWeightMedium];
-        _fpsSubLabel.textAlignment = NSTextAlignmentCenter;
+        _fpsSubLabel.font = [UIFont systemFontOfSize:8.5f weight:UIFontWeightMedium];
         [content addSubview:_fpsSubLabel];
 
         _divFps = [[UIView alloc] init];
@@ -667,18 +554,20 @@ static void applySystemRefreshRate(void) {
 
         _batteryIconLabel = [[UILabel alloc] init];
         _batteryIconLabel.text = @"🔋";
-        _batteryIconLabel.font = [UIFont systemFontOfSize:15];
+        _batteryIconLabel.font = [UIFont systemFontOfSize:16];
         [content addSubview:_batteryIconLabel];
 
         _batteryValueLabel = [[UILabel alloc] init];
         _batteryValueLabel.textColor = [UIColor whiteColor];
-        _batteryValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:12.5 weight:UIFontWeightBold];
+        _batteryValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:13 weight:UIFontWeightBold];
+        _batteryValueLabel.adjustsFontSizeToFitWidth = YES;
+        _batteryValueLabel.minimumScaleFactor = 0.5f;
         [content addSubview:_batteryValueLabel];
 
         _batterySubLabel = [[UILabel alloc] init];
         _batterySubLabel.text = @"电量";
         _batterySubLabel.textColor = [UIColor colorWithWhite:0.65f alpha:1.0f];
-        _batterySubLabel.font = [UIFont systemFontOfSize:8.0f weight:UIFontWeightMedium];
+        _batterySubLabel.font = [UIFont systemFontOfSize:8.5f weight:UIFontWeightMedium];
         [content addSubview:_batterySubLabel];
 
         _div2 = [[UIView alloc] init];
@@ -687,18 +576,20 @@ static void applySystemRefreshRate(void) {
 
         _tempIconLabel = [[UILabel alloc] init];
         _tempIconLabel.text = @"🌡";
-        _tempIconLabel.font = [UIFont systemFontOfSize:15];
+        _tempIconLabel.font = [UIFont systemFontOfSize:16];
         [content addSubview:_tempIconLabel];
 
         _tempValueLabel = [[UILabel alloc] init];
         _tempValueLabel.textColor = [UIColor whiteColor];
-        _tempValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:12.5 weight:UIFontWeightBold];
+        _tempValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:13 weight:UIFontWeightBold];
+        _tempValueLabel.adjustsFontSizeToFitWidth = YES;
+        _tempValueLabel.minimumScaleFactor = 0.5f;
         [content addSubview:_tempValueLabel];
 
         _tempSubLabel = [[UILabel alloc] init];
         _tempSubLabel.text = @"温度";
         _tempSubLabel.textColor = [UIColor colorWithWhite:0.65f alpha:1.0f];
-        _tempSubLabel.font = [UIFont systemFontOfSize:8.0f weight:UIFontWeightMedium];
+        _tempSubLabel.font = [UIFont systemFontOfSize:8.5f weight:UIFontWeightMedium];
         [content addSubview:_tempSubLabel];
 
         _div3 = [[UIView alloc] init];
@@ -707,18 +598,20 @@ static void applySystemRefreshRate(void) {
 
         _currentIconLabel = [[UILabel alloc] init];
         _currentIconLabel.text = @"⚡";
-        _currentIconLabel.font = [UIFont systemFontOfSize:14];
+        _currentIconLabel.font = [UIFont systemFontOfSize:15];
         [content addSubview:_currentIconLabel];
 
         _currentValueLabel = [[UILabel alloc] init];
         _currentValueLabel.textColor = [UIColor colorWithRed:1.0f green:0.85f blue:0.25f alpha:1.0f];
-        _currentValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:12.0 weight:UIFontWeightBold];
+        _currentValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:12.5f weight:UIFontWeightBold];
+        _currentValueLabel.adjustsFontSizeToFitWidth = YES;
+        _currentValueLabel.minimumScaleFactor = 0.5f;
         [content addSubview:_currentValueLabel];
 
         _currentSubLabel = [[UILabel alloc] init];
         _currentSubLabel.text = @"电流";
         _currentSubLabel.textColor = [UIColor colorWithWhite:0.65f alpha:1.0f];
-        _currentSubLabel.font = [UIFont systemFontOfSize:8.0f weight:UIFontWeightMedium];
+        _currentSubLabel.font = [UIFont systemFontOfSize:8.5f weight:UIFontWeightMedium];
         [content addSubview:_currentSubLabel];
 
         // 充电状态胶囊背景容器
@@ -1083,35 +976,35 @@ static void applySystemRefreshRate(void) {
 
     _bottomCapsule.hidden = !isCharging;
 
-    CGFloat currentX = 8.0f;
-    CGFloat padY = 7.0f;
+    CGFloat currentX = 10.0f;
+    CGFloat padY = 8.0f;
 
-    CGFloat cpuW = 62.0f;
-    _cpuTitleLabel.frame = CGRectMake(currentX, padY, 26, 14);
-    _cpuValueLabel.frame = CGRectMake(currentX + 26, padY, cpuW - 26, 14);
+    CGFloat cpuW = 68.0f;
+    _cpuTitleLabel.frame = CGRectMake(currentX, padY, 28, 14);
+    _cpuValueLabel.frame = CGRectMake(currentX + 28, padY, cpuW - 28, 14);
 
-    if (showFreq) _cpuFreqLabel.frame = CGRectMake(currentX, padY + 14, cpuW, 14);
+    if (showFreq) _cpuFreqLabel.frame = CGRectMake(currentX, padY + 15, cpuW, 14);
     else _cpuFreqLabel.frame = CGRectZero;
-    currentX += cpuW + 4.0f;
+    currentX += cpuW + 6.0f;
 
     if (showFps || showBattery || showTemp || actualShowCurrent) {
         _div1.hidden = NO;
-        _div1.frame = CGRectMake(currentX, padY + 2, 0.5f, 24.0f);
-        currentX += 4.5f;
+        _div1.frame = CGRectMake(currentX, padY + 2, 0.5f, 26.0f);
+        currentX += 6.5f;
     } else {
         _div1.hidden = YES;
     }
 
     if (showFps) {
-        CGFloat fpsW = 34.0f; // 🔥 紧凑型宽度
+        CGFloat fpsW = 42.0f;
         _fpsValueLabel.frame = CGRectMake(currentX, padY, fpsW, 14);
         _fpsSubLabel.frame = CGRectMake(currentX, padY + 14, fpsW, 11);
-        currentX += fpsW + 4.0f;
+        currentX += fpsW + 6.0f;
 
         if (showBattery || showTemp || actualShowCurrent) {
             _divFps.hidden = NO;
-            _divFps.frame = CGRectMake(currentX, padY + 2, 0.5f, 24.0f);
-            currentX += 4.5f;
+            _divFps.frame = CGRectMake(currentX, padY + 2, 0.5f, 26.0f);
+            currentX += 6.5f;
         } else {
             _divFps.hidden = YES;
         }
@@ -1120,16 +1013,16 @@ static void applySystemRefreshRate(void) {
     }
 
     if (showBattery) {
-        CGFloat batW = 44.0f;
-        _batteryIconLabel.frame = CGRectMake(currentX, padY + 2, 14, 20);
-        _batteryValueLabel.frame = CGRectMake(currentX + 15, padY, batW - 15, 14);
-        _batterySubLabel.frame = CGRectMake(currentX + 15, padY + 14, batW - 15, 11);
-        currentX += batW + 4.0f;
+        CGFloat batW = 48.0f;
+        _batteryIconLabel.frame = CGRectMake(currentX, padY + 3, 16, 22);
+        _batteryValueLabel.frame = CGRectMake(currentX + 18, padY, batW - 18, 14);
+        _batterySubLabel.frame = CGRectMake(currentX + 18, padY + 14, batW - 18, 11);
+        currentX += batW + 6.0f;
 
         if (showTemp || actualShowCurrent) {
             _div2.hidden = NO;
-            _div2.frame = CGRectMake(currentX, padY + 2, 0.5f, 24.0f);
-            currentX += 4.5f;
+            _div2.frame = CGRectMake(currentX, padY + 2, 0.5f, 26.0f);
+            currentX += 6.5f;
         } else {
             _div2.hidden = YES;
         }
@@ -1138,16 +1031,16 @@ static void applySystemRefreshRate(void) {
     }
 
     if (showTemp) {
-        CGFloat tempW = 46.0f;
-        _tempIconLabel.frame = CGRectMake(currentX, padY + 2, 14, 20);
-        _tempValueLabel.frame = CGRectMake(currentX + 15, padY, tempW - 15, 14);
-        _tempSubLabel.frame = CGRectMake(currentX + 15, padY + 14, tempW - 15, 11);
-        currentX += tempW + 4.0f;
+        CGFloat tempW = 52.0f;
+        _tempIconLabel.frame = CGRectMake(currentX, padY + 3, 16, 22);
+        _tempValueLabel.frame = CGRectMake(currentX + 18, padY, tempW - 18, 14);
+        _tempSubLabel.frame = CGRectMake(currentX + 18, padY + 14, tempW - 18, 11);
+        currentX += tempW + 6.0f;
 
         if (actualShowCurrent) {
             _div3.hidden = NO;
-            _div3.frame = CGRectMake(currentX, padY + 2, 0.5f, 24.0f);
-            currentX += 4.5f;
+            _div3.frame = CGRectMake(currentX, padY + 2, 0.5f, 26.0f);
+            currentX += 6.5f;
         } else {
             _div3.hidden = YES;
         }
@@ -1156,31 +1049,31 @@ static void applySystemRefreshRate(void) {
     }
 
     if (actualShowCurrent) {
-        CGFloat curW = 54.0f;
-        _currentIconLabel.frame = CGRectMake(currentX, padY + 2, 14, 20);
-        _currentValueLabel.frame = CGRectMake(currentX + 15, padY, curW - 15, 14);
-        _currentSubLabel.frame = CGRectMake(currentX + 15, padY + 14, curW - 15, 11);
-        currentX += curW + 4.0f;
+        CGFloat curW = 58.0f;
+        _currentIconLabel.frame = CGRectMake(currentX, padY + 3, 14, 22);
+        _currentValueLabel.frame = CGRectMake(currentX + 16, padY, curW - 16, 14);
+        _currentSubLabel.frame = CGRectMake(currentX + 16, padY + 14, curW - 16, 11);
+        currentX += curW + 6.0f;
     }
 
-    CGFloat finalW = currentX + 6.0f;
+    CGFloat finalW = currentX + 4.0f;
     CGFloat currentY = padY + 28.0f;
 
     if (isCharging) {
-        currentY += 5.0f;
-        _bottomCapsule.frame = CGRectMake(8.0f, currentY, finalW - 16.0f, 20.0f);
-        _statusLabel.frame = CGRectMake(0, 0, finalW - 16.0f, 20.0f);
-        currentY += 20.0f;
+        currentY += 6.0f;
+        _bottomCapsule.frame = CGRectMake(10.0f, currentY, finalW - 20.0f, 22.0f);
+        _statusLabel.frame = CGRectMake(0, 1, finalW - 20.0f, 20.0f);
+        currentY += 22.0f;
     }
 
-    currentY += 5.0f;
+    currentY += 6.0f;
 
     _blurView.frame = CGRectMake(0, 0, finalW, currentY);
-    _blurView.layer.cornerRadius = 18.0f;
-    self.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, finalW, currentY) cornerRadius:18.0f].CGPath;
+    _blurView.layer.cornerRadius = 20.0f;
+    self.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, finalW, currentY) cornerRadius:20.0f].CGPath;
 
     _marqueeLayer.frame = _blurView.bounds;
-    _marqueeLayer.path = [UIBezierPath bezierPathWithRoundedRect:_blurView.bounds cornerRadius:18.0f].CGPath;
+    _marqueeLayer.path = [UIBezierPath bezierPathWithRoundedRect:_blurView.bounds cornerRadius:20.0f].CGPath;
 
     if (isCharging) {
         _marqueeLayer.hidden = NO;
@@ -1218,9 +1111,10 @@ static void applySystemRefreshRate(void) {
     _currentValueLabel.text = [NSString stringWithFormat:@"%.0fmA", current];
     _statusLabel.text = isCharging ? @"🟢 正在充电" : @"⚪ 未在充电";
 
+    // 🔋 实时根据当前电量百分比计算绿色指示条宽度
     if (isCharging) {
         CGFloat capsuleW = _bottomCapsule.bounds.size.width;
-        CGFloat capsuleH = _bottomCapsule.bounds.size.height > 0 ? _bottomCapsule.bounds.size.height : 20.0f;
+        CGFloat capsuleH = _bottomCapsule.bounds.size.height > 0 ? _bottomCapsule.bounds.size.height : 22.0f;
         CGFloat targetProgressW = MAX(0, MIN(capsuleW, capsuleW * (battery / 100.0f)));
         
         [UIView animateWithDuration:0.35 animations:^{
@@ -1240,7 +1134,7 @@ static void applySystemRefreshRate(void) {
 
 @end
 
-#pragma mark - 10. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
+#pragma mark - 8. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
 
 @implementation SBCPUDetailViewController
 
@@ -1360,7 +1254,7 @@ static void applySystemRefreshRate(void) {
     }];
 }
 
-#pragma mark - 11. 真实系统底层 API 数据解析刷新
+#pragma mark - 9. 真实系统底层 API 数据解析刷新
 
 - (void)refreshAllDetailData {
     DeviceSpec spec = getDeviceSpec();
@@ -1414,7 +1308,7 @@ static void applySystemRefreshRate(void) {
     _labelsDict[@"电池当前电压"].text = (voltage > 0) ? [NSString stringWithFormat:@"%.2fV", voltage] : @"3.95V";
 
     double temp = getBatteryTemperatureInternal();
-    _labelsDict[@"电池当前温度"].text = [NSString stringWithFormat:@"%.1f°C", temp];
+    _labelsDict[@"电池当前温度"].text = (temp > -10) ? [NSString stringWithFormat:@"%.1f°C", temp] : @"--°C";
 
     _labelsDict[@"电池当前电量"].text = [NSString stringWithFormat:@"%ld%%", (long)batPercent];
 
@@ -1486,40 +1380,7 @@ static void applySystemRefreshRate(void) {
     _labelsDict[@"设备运行"].text = [NSString stringWithFormat:@"%ld天 %ld小时 %ld分", (long)days, (long)hours, (long)mins];
 }
 
-#pragma mark - 12. 真实硬件测频与同步引擎 (🔥 彻底解决电话助手与主频不一致问题)
-
-static double getRealHardwareCPUFrequency(void) {
-    DeviceSpec spec = getDeviceSpec();
-    
-    // 🔥 当开启“模拟低电频率”时，直接将硬件测频与主频显示严格锁定在节能频段 (1000 ~ 1350 MHz)
-    if (cpuMode == 1) {
-        return 1000.0 + ((double)(arc4random() % 350)); 
-    } else if (cpuMode == 2) {
-        return spec.maxFreqMHz - ((double)(arc4random() % 80)); // 满血
-    }
-
-    uint64_t freqHz = 0;
-    size_t size = sizeof(freqHz);
-    if (sysctlbyname("hw.cpufrequency", &freqHz, &size, NULL, 0) == 0 && freqHz > 0) {
-        return (double)freqHz / 1000000.0;
-    }
-
-    static mach_timebase_info_data_t tb;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{ mach_timebase_info(&tb); });
-
-    uint64_t start = mach_absolute_time();
-    volatile uint32_t val = 0x55AA;
-    for (int i = 0; i < 30000; i++) { val = (val ^ (uint32_t)i) + 1; }
-    uint64_t end = mach_absolute_time();
-    uint64_t elapsedNs = (end - start) * tb.numer / tb.denom;
-
-    if (elapsedNs > 0) {
-        double calc = (30000.0 * 4.0) / ((double)elapsedNs / 1000.0);
-        if (calc > 600.0 && calc < spec.maxFreqMHz * 1.2) return calc;
-    }
-    return spec.maxFreqMHz * 0.85;
-}
+#pragma mark - 10. IOKit 电池与网络底层解算
 
 static NSDictionary *getRealBatteryDetails(void) {
     NSMutableDictionary *dict = [NSMutableDictionary dictionary];
@@ -1528,9 +1389,28 @@ static NSDictionary *getRealBatteryDetails(void) {
         CFMutableDictionaryRef prop = NULL;
         if (IORegistryEntryCreateCFProperties(service, &prop, kCFAllocatorDefault, 0) == KERN_SUCCESS && prop) {
             NSDictionary *pDict = (__bridge NSDictionary *)prop;
+            
+            dict[@"DesignCapacity"] = pDict[@"DesignCapacity"] ?: pDict[@"AppleRawDesignCapacity"];
+            
+            id maxCap = pDict[@"NominalChargeCapacity"] ?: pDict[@"AppleRawMaxCapacity"];
+            if (!maxCap) maxCap = pDict[@"MaxCapacity"];
+            dict[@"MaxCapacity"] = maxCap;
+            
+            id curCap = pDict[@"AppleRawCurrentCapacity"] ?: pDict[@"CurrentCapacity"];
+            dict[@"CurrentCapacity"] = curCap;
+            
             dict[@"CycleCount"] = pDict[@"CycleCount"];
             dict[@"Temperature"] = pDict[@"Temperature"];
-            dict[@"Amperage"] = pDict[@"Amperage"];
+            dict[@"Amperage"] = pDict[@"Amperage"] ?: pDict[@"InstantAmperage"];
+            dict[@"Voltage"] = pDict[@"Voltage"];
+            dict[@"Manufacturer"] = pDict[@"Manufacturer"];
+            dict[@"AvgTimeToFull"] = pDict[@"AvgTimeToFull"];
+            
+            if (pDict[@"AdapterDetails"]) {
+                NSDictionary *ad = pDict[@"AdapterDetails"];
+                dict[@"Watts"] = ad[@"Watts"];
+                dict[@"ChargerType"] = ad[@"Description"];
+            }
             CFRelease(prop);
         }
         IOObjectRelease(service);
@@ -1539,15 +1419,23 @@ static NSDictionary *getRealBatteryDetails(void) {
 }
 
 static double getBatteryTemperatureInternal(void) {
-    NSDictionary *d = getRealBatteryDetails();
-    if (d[@"Temperature"]) return [d[@"Temperature"] doubleValue] / 100.0;
-    return 32.5;
+    NSDictionary *dict = getRealBatteryDetails();
+    if (dict[@"Temperature"]) {
+        double val = [dict[@"Temperature"] doubleValue];
+        if (val > 1000) return val / 100.0;
+        if (val > 200) return val / 10.0 - 273.15;
+        return val;
+    }
+    return -1;
 }
 
 static double getBatteryCurrentInternal(void) {
-    NSDictionary *d = getRealBatteryDetails();
-    if (d[@"Amperage"]) return fabs([d[@"Amperage"] doubleValue]);
-    return 350.0;
+    NSDictionary *dict = getRealBatteryDetails();
+    if (dict[@"Amperage"]) {
+        double current = [dict[@"Amperage"] doubleValue];
+        return fabs(current);
+    }
+    return 150.0;
 }
 
 static BOOL isChargingInternal(void) {
@@ -1568,108 +1456,550 @@ static double getSystemCPUUsage(void) {
     host_cpu_load_info_data_t cpu_load;
     if (host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, (host_info_t)&cpu_load, &count) != KERN_SUCCESS) return 15.0;
 
-    if (!has_prev_cpu_load) { prev_cpu_load = cpu_load; has_prev_cpu_load = YES; return 12.0; }
+    if (!has_prev_cpu_load) {
+        prev_cpu_load = cpu_load;
+        has_prev_cpu_load = YES;
+        return 12.0;
+    }
+
     uint64_t user = cpu_load.cpu_ticks[CPU_STATE_USER] - prev_cpu_load.cpu_ticks[CPU_STATE_USER];
     uint64_t system = cpu_load.cpu_ticks[CPU_STATE_SYSTEM] - prev_cpu_load.cpu_ticks[CPU_STATE_SYSTEM];
     uint64_t idle = cpu_load.cpu_ticks[CPU_STATE_IDLE] - prev_cpu_load.cpu_ticks[CPU_STATE_IDLE];
+    uint64_t nice = cpu_load.cpu_ticks[CPU_STATE_NICE] - prev_cpu_load.cpu_ticks[CPU_STATE_NICE];
+
     prev_cpu_load = cpu_load;
-    uint64_t total = user + system + idle;
+    uint64_t total = user + system + idle + nice;
     if (total == 0) return 0.0;
-    return ((double)(user + system) / (double)total) * 100.0;
+
+    return ((double)(user + system + nice) / (double)total) * 100.0;
 }
 
 static double getCPUFrequencyMHz(double currentCpuUsage) {
-    return getRealHardwareCPUFrequency();
+    DeviceSpec spec = getDeviceSpec();
+    double maxMHz = spec.maxFreqMHz;
+    double minMHz = 800.0;
+
+    double loadFactor = (currentCpuUsage / 100.0);
+    if (loadFactor < 0.05) loadFactor = 0.05;
+    if (loadFactor > 1.0) loadFactor = 1.0;
+
+    double dynamicFreq = minMHz + (maxMHz - minMHz) * (0.2 + 0.8 * loadFactor);
+    dynamicFreq += ((double)(arc4random() % 30) - 15.0);
+
+    if (dynamicFreq > maxMHz) dynamicFreq = maxMHz;
+    if (dynamicFreq < minMHz) dynamicFreq = minMHz;
+
+    return dynamicFreq;
 }
 
-#pragma mark - 13. 视图穿透与容器
+- (NSString *)getLocalIPAddress {
+    NSString *address = @"127.0.0.1";
+    struct ifaddrs *interfaces = NULL;
+    struct ifaddrs *temp_addr = NULL;
+    if (getifaddrs(&interfaces) == 0) {
+        temp_addr = interfaces;
+        while (temp_addr != NULL) {
+            if (temp_addr->ifa_addr && temp_addr->ifa_addr->sa_family == AF_INET) {
+                NSString *name = [NSString stringWithUTF8String:temp_addr->ifa_name];
+                if ([name isEqualToString:@"en0"]) {
+                    address = [NSString stringWithUTF8String:inet_ntoa(((struct sockaddr_in *)temp_addr->ifa_addr)->sin_addr)];
+                }
+            }
+            temp_addr = temp_addr->ifa_next;
+        }
+    }
+    if (interfaces) freeifaddrs(interfaces);
+    return address;
+}
+
+- (void)calculateNetworkSpeed {
+    struct ifaddrs *ifa_list = NULL;
+    if (getifaddrs(&ifa_list) < 0) return;
+
+    uint64_t wifiIn = 0, wifiOut = 0;
+    uint64_t cellIn = 0, cellOut = 0;
+
+    for (struct ifaddrs *ifa = ifa_list; ifa; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_LINK) continue;
+
+        struct if_data *if_data = (struct if_data *)ifa->ifa_data;
+        if (!if_data) continue;
+
+        NSString *name = [NSString stringWithUTF8String:ifa->ifa_name];
+        if ([name hasPrefix:@"en"]) {
+            wifiIn += if_data->ifi_ibytes;
+            wifiOut += if_data->ifi_obytes;
+        } else if ([name hasPrefix:@"pdp_ip"]) {
+            cellIn += if_data->ifi_ibytes;
+            cellOut += if_data->ifi_obytes;
+        }
+    }
+    if (ifa_list) freeifaddrs(ifa_list);
+
+    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+    double timeDiff = now - lastNetSpeedTime;
+    if (timeDiff <= 0) timeDiff = 1.0;
+
+    if (lastWifiInBytes > 0) {
+        speedDownBytesPerSec = (uint64_t)((wifiIn - lastWifiInBytes + cellIn - lastCellInBytes) / timeDiff);
+        speedUpBytesPerSec = (uint64_t)((wifiOut - lastWifiOutBytes + cellOut - lastCellOutBytes) / timeDiff);
+    }
+
+    lastWifiInBytes = wifiIn;
+    lastWifiOutBytes = wifiOut;
+    lastCellInBytes = cellIn;
+    lastCellOutBytes = cellOut;
+    lastNetSpeedTime = now;
+}
+
+@end
+
+#pragma mark - 11. 视图穿透与 Window 容器
 
 @implementation SBCPUPassthroughView
-- (UIView *)hitTest:(CGPoint)p withEvent:(UIEvent *)e {
-    UIView *v = [super hitTest:p withEvent:e];
-    return (v == self) ? nil : v;
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hitView = [super hitTest:point withEvent:event];
+    if (hitView == self) return nil;
+    return hitView;
 }
 @end
 
 @implementation SBCPURootViewController
+
 - (void)loadView {
-    SBCPUPassthroughView *v = [[SBCPUPassthroughView alloc] initWithFrame:[UIScreen mainScreen].bounds];
-    self.view = v;
+    SBCPUPassthroughView *passView = [[SBCPUPassthroughView alloc] initWithFrame:UIScreen.mainScreen.bounds];
+    passView.backgroundColor = UIColor.clearColor;
+    self.view = passView;
 }
+
+- (BOOL)shouldAutorotate { return YES; }
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations { return UIInterfaceOrientationMaskAll; }
+- (BOOL)prefersStatusBarHidden { return YES; }
+
+- (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator {
+    [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
+    [coordinator animateAlongsideTransition:^(id<UIViewControllerTransitionCoordinatorContext> context) {
+        (void)context;
+        if (floatingView) updateFloatingSize();
+    } completion:nil];
+}
+
 @end
 
 @implementation SBCPUWindow
-- (UIView *)hitTest:(CGPoint)p withEvent:(UIEvent *)e {
-    if (settingsShowing || detailShowing) return [super hitTest:p withEvent:e];
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    if (settingsShowing || detailShowing) return [super hitTest:point withEvent:event];
+
     if (floatingView && !floatingView.hidden && floatingView.alpha > 0.01) {
-        CGPoint pt = [self convertPoint:p toView:floatingView];
-        if ([floatingView pointInside:pt withEvent:e]) return floatingView;
+        CGPoint p = [self convertPoint:point toView:floatingView];
+        if ([floatingView pointInside:p withEvent:event]) return floatingView;
     }
     return nil;
 }
 @end
 
+#pragma mark - 12. 逻辑控制与辅助函数
+
+static UIWindowScene *getWindowScene(void) {
+    if (cpuWindow && cpuWindow.windowScene) return cpuWindow.windowScene;
+    UIApplication *app = UIApplication.sharedApplication;
+    for (UIScene *scene in app.connectedScenes) {
+        if ([scene isKindOfClass:UIWindowScene.class]) {
+            UIWindowScene *ws = (UIWindowScene *)scene;
+            if (ws.activationState != UISceneActivationStateUnattached) return ws;
+        }
+    }
+    return nil;
+}
+
+static UIInterfaceOrientation getActiveInterfaceOrientation(void) {
+    UIApplication *app = [UIApplication sharedApplication];
+    if ([app isKindOfClass:NSClassFromString(@"SpringBoard")] && [app respondsToSelector:@selector(activeInterfaceOrientation)]) {
+        return [(SpringBoard *)app activeInterfaceOrientation];
+    }
+    UIWindowScene *scene = getWindowScene();
+    return scene ? scene.interfaceOrientation : UIInterfaceOrientationPortrait;
+}
+
 static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate) {
     if (!floatingView || !floatingView.superview) return;
-    CGRect bounds = floatingView.superview.bounds;
-    CGFloat halfW = floatingView.frame.size.width / 2.0f;
-    CGFloat targetX = (targetCenter.x <= bounds.size.width / 2.0f) ? (halfW + 4.0f) : (bounds.size.width - halfW - 4.0f);
-    void (^blk)(void) = ^{ floatingView.center = CGPointMake(targetX, targetCenter.y); };
-    if (animate) [UIView animateWithDuration:0.35 animations:blk];
-    else blk();
+
+    CGRect containerBounds = floatingView.superview.bounds;
+    if (CGRectIsEmpty(containerBounds)) containerBounds = [UIScreen mainScreen].bounds;
+
+    CGRect realFrame = floatingView.frame;
+    CGFloat halfW = realFrame.size.width / 2.0f;
+    CGFloat halfH = realFrame.size.height / 2.0f;
+
+    CGFloat minX = halfW + 4.0f;
+    CGFloat maxX = containerBounds.size.width - halfW - 4.0f;
+    CGFloat minY = halfH + 20.0f;
+    CGFloat maxY = containerBounds.size.height - halfH - 10.0f;
+
+    if (maxX < minX) minX = maxX = containerBounds.size.width / 2.0f;
+    if (maxY < minY) minY = maxY = containerBounds.size.height / 2.0f;
+
+    if (floatingView.isCollapsed) {
+        BOOL isLeft = (targetCenter.x <= containerBounds.size.width / 2.0f);
+        targetCenter.x = isLeft ? minX : maxX;
+    } else if (smartDockEnable) {
+        CGFloat distLeft = targetCenter.x - halfW;
+        CGFloat distRight = containerBounds.size.width - (targetCenter.x + halfW);
+
+        if (dockMode == 1 || (dockMode == 0 && distLeft <= distRight && distLeft < 100.0f)) targetCenter.x = minX;
+        else if (dockMode == 2 || (dockMode == 0 && distRight < distLeft && distRight < 100.0f)) targetCenter.x = maxX;
+    }
+
+    if (targetCenter.x < minX) targetCenter.x = minX;
+    if (targetCenter.x > maxX) targetCenter.x = maxX;
+    if (targetCenter.y < minY) targetCenter.y = minY;
+    if (targetCenter.y > maxY) targetCenter.y = maxY;
+
+    void (^layoutBlock)(void) = ^{ floatingView.center = targetCenter; };
+
+    if (animate) {
+        [UIView animateWithDuration:0.35 delay:0 usingSpringWithDamping:0.8 initialSpringVelocity:0.5 options:UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionBeginFromCurrentState animations:layoutBlock completion:nil];
+    } else layoutBlock();
+}
+
+static void applyVisibility(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (cpuWindow) {
+            cpuWindow.hidden = !isEnabled;
+        }
+    });
+}
+
+static void LoadPreferences(void) {
+    NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
+    if ([def objectForKey:@"isEnabled"]) isEnabled = [def boolForKey:@"isEnabled"];
+    if ([def objectForKey:@"autoCollapseEnable"]) autoCollapseEnable = [def boolForKey:@"autoCollapseEnable"];
+    if ([def objectForKey:@"autoCollapseDelay"]) autoCollapseDelay = [def integerForKey:@"autoCollapseDelay"];
+
+    if ([def objectForKey:@"autoLogoutEnable"]) autoLogoutEnable = [def boolForKey:@"autoLogoutEnable"];
+    if ([def objectForKey:@"logoutCPUThreshold"]) logoutCPUThreshold = [def doubleForKey:@"logoutCPUThreshold"];
+    if ([def objectForKey:@"logoutDuration"]) logoutDuration = [def integerForKey:@"logoutDuration"];
+    
+    if ([def objectForKey:@"floatingAlphaEnable"]) floatingAlphaEnable = [def boolForKey:@"floatingAlphaEnable"];
+    if ([def objectForKey:@"floatingAlpha"]) floatingAlpha = [def floatForKey:@"floatingAlpha"];
+    if ([def objectForKey:@"floatingScale"]) floatingScale = [def floatForKey:@"floatingScale"];
+    if ([def objectForKey:@"floatingFontSize"]) floatingFontSize = [def floatForKey:@"floatingFontSize"];
+    
+    if ([def objectForKey:@"keyboardAvoidEnable"]) keyboardAvoidEnable = [def boolForKey:@"keyboardAvoidEnable"];
+    if ([def objectForKey:@"smartDockEnable"]) smartDockEnable = [def boolForKey:@"smartDockEnable"];
+    if ([def objectForKey:@"dockMode"]) dockMode = [def integerForKey:@"dockMode"];
+    if ([def objectForKey:@"rememberPositionEnable"]) rememberPositionEnable = [def boolForKey:@"rememberPositionEnable"];
+    
+    if ([def objectForKey:@"showCpuFrequency"]) showCpuFrequency = [def boolForKey:@"showCpuFrequency"];
+    if ([def objectForKey:@"showFps"]) showFps = [def boolForKey:@"showFps"];
+    if ([def objectForKey:@"force120HzEnable"]) force120HzEnable = [def boolForKey:@"force120HzEnable"];
+    if ([def objectForKey:@"thermalProtectionEnable"]) thermalProtectionEnable = [def boolForKey:@"thermalProtectionEnable"];
+
+    if ([def objectForKey:@"showBatteryPercent"]) showBatteryPercent = [def boolForKey:@"showBatteryPercent"];
+    if ([def objectForKey:@"showBatteryTemperature"]) showBatteryTemperature = [def boolForKey:@"showBatteryTemperature"];
+    if ([def objectForKey:@"showBatteryCurrent"]) showBatteryCurrent = [def boolForKey:@"showBatteryCurrent"];
+
+    applyVisibility();
+
+    if (showFps || force120HzEnable) {
+        [[SBCPUFPSHelper sharedInstance] startMonitoring];
+    } else {
+        [[SBCPUFPSHelper sharedInstance] stopMonitoring];
+    }
+
+    applySystemRefreshRate();
+}
+
+static void SavePreferencesAndNotify(void) {
+    NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
+    [def setBool:isEnabled forKey:@"isEnabled"];
+    [def setBool:autoCollapseEnable forKey:@"autoCollapseEnable"];
+    [def setInteger:autoCollapseDelay forKey:@"autoCollapseDelay"];
+
+    [def setBool:autoLogoutEnable forKey:@"autoLogoutEnable"];
+    [def setDouble:logoutCPUThreshold forKey:@"logoutCPUThreshold"];
+    [def setInteger:logoutDuration forKey:@"logoutDuration"];
+    
+    [def setBool:floatingAlphaEnable forKey:@"floatingAlphaEnable"];
+    [def setFloat:floatingAlpha forKey:@"floatingAlpha"];
+    [def setFloat:floatingScale forKey:@"floatingScale"];
+    [def setFloat:floatingFontSize forKey:@"floatingFontSize"];
+    
+    [def setBool:keyboardAvoidEnable forKey:@"keyboardAvoidEnable"];
+    [def setBool:smartDockEnable forKey:@"smartDockEnable"];
+    [def setInteger:dockMode forKey:@"dockMode"];
+    [def setBool:rememberPositionEnable forKey:@"rememberPositionEnable"];
+    
+    [def setBool:showCpuFrequency forKey:@"showCpuFrequency"];
+    [def setBool:showFps forKey:@"showFps"];
+    [def setBool:force120HzEnable forKey:@"force120HzEnable"];
+    [def setBool:thermalProtectionEnable forKey:@"thermalProtectionEnable"];
+
+    [def setBool:showBatteryPercent forKey:@"showBatteryPercent"];
+    [def setBool:showBatteryTemperature forKey:@"showBatteryTemperature"];
+    [def setBool:showBatteryCurrent forKey:@"showBatteryCurrent"];
+    [def synchronize];
+
+    if (showFps || force120HzEnable) {
+        [[SBCPUFPSHelper sharedInstance] startMonitoring];
+    } else {
+        [[SBCPUFPSHelper sharedInstance] stopMonitoring];
+    }
+
+    applySystemRefreshRate();
+
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR(kPrefChangedNotification), NULL, NULL, YES);
+}
+
+static void applyFloatingAlpha(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (floatingView) floatingView.alpha = floatingAlphaEnable ? floatingAlpha : 1.0;
+    });
 }
 
 static void updateFloatingSize(void) {
-    if (!floatingView || floatingView.isCollapsed) return;
-    floatingView.transform = CGAffineTransformMakeScale(floatingScale, floatingScale);
+    if (!floatingView) return;
+
+    BOOL charging = isChargingInternal();
+    UIInterfaceOrientation orientation = getActiveInterfaceOrientation();
+
+    floatingView.transform = CGAffineTransformIdentity;
+
+    if (!floatingView.isCollapsed) {
+        [floatingView updateLayoutWithShowCpuFreq:showCpuFrequency
+                                           showFps:showFps
+                                showBatteryPercent:showBatteryPercent
+                                   showBatteryTemp:showBatteryTemperature
+                                showBatteryCurrent:showBatteryCurrent
+                                        isCharging:charging];
+    }
+
+    CGFloat rotationAngle = 0.0;
+    switch (orientation) {
+        case UIInterfaceOrientationLandscapeLeft: rotationAngle = -M_PI_2; break;
+        case UIInterfaceOrientationLandscapeRight: rotationAngle = M_PI_2; break;
+        case UIInterfaceOrientationPortraitUpsideDown: rotationAngle = M_PI; break;
+        case UIInterfaceOrientationPortrait: default: rotationAngle = 0.0; break;
+    }
+
+    CGAffineTransform finalTransform = CGAffineTransformConcat(CGAffineTransformMakeScale(floatingScale, floatingScale), CGAffineTransformMakeRotation(rotationAngle));
+    floatingView.transform = finalTransform;
+    
+    clampAndPositionFloatingView(floatingView.center, NO);
 }
 
 static void createCPUWindow(void) {
     if (cpuWindow) return;
-    cpuWindow = [[SBCPUWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+
+    UIWindowScene *scene = getWindowScene();
+    if (!scene) return;
+
+    cpuWindow = [[SBCPUWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+    cpuWindow.windowScene = scene;
     cpuWindow.windowLevel = UIWindowLevelStatusBar + 1;
-    cpuWindow.backgroundColor = [UIColor clearColor];
+    cpuWindow.backgroundColor = UIColor.clearColor;
+    cpuWindow.opaque = NO;
     cpuWindow.rootViewController = [[SBCPURootViewController alloc] init];
+    cpuWindow.rootViewController.view.backgroundColor = UIColor.clearColor;
     cpuWindow.hidden = !isEnabled;
 
+    // 挂载 ProMotion 微像素硬件驱动图层
     [cpuWindow.layer addSublayer:[SBCPUFPSHelper sharedInstance].driverLayer];
 
-    floatingView = [[SBCPUFloatingView alloc] initWithFrame:CGRectMake(20, 160, 240, 60)];
+    CGRect initFrame = CGRectMake(20, 160, 240, 60);
+    NSString *savedFrame = [[NSUserDefaults standardUserDefaults] stringForKey:@"SBCPU.LastFrame"];
+    if (rememberPositionEnable && savedFrame) {
+        CGRect parsed = CGRectFromString(savedFrame);
+        if (!CGRectIsEmpty(parsed)) initFrame = parsed;
+    }
+
+    floatingView = [[SBCPUFloatingView alloc] initWithFrame:initFrame];
     [cpuWindow.rootViewController.view addSubview:floatingView];
+
+    applyFloatingAlpha();
     updateFloatingSize();
 }
 
 static void openDetailView(void) {
     if (detailShowing || !cpuWindow || !cpuWindow.rootViewController) return;
+
+    UIViewController *root = cpuWindow.rootViewController;
+    if (root.presentedViewController) {
+        [root.presentedViewController dismissViewControllerAnimated:NO completion:nil];
+    }
+
     detailShowing = YES;
     detailVC = [[SBCPUDetailViewController alloc] init];
     detailVC.modalPresentationStyle = UIModalPresentationOverFullScreen;
-    [cpuWindow.rootViewController presentViewController:detailVC animated:YES completion:nil];
+    detailVC.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
+
+    [root presentViewController:detailVC animated:YES completion:nil];
 }
 
 static void openSettings(void) {
     if (settingsShowing || !cpuWindow || !cpuWindow.rootViewController) return;
+
+    UIViewController *root = cpuWindow.rootViewController;
+    if (root.presentedViewController) {
+        [root.presentedViewController dismissViewControllerAnimated:NO completion:nil];
+    }
+
     settingsShowing = YES;
     SBCPUSettingsController *vc = [[SBCPUSettingsController alloc] initWithStyle:UITableViewStyleInsetGrouped];
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
-    [cpuWindow.rootViewController presentViewController:nav animated:YES completion:nil];
+    nav.modalPresentationStyle = UIModalPresentationFullScreen;
+
+    [root presentViewController:nav animated:YES completion:nil];
+}
+
+static void checkHighCPU(double cpu) {
+    if (!autoLogoutEnable || cpu < logoutCPUThreshold) {
+        cpuHighStartTime = nil;
+        logoutCounting = NO;
+        return;
+    }
+
+    if (!cpuHighStartTime) {
+        cpuHighStartTime = [NSDate date];
+        return;
+    }
+
+    NSTimeInterval duration = [[NSDate date] timeIntervalSinceDate:cpuHighStartTime];
+    if (duration >= logoutDuration && !logoutCounting) {
+        logoutCounting = YES;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!cpuWindow || !cpuWindow.rootViewController) { logoutCounting = NO; return; }
+            UIViewController *root = cpuWindow.rootViewController;
+            if (root.presentedViewController) return;
+
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"SpringBoard CPU过高" message:@"5秒后自动注销" preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) {
+                (void)action;
+                logoutCounting = NO;
+                cpuHighStartTime = nil;
+            }]];
+            [root presentViewController:alert animated:YES completion:nil];
+
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                if (logoutCounting) kill(getpid(), SIGTERM);
+            });
+        });
+    }
 }
 
 static void updateCPU(void) {
     if (!isEnabled) return;
+
     double cpu = getSystemCPUUsage();
-    double freq = getRealHardwareCPUFrequency();
+    double cpuFreq = getCPUFrequencyMHz(cpu);
     double fps = [SBCPUFPSHelper sharedInstance].currentFPS;
-    BOOL charging = isChargingInternal();
+
+    checkHighCPU(cpu);
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (floatingView) {
-            [floatingView updateDataWithCPU:cpu cpuFreq:freq fps:fps battery:100 temp:getBatteryTemperatureInternal() current:getBatteryCurrentInternal() isCharging:charging];
+        if (!floatingView) return;
+
+        [UIDevice currentDevice].batteryMonitoringEnabled = YES;
+        NSInteger battery = (NSInteger)([UIDevice currentDevice].batteryLevel * 100);
+        if (battery < 0) battery = 100;
+
+        double temp = getBatteryTemperatureInternal();
+        double current = getBatteryCurrentInternal();
+        BOOL charging = isChargingInternal();
+
+        // 🔌 检测到刚插上充电器时的触发逻辑
+        if (charging && !previousChargingState) {
+            // 若此时浮窗处于收起折叠状态，自动弹出并展开
+            if (floatingView.isCollapsed) {
+                [floatingView expandFromEdgeAnimated:YES];
+            }
+            [floatingView triggerPlugAnimation];
         }
+        previousChargingState = charging;
+
+        [floatingView updateDataWithCPU:cpu 
+                                cpuFreq:cpuFreq
+                                    fps:showFps ? fps : 0
+                                battery:showBatteryPercent ? battery : 0 
+                                   temp:showBatteryTemperature ? temp : 0 
+                                current:showBatteryCurrent ? current : 0 
+                             isCharging:charging];
+
+        updateFloatingSize();
     });
 }
 
-#pragma mark - 14. 设置控制器与 UIMenu 菜单实现
+#pragma mark - 13. 设置级联控制器选择器实现
+
+@implementation SBCPUValuePickerController
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { 
+    (void)tableView;
+    (void)section;
+    return 7; 
+}
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { 
+    (void)tableView;
+    (void)section;
+    return @"CPU 触发值"; 
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    (void)tableView;
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    NSArray *titles = @[@"80%", @"100%", @"120%", @"140%", @"160%", @"180%", @"200%"];
+    NSArray *values = @[@80, @100, @120, @140, @160, @180, @200];
+
+    cell.textLabel.text = titles[indexPath.row];
+    if ([values[indexPath.row] doubleValue] == logoutCPUThreshold) {
+        cell.accessoryType = UITableViewCellAccessoryCheckmark;
+    }
+    return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    NSArray *values = @[@80, @100, @120, @140, @160, @180, @200];
+    logoutCPUThreshold = [values[indexPath.row] doubleValue];
+    SavePreferencesAndNotify();
+    [tableView reloadData];
+}
+@end
+
+@implementation SBCPUTimePickerController
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { 
+    (void)tableView;
+    (void)section;
+    return 7; 
+}
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { 
+    (void)tableView;
+    (void)section;
+    return @"持续时间"; 
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    (void)tableView;
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    NSArray *titles = @[@"10 秒", @"30 秒", @"60 秒", @"120 秒", @"180 秒", @"300 秒", @"600 秒"];
+    NSArray *values = @[@10, @30, @60, @120, @180, @300, @600];
+
+    cell.textLabel.text = titles[indexPath.row];
+    if ([values[indexPath.row] integerValue] == logoutDuration) {
+        cell.accessoryType = UITableViewCellAccessoryCheckmark;
+    }
+    return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    NSArray *values = @[@10, @30, @60, @120, @180, @300, @600];
+    logoutDuration = [values[indexPath.row] integerValue];
+    SavePreferencesAndNotify();
+    [tableView reloadData];
+}
+@end
+
+#pragma mark - 14. 完整设置控制器实现（包含说明文本与全部设置分组）
 
 @implementation SBCPUSettingsController
 
@@ -1681,155 +2011,374 @@ static void updateCPU(void) {
 
 - (void)closeSettings {
     settingsShowing = NO;
-    [self dismissViewControllerAnimated:YES completion:nil];
+    [self dismissViewControllerAnimated:YES completion:^{
+        if (cpuWindow) [cpuWindow setNeedsLayout];
+        if (floatingView) [floatingView resetInactivityTimer];
+    }];
 }
 
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 7; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { 
+    (void)tableView;
+    return 6; 
+}
+
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if (section == 5) return 5; // Insulation
-    if (section == 4) return 2; // 高刷
-    return 3;
+    (void)tableView;
+    if (section == 0) return 2; // 📱 智能缩进与侧边吸附
+    if (section == 1) return 3; // ⚡ 自动控制与防护
+    if (section == 2) return 4; // 🔲 悬浮窗外观
+    if (section == 3) return 3; // 🧠 智能选项
+    if (section == 4) return 2; // 🎮 性能与高刷锁定
+    return 7;                   // 📍 位置与显示
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
+    (void)tableView;
+    if (section == 0) return @"📱 智能缩进与侧边吸附";
+    if (section == 1) return @"⚡ 自动控制与防护";
+    if (section == 2) return @"🔲 悬浮窗外观";
+    if (section == 3) return @"🧠 智能选项";
     if (section == 4) return @"🎮 性能与高刷锁定";
-    if (section == 5) return @"🛡️ INSULATION (温控绝缘)";
-    return @"📍 基础设置";
+    return @"📍 位置与显示";
 }
 
-- (UIMenu *)buildCpuModeMenu {
-    NSMutableArray *actions = [NSMutableArray array];
-    NSArray *titles = @[@"苹果原生温控", @"模拟低电频率", @"防止温控降频"];
-    for (NSInteger i = 0; i < titles.count; i++) {
-        UIAction *a = [UIAction actionWithTitle:titles[i] image:nil identifier:nil handler:^(__kindof UIAction *action) {
-            cpuMode = i;
-            SavePreferencesAndNotify();
-            [self.tableView reloadData];
-        }];
-        a.state = (cpuMode == i) ? UIMenuElementStateOn : UIMenuElementStateOff;
-        [actions addObject:a];
+// 📝 在 Section 4（图一位置）增加详细的功能说明文字
+- (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
+    (void)tableView;
+    if (section == 4) {
+        return @"💡 功能说明：\n1. 强制 120Hz 高刷模式：通过底层硬件合成器与微像素渲染驱动，全局锁定 120Hz 满帧，彻底杜绝屏幕静止降频。\n2. 智能温控降频保护：开启时若检测到电池温度 ≥43°C 或系统过热警报将自动降频保护；关闭后解除温控限制，发热也强行保持 120Hz。";
     }
-    return [UIMenu menuWithTitle:@"" children:actions];
+    return nil;
+}
+
+- (void)changeScaleSlider:(UISlider *)slider {
+    floatingScale = slider.value;
+    SavePreferencesAndNotify();
+    updateFloatingSize();
+    [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:2 inSection:2]] withRowAnimation:UITableViewRowAnimationNone];
+}
+
+- (void)changeFontSlider:(UISlider *)slider {
+    floatingFontSize = slider.value;
+    SavePreferencesAndNotify();
+    updateFloatingSize();
+    [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:3 inSection:2]] withRowAnimation:UITableViewRowAnimationNone];
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    (void)tableView;
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
 
-    if (indexPath.section == 5) {
+    if (indexPath.section == 0) {
         if (indexPath.row == 0) {
-            cell.textLabel.text = @"CPU 模式";
-            cell.textLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
-            UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
-            NSArray *titles = @[@"苹果原生温控", @"模拟低电频率", @"防止温控降频"];
-            [btn setTitle:titles[cpuMode] forState:UIControlStateNormal];
-            btn.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightBold];
-            if (@available(iOS 14.0, *)) {
-                btn.showsMenuAsPrimaryAction = YES;
-                btn.menu = [self buildCpuModeMenu];
-            }
-            [btn sizeToFit];
-            cell.accessoryView = btn;
-        } else if (indexPath.row == 1) {
-            cell.textLabel.text = @"温控暗屏";
+            cell.textLabel.text = @"无操作自动收起";
             UISwitch *sw = [UISwitch new];
-            sw.onTintColor = [UIColor colorWithRed:0.22 green:0.74 blue:0.97 alpha:1.0];
-            sw.on = disableThermalDimming;
-            [sw addTarget:self action:@selector(changeThermalDimming:) forControlEvents:UIControlEventValueChanged];
+            sw.on = autoCollapseEnable;
+            [sw addTarget:self action:@selector(changeAutoCollapse:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"收起延迟时间";
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld 秒", (long)autoCollapseDelay];
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        }
+    } else if (indexPath.section == 1) {
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"自动注销";
+            UISwitch *sw = [UISwitch new];
+            sw.on = autoLogoutEnable;
+            [sw addTarget:self action:@selector(changeLogout:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"CPU 触发值";
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", logoutCPUThreshold];
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        } else if (indexPath.row == 2) {
+            cell.textLabel.text = @"持续时间";
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld 秒", (long)logoutDuration];
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        }
+    } else if (indexPath.section == 2) {
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"透明度开关";
+            UISwitch *sw = [UISwitch new];
+            sw.on = floatingAlphaEnable;
+            [sw addTarget:self action:@selector(changeAlphaEnable:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"透明度";
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", floatingAlpha * 100.0];
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        } else if (indexPath.row == 2) {
+            cell.textLabel.text = @"浮窗大小";
+            UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,130,30)];
+            slider.minimumValue = 0.4; slider.maximumValue = 1.6; slider.value = floatingScale;
+            [slider addTarget:self action:@selector(changeScaleSlider:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = slider;
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", floatingScale * 100];
+        } else if (indexPath.row == 3) {
+            cell.textLabel.text = @"字体大小";
+            UISlider *slider = [[UISlider alloc] initWithFrame:CGRectMake(0,0,130,30)];
+            slider.minimumValue = 8.0; slider.maximumValue = 15.0; slider.value = floatingFontSize;
+            [slider addTarget:self action:@selector(changeFontSlider:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = slider;
+            cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0fpt", floatingFontSize];
+        }
+    } else if (indexPath.section == 3) {
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"键盘避让";
+            UISwitch *sw = [UISwitch new];
+            sw.on = keyboardAvoidEnable;
+            [sw addTarget:self action:@selector(changeKeyboardAvoid:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"智能吸附";
+            UISwitch *sw = [UISwitch new];
+            sw.on = smartDockEnable;
+            [sw addTarget:self action:@selector(changeSmartDock:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
         } else if (indexPath.row == 2) {
-            cell.textLabel.text = @"禁温度计弹窗";
+            cell.textLabel.text = @"吸附模式";
+            NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
+            cell.detailTextLabel.text = (dockMode >= 0 && dockMode < modes.count) ? modes[dockMode] : @"自动";
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        }
+    } else if (indexPath.section == 4) {
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"强制 120Hz 高刷模式";
             UISwitch *sw = [UISwitch new];
-            sw.onTintColor = [UIColor colorWithRed:0.22 green:0.74 blue:0.97 alpha:1.0];
-            sw.on = blockThermalAlert;
-            [sw addTarget:self action:@selector(changeBlockAlert:) forControlEvents:UIControlEventValueChanged];
+            sw.on = force120HzEnable;
+            [sw addTarget:self action:@selector(changeForce120Hz:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
-        } else if (indexPath.row == 3) {
-            cell.textLabel.text = @"禁用口袋高温";
+        } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"智能温控降频保护";
             UISwitch *sw = [UISwitch new];
-            sw.onTintColor = [UIColor colorWithRed:0.22 green:0.74 blue:0.97 alpha:1.0];
-            sw.on = disablePocketThermal;
-            [sw addTarget:self action:@selector(changePocketThermal:) forControlEvents:UIControlEventValueChanged];
-            cell.accessoryView = sw;
-        } else if (indexPath.row == 4) {
-            cell.textLabel.text = @"锁定阳光暴晒";
-            UISwitch *sw = [UISwitch new];
-            sw.onTintColor = [UIColor colorWithRed:0.22 green:0.74 blue:0.97 alpha:1.0];
-            sw.on = lockSunlightExposure;
-            [sw addTarget:self action:@selector(changeSunlightLock:) forControlEvents:UIControlEventValueChanged];
+            sw.on = thermalProtectionEnable;
+            [sw addTarget:self action:@selector(changeThermalProtection:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
         }
-    } else {
-        cell.textLabel.text = @"悬浮窗全局启用";
-        UISwitch *sw = [UISwitch new];
-        sw.on = isEnabled;
-        [sw addTarget:self action:@selector(changeIsEnabled:) forControlEvents:UIControlEventValueChanged];
-        cell.accessoryView = sw;
+    } else if (indexPath.section == 5) {
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"全局启用悬浮窗";
+            UISwitch *sw = [UISwitch new];
+            sw.on = isEnabled;
+            [sw addTarget:self action:@selector(changeIsEnabled:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"记忆悬浮窗位置";
+            UISwitch *sw = [UISwitch new];
+            sw.on = rememberPositionEnable;
+            [sw addTarget:self action:@selector(changeRememberPosition:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 2) {
+            cell.textLabel.text = @"显示 CPU 频率";
+            UISwitch *sw = [UISwitch new];
+            sw.on = showCpuFrequency;
+            [sw addTarget:self action:@selector(changeShowCpuFreq:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 3) {
+            cell.textLabel.text = @"显示 FPS 帧率";
+            UISwitch *sw = [UISwitch new];
+            sw.on = showFps;
+            [sw addTarget:self action:@selector(changeShowFps:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 4) {
+            cell.textLabel.text = @"显示电池百分比";
+            UISwitch *sw = [UISwitch new];
+            sw.on = showBatteryPercent;
+            [sw addTarget:self action:@selector(changeShowBattery:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 5) {
+            cell.textLabel.text = @"显示电池温度";
+            UISwitch *sw = [UISwitch new];
+            sw.on = showBatteryTemperature;
+            [sw addTarget:self action:@selector(changeShowTemp:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 6) {
+            cell.textLabel.text = @"显示实时电流";
+            UISwitch *sw = [UISwitch new];
+            sw.on = showBatteryCurrent;
+            [sw addTarget:self action:@selector(changeShowCurrent:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        }
     }
     return cell;
 }
 
-- (void)changeThermalDimming:(UISwitch *)sw { disableThermalDimming = sw.isOn; SavePreferencesAndNotify(); }
-- (void)changeBlockAlert:(UISwitch *)sw { blockThermalAlert = sw.isOn; SavePreferencesAndNotify(); }
-- (void)changePocketThermal:(UISwitch *)sw { disablePocketThermal = sw.isOn; SavePreferencesAndNotify(); }
-- (void)changeSunlightLock:(UISwitch *)sw { lockSunlightExposure = sw.isOn; SavePreferencesAndNotify(); }
-- (void)changeIsEnabled:(UISwitch *)sw { isEnabled = sw.isOn; SavePreferencesAndNotify(); if (cpuWindow) cpuWindow.hidden = !isEnabled; }
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
 
-@end
+    if (indexPath.section == 0) {
+        if (indexPath.row == 1) {
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"无操作收起延迟" message:@"选择多长时间无操作后自动折叠" preferredStyle:UIAlertControllerStyleActionSheet];
+            NSArray *titles = @[@"2 秒", @"3 秒", @"4 秒", @"5 秒", @"8 秒", @"10 秒"];
+            NSArray *values = @[@2, @3, @4, @5, @8, @10];
 
-#pragma mark - 15. 配置持久化与构造入口 (🔥 绝对在文件最底部全局作用域)
+            for (NSInteger i = 0; i < titles.count; i++) {
+                [alert addAction:[UIAlertAction actionWithTitle:titles[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                    (void)action;
+                    autoCollapseDelay = [values[i] integerValue];
+                    SavePreferencesAndNotify();
+                    [self.tableView reloadData];
+                }]];
+            }
+            [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+            [self presentViewController:alert animated:YES completion:nil];
+        }
+    } else if (indexPath.section == 1) {
+        if (indexPath.row == 1) {
+            SBCPUValuePickerController *vc = [[SBCPUValuePickerController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+            [self.navigationController pushViewController:vc animated:YES];
+        } else if (indexPath.row == 2) {
+            SBCPUTimePickerController *vc = [[SBCPUTimePickerController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+            [self.navigationController pushViewController:vc animated:YES];
+        }
+    } else if (indexPath.section == 2) {
+        if (indexPath.row == 1) {
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"透明度" message:@"选择悬浮窗透明度" preferredStyle:UIAlertControllerStyleActionSheet];
+            NSArray *titles = @[@"20%", @"40%", @"60%", @"70%", @"80%", @"100%"];
+            NSArray *values = @[@0.2, @0.4, @0.6, @0.7, @0.8, @1.0];
 
-static void LoadPreferences(void) {
-    NSDictionary *dict = [NSDictionary dictionaryWithContentsOfFile:kPlistPath];
-    if (dict) {
-        if (dict[@"isEnabled"]) isEnabled = [dict[@"isEnabled"] boolValue];
-        if (dict[@"cpuMode"]) cpuMode = [dict[@"cpuMode"] integerValue];
-        if (dict[@"disableThermalDimming"]) disableThermalDimming = [dict[@"disableThermalDimming"] boolValue];
-        if (dict[@"blockThermalAlert"]) blockThermalAlert = [dict[@"blockThermalAlert"] boolValue];
-        if (dict[@"disablePocketThermal"]) disablePocketThermal = [dict[@"disablePocketThermal"] boolValue];
-        if (dict[@"lockSunlightExposure"]) lockSunlightExposure = [dict[@"lockSunlightExposure"] boolValue];
+            for (NSInteger i = 0; i < titles.count; i++) {
+                [alert addAction:[UIAlertAction actionWithTitle:titles[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                    (void)action;
+                    floatingAlpha = [values[i] floatValue];
+                    SavePreferencesAndNotify();
+                    applyFloatingAlpha();
+                    [self.tableView reloadData];
+                }]];
+            }
+            [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+            [self presentViewController:alert animated:YES completion:nil];
+        }
+    } else if (indexPath.section == 3) {
+        if (indexPath.row == 2) {
+            NSArray *modes = @[@"自动", @"左侧", @"右侧", @"顶部", @"底部"];
+            dockMode = (dockMode + 1) % modes.count;
+            SavePreferencesAndNotify();
+            [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+        }
     }
 }
 
-static void SavePreferencesAndNotify(void) {
-    NSMutableDictionary *dict = [NSMutableDictionary dictionaryWithContentsOfFile:kPlistPath] ?: [NSMutableDictionary dictionary];
-    dict[@"isEnabled"] = @(isEnabled);
-    dict[@"cpuMode"] = @(cpuMode);
-    dict[@"disableThermalDimming"] = @(disableThermalDimming);
-    dict[@"blockThermalAlert"] = @(blockThermalAlert);
-    dict[@"disablePocketThermal"] = @(disablePocketThermal);
-    dict[@"lockSunlightExposure"] = @(lockSunlightExposure);
-    [dict writeToFile:kPlistPath atomically:YES];
-    chmod([kPlistPath UTF8String], 0666);
-
-    applyHardwareCpuGovernor(cpuMode);
-    notify_post(kPrefChangedNotification);
+- (void)changeIsEnabled:(UISwitch *)sw {
+    isEnabled = sw.isOn;
+    SavePreferencesAndNotify();
+    applyVisibility();
 }
 
-static void onPrefChangedNotification(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
+- (void)changeAutoCollapse:(UISwitch *)sw {
+    autoCollapseEnable = sw.isOn;
+    SavePreferencesAndNotify();
+    if (floatingView) {
+        if (!autoCollapseEnable && floatingView.isCollapsed) {
+            [floatingView expandFromEdgeAnimated:YES];
+        } else {
+            [floatingView resetInactivityTimer];
+        }
+    }
+}
+
+- (void)changeLogout:(UISwitch *)sw { autoLogoutEnable = sw.isOn; SavePreferencesAndNotify(); }
+- (void)changeAlphaEnable:(UISwitch *)sw { floatingAlphaEnable = sw.isOn; SavePreferencesAndNotify(); applyFloatingAlpha(); }
+- (void)changeKeyboardAvoid:(UISwitch *)sw { keyboardAvoidEnable = sw.isOn; SavePreferencesAndNotify(); }
+- (void)changeSmartDock:(UISwitch *)sw { smartDockEnable = sw.isOn; SavePreferencesAndNotify(); }
+- (void)changeRememberPosition:(UISwitch *)sw { rememberPositionEnable = sw.isOn; SavePreferencesAndNotify(); }
+
+- (void)changeForce120Hz:(UISwitch *)sw {
+    force120HzEnable = sw.isOn;
+    SavePreferencesAndNotify();
+}
+
+- (void)changeThermalProtection:(UISwitch *)sw {
+    thermalProtectionEnable = sw.isOn;
+    SavePreferencesAndNotify();
+}
+
+- (void)changeShowCpuFreq:(UISwitch *)sw { showCpuFrequency = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
+- (void)changeShowFps:(UISwitch *)sw { showFps = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
+- (void)changeShowBattery:(UISwitch *)sw { showBatteryPercent = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
+- (void)changeShowTemp:(UISwitch *)sw { showBatteryTemperature = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
+- (void)changeShowCurrent:(UISwitch *)sw { showBatteryCurrent = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
+
+@end
+
+#pragma mark - 15. 通知监听与 Tweak 入口 (%ctor)
+
+static void onCCNotificationReceived(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
+    (void)center;
+    (void)observer;
+    (void)name;
+    (void)object;
+    (void)userInfo;
     LoadPreferences();
+}
+
+static void registerV160Observers(void) {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
+
+        [nc addObserverForName:UIDeviceOrientationDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+            (void)n;
+            if (cpuWindow && floatingView) updateFloatingSize();
+        }];
+
+        [nc addObserverForName:UIKeyboardWillShowNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+            if (settingsShowing || detailShowing || !keyboardAvoidEnable) return;
+            if (cpuWindow && floatingView) {
+                UIWindowScene *scene = getWindowScene();
+                CGRect screenBounds = scene ? scene.coordinateSpace.bounds : UIScreen.mainScreen.bounds;
+                if (CGRectGetMidY(floatingView.frame) < CGRectGetMidY(screenBounds)) return;
+
+                if (!keyboardMoved) keyboardBeforeFrame = floatingView.frame;
+                
+                NSDictionary *info = n.userInfo;
+                NSValue *endFrameValue = info[UIKeyboardFrameEndUserInfoKey];
+                CGFloat keyboardHeight = 220.0;
+                if (endFrameValue) {
+                    CGRect keyboardFrame = [endFrameValue CGRectValue];
+                    keyboardHeight = MIN(320.0, keyboardFrame.size.height);
+                }
+
+                CGRect f = keyboardBeforeFrame;
+                f.origin.y = MAX(20.0, f.origin.y - keyboardHeight);
+                [UIView animateWithDuration:0.25 animations:^{ floatingView.frame = f; }];
+                keyboardMoved = YES;
+            }
+        }];
+
+        [nc addObserverForName:UIKeyboardWillHideNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+            (void)n;
+            if (!settingsShowing && !detailShowing && keyboardMoved && floatingView) {
+                [UIView animateWithDuration:0.25 animations:^{ floatingView.frame = keyboardBeforeFrame; }];
+                keyboardMoved = NO;
+            }
+        }];
+
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            NULL,
+            onCCNotificationReceived,
+            CFSTR(kToggleNotification),
+            NULL,
+            CFNotificationSuspensionBehaviorDeliverImmediately
+        );
+    });
 }
 
 %ctor {
     NSString *processName = [NSProcessInfo processInfo].processName;
-    LoadPreferences();
-
-    CFNotificationCenterAddObserver(
-        CFNotificationCenterGetDarwinNotifyCenter(),
-        NULL,
-        onPrefChangedNotification,
-        CFSTR(kPrefChangedNotification),
-        NULL,
-        CFNotificationSuspensionBehaviorDeliverImmediately
-    );
-
     if ([processName isEqualToString:@"SpringBoard"]) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 4 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        LoadPreferences();
+
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             createCPUWindow();
-            [[SBCPUFPSHelper sharedInstance] startMonitoring];
-            [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *timer) { updateCPU(); }];
+            registerV160Observers();
+
+            [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *timer) {
+                updateCPU();
+            }];
         });
     }
 }
-
-#pragma clang diagnostic pop
 
