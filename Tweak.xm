@@ -51,6 +51,13 @@ typedef struct {
 
 #pragma mark - 2. 所有类的极严格前置声明 (防止编译找不到 Identifier)
 
+// 🟢 [修复编译] 将 MitigationController 声明提升到最顶部，让编译器提前认识它
+@interface MitigationController : NSObject
+- (void)setPowerSaveActive:(BOOL)arg1;
+- (void)setCPULevel:(int)arg1;
+- (void)updateCPU;
+@end
+
 @interface SpringBoard : UIApplication
 - (UIInterfaceOrientation)activeInterfaceOrientation;
 @end
@@ -201,8 +208,8 @@ static CFAbsoluteTime lastNetSpeedTime = 0;
 static host_cpu_load_info_data_t prev_cpu_load;
 static BOOL has_prev_cpu_load = NO;
 
-// 🟢 [新接入] 保存 MitigationController 的弱引用，以便主动应用策略
-static __weak id sharedMitigationController = nil;
+// 🟢 [修复编译] 改为强类型指针，让编译器彻底放心
+static __weak MitigationController *sharedMitigationController = nil;
 static const int InsulationUnrestrictedPowerTarget = 65000;
 
 #pragma mark - 4. 所有的底层 C 函数严谨前置声明
@@ -240,12 +247,10 @@ static double getRealCPUFrequency(void);
 static void setHardwareChargingInhibit(BOOL inhibit);
 static NSString *getNetworkType(void);
 
-// 🟢 [新接入] 主动触发温控更新声明
 static void applyMitigationState(void);
 
 #pragma mark - 5. 底层 C 函数具体实现与 CFPreferences 全局引流引擎
 
-// 🟢 [新接入] 主动向 MitigationController 下发策略 (完美还原源码机制)
 static void applyMitigationState(void) {
     if (!sharedMitigationController) return;
     @try {
@@ -270,7 +275,7 @@ static void applyMitigationState(void) {
             [sharedMitigationController performSelector:@selector(updateCPU)];
         }
         
-        // 双重写入，防覆盖（完美还原原版提取代码的逻辑）
+        // 双重写入，防覆盖
         if (insulationCpuMode == 1) { 
             if ([sharedMitigationController respondsToSelector:@selector(setPowerSaveActive:)]) [sharedMitigationController setPowerSaveActive:YES];
             if ([sharedMitigationController respondsToSelector:@selector(setCPULevel:)]) [sharedMitigationController setCPULevel:2];
@@ -2630,14 +2635,6 @@ static void registerV160Observers(void) {
     }
 }
 %end
-
-
-// 🟢 [新接入] 专供底层 thermalmonitord 的精髓代码，完全还原提取的逻辑
-@interface MitigationController : NSObject
-- (void)setPowerSaveActive:(BOOL)arg1;
-- (void)setCPULevel:(int)arg1;
-- (void)updateCPU;
-@end
 
 %group MitigationHooks
 %hook MitigationController
