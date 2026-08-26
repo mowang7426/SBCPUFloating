@@ -56,18 +56,19 @@ static DeviceSpec getDeviceSpec(void) {
     sysctlbyname("hw.machine", machine, &size, NULL, 0);
     NSString *platform = [NSString stringWithUTF8String:machine];
 
+    // 精准对齐电话助手等工具的硬件频率库
     if ([platform isEqualToString:@"iPhone16,2"]) return (DeviceSpec){"iPhone16,2", "iPhone 15 Pro Max", "A17 Pro", 6, 3780.0, 4422};
     if ([platform isEqualToString:@"iPhone16,1"]) return (DeviceSpec){"iPhone16,1", "iPhone 15 Pro", "A17 Pro", 6, 3780.0, 3274};
-    if ([platform isEqualToString:@"iPhone15,5"]) return (DeviceSpec){"iPhone15,5", "iPhone 15 Plus", "A16 Bionic", 6, 3460.0, 4383};
-    if ([platform isEqualToString:@"iPhone15,4"]) return (DeviceSpec){"iPhone15,4", "iPhone 15", "A16 Bionic", 6, 3460.0, 3349};
-    if ([platform isEqualToString:@"iPhone15,3"]) return (DeviceSpec){"iPhone15,3", "iPhone 14 Pro Max", "A16 Bionic", 6, 3460.0, 4323};
-    if ([platform isEqualToString:@"iPhone15,2"]) return (DeviceSpec){"iPhone15,2", "iPhone 14 Pro", "A16 Bionic", 6, 3460.0, 3200};
-    if ([platform isEqualToString:@"iPhone14,8"]) return (DeviceSpec){"iPhone14,8", "iPhone 14 Plus", "A15 Bionic", 6, 3230.0, 4325};
-    if ([platform isEqualToString:@"iPhone14,7"]) return (DeviceSpec){"iPhone14,7", "iPhone 14", "A15 Bionic", 6, 3230.0, 3279};
-    if ([platform isEqualToString:@"iPhone14,3"]) return (DeviceSpec){"iPhone14,3", "iPhone 13 Pro Max", "A15 Bionic", 6, 3230.0, 4352};
-    if ([platform isEqualToString:@"iPhone14,2"]) return (DeviceSpec){"iPhone14,2", "iPhone 13 Pro", "A15 Bionic", 6, 3230.0, 3095};
-    if ([platform isEqualToString:@"iPhone14,5"]) return (DeviceSpec){"iPhone14,5", "iPhone 13", "A15 Bionic", 6, 3230.0, 3227};
-    if ([platform isEqualToString:@"iPhone14,4"]) return (DeviceSpec){"iPhone14,4", "iPhone 13 mini", "A15 Bionic", 6, 3230.0, 2406};
+    if ([platform isEqualToString:@"iPhone15,5"]) return (DeviceSpec){"iPhone15,5", "iPhone 15 Plus", "A16 Bionic", 6, 3468.0, 4383};
+    if ([platform isEqualToString:@"iPhone15,4"]) return (DeviceSpec){"iPhone15,4", "iPhone 15", "A16 Bionic", 6, 3468.0, 3349};
+    if ([platform isEqualToString:@"iPhone15,3"]) return (DeviceSpec){"iPhone15,3", "iPhone 14 Pro Max", "A16 Bionic", 6, 3468.0, 4323};
+    if ([platform isEqualToString:@"iPhone15,2"]) return (DeviceSpec){"iPhone15,2", "iPhone 14 Pro", "A16 Bionic", 6, 3468.0, 3200};
+    if ([platform isEqualToString:@"iPhone14,8"]) return (DeviceSpec){"iPhone14,8", "iPhone 14 Plus", "A15 Bionic", 6, 3240.0, 4325};
+    if ([platform isEqualToString:@"iPhone14,7"]) return (DeviceSpec){"iPhone14,7", "iPhone 14", "A15 Bionic", 6, 3240.0, 3279};
+    if ([platform isEqualToString:@"iPhone14,3"]) return (DeviceSpec){"iPhone14,3", "iPhone 13 Pro Max", "A15 Bionic", 6, 3240.0, 4352};
+    if ([platform isEqualToString:@"iPhone14,2"]) return (DeviceSpec){"iPhone14,2", "iPhone 13 Pro", "A15 Bionic", 6, 3240.0, 3095};
+    if ([platform isEqualToString:@"iPhone14,5"]) return (DeviceSpec){"iPhone14,5", "iPhone 13", "A15 Bionic", 6, 3240.0, 3227};
+    if ([platform isEqualToString:@"iPhone14,4"]) return (DeviceSpec){"iPhone14,4", "iPhone 13 mini", "A15 Bionic", 6, 3240.0, 2406};
     if ([platform isEqualToString:@"iPhone13,4"]) return (DeviceSpec){"iPhone13,4", "iPhone 12 Pro Max", "A14 Bionic", 6, 3100.0, 3687};
     if ([platform isEqualToString:@"iPhone13,3"]) return (DeviceSpec){"iPhone13,3", "iPhone 12 Pro", "A14 Bionic", 6, 3100.0, 2815};
     if ([platform isEqualToString:@"iPhone13,2"]) return (DeviceSpec){"iPhone13,2", "iPhone 12", "A14 Bionic", 6, 3100.0, 2815};
@@ -75,7 +76,7 @@ static DeviceSpec getDeviceSpec(void) {
     if ([platform isEqualToString:@"iPhone17,2"]) return (DeviceSpec){"iPhone17,2", "iPhone 16 Pro Max", "A18 Pro", 6, 4040.0, 4685};
 
     NSInteger activeCores = [NSProcessInfo processInfo].processorCount;
-    return (DeviceSpec){machine, "iPhone", "Apple Silicon", activeCores, 3460.0, 4000};
+    return (DeviceSpec){machine, "iPhone", "Apple Silicon", activeCores, 3468.0, 4000};
 }
 
 #pragma mark - 3. 前置声明与类定义
@@ -115,7 +116,7 @@ static DeviceSpec getDeviceSpec(void) {
 @property (nonatomic, strong) UILabel *currentSubLabel;
 
 @property (nonatomic, strong) UIView *bottomCapsule;
-@property (nonatomic, strong) UIView *batteryProgressView; // 🔋 充电进度条
+@property (nonatomic, strong) UIView *batteryProgressView; 
 @property (nonatomic, strong) UILabel *statusLabel;
 
 @property (nonatomic, strong) UIView *collapsedContainerView;
@@ -210,7 +211,7 @@ static BOOL showFps = YES;
 static BOOL force120HzEnable = NO;               
 static BOOL thermalProtectionEnable = YES;       
 
-// 💡 核心新增：Insulation 温控保护模块全局变量
+// 🌡️ Insulation 温控保护模块全局变量
 static NSInteger insulationCpuMode = 0;           // 0: 原生, 1: 模拟低电频率, 2: 防止温控降频
 static BOOL insulationDimmingEnable = YES;        // 温控暗屏（默认开启）
 static BOOL insulationDisableThermometer = NO;    // 禁温度计弹窗
@@ -238,7 +239,7 @@ static BOOL has_prev_cpu_load = NO;
 static UIWindowScene *getWindowScene(void);
 static UIInterfaceOrientation getActiveInterfaceOrientation(void);
 static double getSystemCPUUsage(void);
-static double getCPUFrequencyMHz(double currentCpuUsage);
+static double getRealCPUFrequency(void);
 static double getBatteryTemperatureInternal(void);
 static double getBatteryCurrentInternal(void);
 static BOOL isChargingInternal(void);
@@ -273,31 +274,12 @@ static BOOL isDeviceOverheated(void) {
     return NO;
 }
 
-// Hook 1: 底层窗口合成器，锁定 120Hz 刷新率
 %hook CAWindowServerDisplay
-- (float)minimumRefreshRate {
-    if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
-        return 120.0f;
-    }
-    return %orig;
-}
-
-- (float)maximumRefreshRate {
-    if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
-        return 120.0f;
-    }
-    return %orig;
-}
-
-- (float)idealRefreshRate {
-    if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
-        return 120.0f;
-    }
-    return %orig;
-}
+- (float)minimumRefreshRate { return (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) ? 120.0f : %orig; }
+- (float)maximumRefreshRate { return (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) ? 120.0f : %orig; }
+- (float)idealRefreshRate { return (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) ? 120.0f : %orig; }
 %end
 
-// Hook 2: 全局 CAAnimation 默认优先使用 120Hz
 %hook CAAnimation
 - (CAFrameRateRange)preferredFrameRateRange {
     if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
@@ -307,7 +289,6 @@ static BOOL isDeviceOverheated(void) {
 }
 %end
 
-// Hook 3: UIScreen 突破系统低电量或节能限制
 %hook UIScreen
 - (NSInteger)maximumFramesPerSecond {
     if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
@@ -398,18 +379,13 @@ static BOOL isDeviceOverheated(void) {
 
 - (void)updateFrameRate {
     if (!_displayLink) return;
-
     BOOL apply120 = force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated());
-
     if (@available(iOS 15.0, *)) {
         float targetFps = apply120 ? 120.0f : 60.0f;
         _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(targetFps, targetFps, targetFps);
-        
         if (apply120) {
             if ([_displayLink respondsToSelector:@selector(setHighFrameRateReason:)]) {
-                @try {
-                    [_displayLink setValue:@(1114113) forKey:@"highFrameRateReason"];
-                } @catch (id ex) {}
+                @try { [_displayLink setValue:@(1114113) forKey:@"highFrameRateReason"]; } @catch (id ex) {}
             }
             [self startDriverAnimation];
         } else {
@@ -621,7 +597,6 @@ static void applySystemRefreshRate(void) {
         _currentSubLabel.font = [UIFont systemFontOfSize:8.5f weight:UIFontWeightMedium];
         [content addSubview:_currentSubLabel];
 
-        // 充电状态胶囊背景容器
         _bottomCapsule = [[UIView alloc] init];
         _bottomCapsule.backgroundColor = [UIColor colorWithWhite:1.0f alpha:0.10f];
         _bottomCapsule.layer.cornerRadius = 10.0f;
@@ -630,13 +605,11 @@ static void applySystemRefreshRate(void) {
         _bottomCapsule.layer.borderColor = [UIColor colorWithWhite:1.0f alpha:0.12f].CGColor;
         [content addSubview:_bottomCapsule];
 
-        // 🔋 与电量严格同步的绿色进度指示条
         _batteryProgressView = [[UIView alloc] init];
         _batteryProgressView.backgroundColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:0.32f];
         _batteryProgressView.layer.cornerRadius = 10.0f;
         [_bottomCapsule addSubview:_batteryProgressView];
 
-        // 充电状态文字（悬浮在进度条上层）
         _statusLabel = [[UILabel alloc] init];
         _statusLabel.textColor = [UIColor colorWithRed:0.2f green:0.95f blue:0.5f alpha:1.0f];
         _statusLabel.font = [UIFont systemFontOfSize:10 weight:UIFontWeightMedium];
@@ -1334,7 +1307,7 @@ static void applySystemRefreshRate(void) {
     double systemCpu = getSystemCPUUsage();
     _labelsDict[@"CPU信息"].text = [NSString stringWithFormat:@"%s %ld核心 %.0f%%", spec.chipName, (long)spec.cores, systemCpu];
 
-    double freq = getCPUFrequencyMHz(systemCpu);
+    double freq = getRealCPUFrequency();
     double fps = [SBCPUFPSHelper sharedInstance].currentFPS;
     _labelsDict[@"CPU主频 / FPS"].text = [NSString stringWithFormat:@"%.0fMHz | %.0fFPS", freq, fps];
 
@@ -1481,22 +1454,23 @@ static double getSystemCPUUsage(void) {
     return ((double)(user + system + nice) / (double)total) * 100.0;
 }
 
-static double getCPUFrequencyMHz(double currentCpuUsage) {
+// 📌 彻底移除了虚假随机跳动算法，统一读取真实系统物理主频，完美对齐电话助手的数据
+static double getRealCPUFrequency(void) {
+    uint64_t freq = 0;
+    size_t size = sizeof(freq);
+    
+    // 优先尝试读取系统当前 CPU 频率
+    if (sysctlbyname("hw.cpufrequency", &freq, &size, NULL, 0) == 0 && freq > 0) {
+        return freq / 1000000.0;
+    }
+    // 获取硬件最大允许频率
+    if (sysctlbyname("hw.cpufrequency_max", &freq, &size, NULL, 0) == 0 && freq > 0) {
+        return freq / 1000000.0;
+    }
+    
+    // 若系统级接口屏蔽，调用前面定义好的真实硬件规格数据（例如 14 PM 会完美显示 3468MHz）
     DeviceSpec spec = getDeviceSpec();
-    double maxMHz = spec.maxFreqMHz;
-    double minMHz = 800.0;
-
-    double loadFactor = (currentCpuUsage / 100.0);
-    if (loadFactor < 0.05) loadFactor = 0.05;
-    if (loadFactor > 1.0) loadFactor = 1.0;
-
-    double dynamicFreq = minMHz + (maxMHz - minMHz) * (0.2 + 0.8 * loadFactor);
-    dynamicFreq += ((double)(arc4random() % 30) - 15.0);
-
-    if (dynamicFreq > maxMHz) dynamicFreq = maxMHz;
-    if (dynamicFreq < minMHz) dynamicFreq = minMHz;
-
-    return dynamicFreq;
+    return spec.maxFreqMHz;
 }
 
 - (NSString *)getLocalIPAddress {
@@ -1677,91 +1651,101 @@ static void applyVisibility(void) {
     });
 }
 
+// 📌 核心修复：升级为全局跨进程配置读取，彻底解决游戏内“模拟低电”读取不到失效的问题
 static void LoadPreferences(void) {
-    NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
+    NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:kPlistPath];
     isEnabled = YES; 
 
-    if ([def objectForKey:@"autoCollapseEnable"]) autoCollapseEnable = [def boolForKey:@"autoCollapseEnable"];
-    if ([def objectForKey:@"autoCollapseDelay"]) autoCollapseDelay = [def integerForKey:@"autoCollapseDelay"];
+    if (prefs) {
+        if (prefs[@"autoCollapseEnable"]) autoCollapseEnable = [prefs[@"autoCollapseEnable"] boolValue];
+        if (prefs[@"autoCollapseDelay"]) autoCollapseDelay = [prefs[@"autoCollapseDelay"] integerValue];
 
-    if ([def objectForKey:@"autoLogoutEnable"]) autoLogoutEnable = [def boolForKey:@"autoLogoutEnable"];
-    if ([def objectForKey:@"logoutCPUThreshold"]) logoutCPUThreshold = [def doubleForKey:@"logoutCPUThreshold"];
-    if ([def objectForKey:@"logoutDuration"]) logoutDuration = [def integerForKey:@"logoutDuration"];
-    
-    if ([def objectForKey:@"floatingAlphaEnable"]) floatingAlphaEnable = [def boolForKey:@"floatingAlphaEnable"];
-    if ([def objectForKey:@"floatingAlpha"]) floatingAlpha = [def floatForKey:@"floatingAlpha"];
-    if ([def objectForKey:@"floatingScale"]) floatingScale = [def floatForKey:@"floatingScale"];
-    if ([def objectForKey:@"floatingFontSize"]) floatingFontSize = [def floatForKey:@"floatingFontSize"];
-    
-    if ([def objectForKey:@"keyboardAvoidEnable"]) keyboardAvoidEnable = [def boolForKey:@"keyboardAvoidEnable"];
-    if ([def objectForKey:@"smartDockEnable"]) smartDockEnable = [def boolForKey:@"smartDockEnable"];
-    if ([def objectForKey:@"dockMode"]) dockMode = [def integerForKey:@"dockMode"];
-    if ([def objectForKey:@"rememberPositionEnable"]) rememberPositionEnable = [def boolForKey:@"rememberPositionEnable"];
-    
-    if ([def objectForKey:@"showCpuFrequency"]) showCpuFrequency = [def boolForKey:@"showCpuFrequency"];
-    if ([def objectForKey:@"showFps"]) showFps = [def boolForKey:@"showFps"];
-    if ([def objectForKey:@"force120HzEnable"]) force120HzEnable = [def boolForKey:@"force120HzEnable"];
-    if ([def objectForKey:@"thermalProtectionEnable"]) thermalProtectionEnable = [def boolForKey:@"thermalProtectionEnable"];
+        if (prefs[@"autoLogoutEnable"]) autoLogoutEnable = [prefs[@"autoLogoutEnable"] boolValue];
+        if (prefs[@"logoutCPUThreshold"]) logoutCPUThreshold = [prefs[@"logoutCPUThreshold"] doubleValue];
+        if (prefs[@"logoutDuration"]) logoutDuration = [prefs[@"logoutDuration"] integerValue];
+        
+        if (prefs[@"floatingAlphaEnable"]) floatingAlphaEnable = [prefs[@"floatingAlphaEnable"] boolValue];
+        if (prefs[@"floatingAlpha"]) floatingAlpha = [prefs[@"floatingAlpha"] floatValue];
+        if (prefs[@"floatingScale"]) floatingScale = [prefs[@"floatingScale"] floatValue];
+        if (prefs[@"floatingFontSize"]) floatingFontSize = [prefs[@"floatingFontSize"] floatValue];
+        
+        if (prefs[@"keyboardAvoidEnable"]) keyboardAvoidEnable = [prefs[@"keyboardAvoidEnable"] boolValue];
+        if (prefs[@"smartDockEnable"]) smartDockEnable = [prefs[@"smartDockEnable"] boolValue];
+        if (prefs[@"dockMode"]) dockMode = [prefs[@"dockMode"] integerValue];
+        if (prefs[@"rememberPositionEnable"]) rememberPositionEnable = [prefs[@"rememberPositionEnable"] boolValue];
+        
+        if (prefs[@"showCpuFrequency"]) showCpuFrequency = [prefs[@"showCpuFrequency"] boolValue];
+        if (prefs[@"showFps"]) showFps = [prefs[@"showFps"] boolValue];
+        if (prefs[@"force120HzEnable"]) force120HzEnable = [prefs[@"force120HzEnable"] boolValue];
+        if (prefs[@"thermalProtectionEnable"]) thermalProtectionEnable = [prefs[@"thermalProtectionEnable"] boolValue];
 
-    if ([def objectForKey:@"showBatteryPercent"]) showBatteryPercent = [def boolForKey:@"showBatteryPercent"];
-    if ([def objectForKey:@"showBatteryTemperature"]) showBatteryTemperature = [def boolForKey:@"showBatteryTemperature"];
-    if ([def objectForKey:@"showBatteryCurrent"]) showBatteryCurrent = [def boolForKey:@"showBatteryCurrent"];
+        if (prefs[@"showBatteryPercent"]) showBatteryPercent = [prefs[@"showBatteryPercent"] boolValue];
+        if (prefs[@"showBatteryTemperature"]) showBatteryTemperature = [prefs[@"showBatteryTemperature"] boolValue];
+        if (prefs[@"showBatteryCurrent"]) showBatteryCurrent = [prefs[@"showBatteryCurrent"] boolValue];
 
-    // 💡 读取 Insulation 温控设置
-    if ([def objectForKey:@"insulationCpuMode"]) insulationCpuMode = [def integerForKey:@"insulationCpuMode"];
-    if ([def objectForKey:@"insulationDimmingEnable"]) insulationDimmingEnable = [def boolForKey:@"insulationDimmingEnable"];
-    if ([def objectForKey:@"insulationDisableThermometer"]) insulationDisableThermometer = [def boolForKey:@"insulationDisableThermometer"];
-    if ([def objectForKey:@"insulationDisablePocketTemp"]) insulationDisablePocketTemp = [def boolForKey:@"insulationDisablePocketTemp"];
-    if ([def objectForKey:@"insulationLockSunlight"]) insulationLockSunlight = [def boolForKey:@"insulationLockSunlight"];
-
-    applyVisibility();
-
-    if (showFps || force120HzEnable) {
-        [[SBCPUFPSHelper sharedInstance] startMonitoring];
+        if (prefs[@"insulationCpuMode"]) insulationCpuMode = [prefs[@"insulationCpuMode"] integerValue];
+        if (prefs[@"insulationDimmingEnable"]) insulationDimmingEnable = [prefs[@"insulationDimmingEnable"] boolValue];
+        if (prefs[@"insulationDisableThermometer"]) insulationDisableThermometer = [prefs[@"insulationDisableThermometer"] boolValue];
+        if (prefs[@"insulationDisablePocketTemp"]) insulationDisablePocketTemp = [prefs[@"insulationDisablePocketTemp"] boolValue];
+        if (prefs[@"insulationLockSunlight"]) insulationLockSunlight = [prefs[@"insulationLockSunlight"] boolValue];
     } else {
-        [[SBCPUFPSHelper sharedInstance] stopMonitoring];
+        // 如果文件不存在（初次运行），初始化默认状态
+        insulationCpuMode = 0;
+        insulationDimmingEnable = YES;
     }
 
-    applySystemRefreshRate();
+    NSString *processName = [NSProcessInfo processInfo].processName;
+    if ([processName isEqualToString:@"SpringBoard"]) {
+        applyVisibility();
+
+        if (showFps || force120HzEnable) {
+            [[SBCPUFPSHelper sharedInstance] startMonitoring];
+        } else {
+            [[SBCPUFPSHelper sharedInstance] stopMonitoring];
+        }
+
+        applySystemRefreshRate();
+    }
 }
 
 static void SavePreferencesAndNotify(void) {
-    NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
-    [def setBool:isEnabled forKey:@"isEnabled"];
-    [def setBool:autoCollapseEnable forKey:@"autoCollapseEnable"];
-    [def setInteger:autoCollapseDelay forKey:@"autoCollapseDelay"];
+    NSMutableDictionary *prefs = [NSMutableDictionary dictionary];
+    
+    prefs[@"isEnabled"] = @(isEnabled);
+    prefs[@"autoCollapseEnable"] = @(autoCollapseEnable);
+    prefs[@"autoCollapseDelay"] = @(autoCollapseDelay);
 
-    [def setBool:autoLogoutEnable forKey:@"autoLogoutEnable"];
-    [def setDouble:logoutCPUThreshold forKey:@"logoutCPUThreshold"];
-    [def setInteger:logoutDuration forKey:@"logoutDuration"];
+    prefs[@"autoLogoutEnable"] = @(autoLogoutEnable);
+    prefs[@"logoutCPUThreshold"] = @(logoutCPUThreshold);
+    prefs[@"logoutDuration"] = @(logoutDuration);
     
-    [def setBool:floatingAlphaEnable forKey:@"floatingAlphaEnable"];
-    [def setFloat:floatingAlpha forKey:@"floatingAlpha"];
-    [def setFloat:floatingScale forKey:@"floatingScale"];
-    [def setFloat:floatingFontSize forKey:@"floatingFontSize"];
+    prefs[@"floatingAlphaEnable"] = @(floatingAlphaEnable);
+    prefs[@"floatingAlpha"] = @(floatingAlpha);
+    prefs[@"floatingScale"] = @(floatingScale);
+    prefs[@"floatingFontSize"] = @(floatingFontSize);
     
-    [def setBool:keyboardAvoidEnable forKey:@"keyboardAvoidEnable"];
-    [def setBool:smartDockEnable forKey:@"smartDockEnable"];
-    [def setInteger:dockMode forKey:@"dockMode"];
-    [def setBool:rememberPositionEnable forKey:@"rememberPositionEnable"];
+    prefs[@"keyboardAvoidEnable"] = @(keyboardAvoidEnable);
+    prefs[@"smartDockEnable"] = @(smartDockEnable);
+    prefs[@"dockMode"] = @(dockMode);
+    prefs[@"rememberPositionEnable"] = @(rememberPositionEnable);
     
-    [def setBool:showCpuFrequency forKey:@"showCpuFrequency"];
-    [def setBool:showFps forKey:@"showFps"];
-    [def setBool:force120HzEnable forKey:@"force120HzEnable"];
-    [def setBool:thermalProtectionEnable forKey:@"thermalProtectionEnable"];
+    prefs[@"showCpuFrequency"] = @(showCpuFrequency);
+    prefs[@"showFps"] = @(showFps);
+    prefs[@"force120HzEnable"] = @(force120HzEnable);
+    prefs[@"thermalProtectionEnable"] = @(thermalProtectionEnable);
 
-    [def setBool:showBatteryPercent forKey:@"showBatteryPercent"];
-    [def setBool:showBatteryTemperature forKey:@"showBatteryTemperature"];
-    [def setBool:showBatteryCurrent forKey:@"showBatteryCurrent"];
+    prefs[@"showBatteryPercent"] = @(showBatteryPercent);
+    prefs[@"showBatteryTemperature"] = @(showBatteryTemperature);
+    prefs[@"showBatteryCurrent"] = @(showBatteryCurrent);
 
-    // 💡 保存 Insulation 温控设置
-    [def setInteger:insulationCpuMode forKey:@"insulationCpuMode"];
-    [def setBool:insulationDimmingEnable forKey:@"insulationDimmingEnable"];
-    [def setBool:insulationDisableThermometer forKey:@"insulationDisableThermometer"];
-    [def setBool:insulationDisablePocketTemp forKey:@"insulationDisablePocketTemp"];
-    [def setBool:insulationLockSunlight forKey:@"insulationLockSunlight"];
+    // 💡 强行写入绝对路径文件供全局所有 App 读取
+    prefs[@"insulationCpuMode"] = @(insulationCpuMode);
+    prefs[@"insulationDimmingEnable"] = @(insulationDimmingEnable);
+    prefs[@"insulationDisableThermometer"] = @(insulationDisableThermometer);
+    prefs[@"insulationDisablePocketTemp"] = @(insulationDisablePocketTemp);
+    prefs[@"insulationLockSunlight"] = @(insulationLockSunlight);
     
-    [def synchronize];
+    [prefs writeToFile:kPlistPath atomically:YES];
 
     if (showFps || force120HzEnable) {
         [[SBCPUFPSHelper sharedInstance] startMonitoring];
@@ -1771,6 +1755,7 @@ static void SavePreferencesAndNotify(void) {
 
     applySystemRefreshRate();
 
+    // 跨进程发送配置变更通知
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFSTR(kPrefChangedNotification), NULL, NULL, YES);
 }
 
@@ -1913,7 +1898,7 @@ static void updateCPU(void) {
     if (!isEnabled) return;
 
     double cpu = getSystemCPUUsage();
-    double cpuFreq = getCPUFrequencyMHz(cpu);
+    double cpuFreq = getRealCPUFrequency(); // 已经换成了真实的硬件主频读取
     double fps = [SBCPUFPSHelper sharedInstance].currentFPS;
 
     checkHighCPU(cpu);
@@ -2039,18 +2024,18 @@ static void updateCPU(void) {
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { 
     (void)tableView;
-    return 7; // 💡 新增第 7 个区块用于显示 Insulation 功能
+    return 7; 
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     (void)tableView;
-    if (section == 0) return 2; // 📱 智能缩进与侧边吸附
-    if (section == 1) return 3; // ⚡ 自动控制与防护
-    if (section == 2) return 4; // 🔲 悬浮窗外观
-    if (section == 3) return 3; // 🧠 智能选项
-    if (section == 4) return 2; // 🎮 性能与高刷锁定
-    if (section == 5) return 5; // 🌡️ Insulation (温控核心)
-    return 6;                   // 📍 位置与显示
+    if (section == 0) return 2;
+    if (section == 1) return 3;
+    if (section == 2) return 4;
+    if (section == 3) return 3;
+    if (section == 4) return 2;
+    if (section == 5) return 5;
+    return 6;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
@@ -2060,7 +2045,7 @@ static void updateCPU(void) {
     if (section == 2) return @"🔲 悬浮窗外观";
     if (section == 3) return @"🧠 智能选项";
     if (section == 4) return @"🎮 性能与高刷锁定";
-    if (section == 5) return @"🌡️ Insulation (温控核心)"; // 💡 完美还原原版插件功能区
+    if (section == 5) return @"🌡️ Insulation (温控核心)"; 
     return @"📍 位置与显示";
 }
 
@@ -2178,7 +2163,6 @@ static void updateCPU(void) {
             cell.accessoryView = sw;
         }
     } else if (indexPath.section == 5) {
-        // 💡 Insulation 模块 UI 还原
         if (indexPath.row == 0) {
             cell.textLabel.text = @"CPU 模式";
             NSArray *modes = @[@"苹果原生温控", @"模拟低电频率", @"防止温控降频"];
@@ -2305,7 +2289,6 @@ static void updateCPU(void) {
             [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
         }
     } else if (indexPath.section == 5) {
-        // 💡 Insulation 触发菜单选择 (原生/低电频/防止降频)
         if (indexPath.row == 0) {
             UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"CPU 模式" message:@"选择系统级温控干预级别" preferredStyle:UIAlertControllerStyleActionSheet];
             NSArray *titles = @[@"苹果原生温控", @"模拟低电频率", @"防止温控降频"];
@@ -2347,7 +2330,6 @@ static void updateCPU(void) {
 - (void)changeShowTemp:(UISwitch *)sw { showBatteryTemperature = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
 - (void)changeShowCurrent:(UISwitch *)sw { showBatteryCurrent = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
 
-// 💡 Insulation 开关事件保存
 - (void)changeInsulationDimming:(UISwitch *)sw { insulationDimmingEnable = sw.isOn; SavePreferencesAndNotify(); }
 - (void)changeInsulationThermometer:(UISwitch *)sw { insulationDisableThermometer = sw.isOn; SavePreferencesAndNotify(); }
 - (void)changeInsulationPocket:(UISwitch *)sw { insulationDisablePocketTemp = sw.isOn; SavePreferencesAndNotify(); }
@@ -2355,7 +2337,7 @@ static void updateCPU(void) {
 
 @end
 
-#pragma mark - 15. 通知监听与 Tweak 入口 (%ctor)
+#pragma mark - 15. 通知监听与 Tweak 全局注入入口
 
 static void onCCNotificationReceived(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
     (void)center;
@@ -2407,29 +2389,26 @@ static void registerV160Observers(void) {
                 keyboardMoved = NO;
             }
         }];
-
-        CFNotificationCenterAddObserver(
-            CFNotificationCenterGetDarwinNotifyCenter(),
-            NULL,
-            onCCNotificationReceived,
-            CFSTR(kToggleNotification),
-            NULL,
-            CFNotificationSuspensionBehaviorDeliverImmediately
-        );
     });
 }
 
-#pragma mark - 16. Insulation 模块核心注入 (防降频 / 防暗屏)
+#pragma mark - 16. Insulation 模块核心注入 (防降频 / 模拟低电 / 防暗屏)
 
-// 1. CPU 模式状态欺骗
+// 1. 跨进程拦截 NSProcessInfo 发热状态
 %hook NSProcessInfo
 - (NSProcessInfoThermalState)thermalState {
     if (insulationCpuMode == 2) {
-        return NSProcessInfoThermalStateNominal; // 防止温控降频：伪装成设备冰凉 (0)
+        return NSProcessInfoThermalStateNominal; // 骗系统不发热 (突破温控)
     } else if (insulationCpuMode == 1) {
-        return NSProcessInfoThermalStateCritical; // 模拟低电频率：伪装成设备严重发热，强行降低频率锁核 (3)
+        return NSProcessInfoThermalStateCritical; // 骗系统极度发热 (模拟低电限制频率)
     }
-    return %orig; // 苹果原生温控：默认返回
+    return %orig;
+}
+
+// 补充跨进程拦截系统低电量状态（强化模拟低电模式）
+- (BOOL)isLowPowerModeEnabled {
+    if (insulationCpuMode == 1) return YES;
+    return %orig;
 }
 %end
 
@@ -2437,12 +2416,12 @@ static void registerV160Observers(void) {
 %hook SBBacklightController
 - (void)setThermalWarningState:(NSInteger)state {
     if (!insulationDimmingEnable) {
-        %orig(0); // 如果关掉了"温控暗屏"，永远向系统发送亮度正常(0)的信号，不降亮度
+        %orig(0); 
     } else {
         %orig(state);
     }
 }
-// 5. 锁定阳光暴晒 (防阳光下掉亮度)
+// 5. 锁定阳光暴晒 
 - (void)_updateBrightnessForSunlightLoad:(BOOL)arg1 {
     if (insulationLockSunlight) {
         %orig(YES);
@@ -2455,14 +2434,13 @@ static void registerV160Observers(void) {
 // 3. 禁温度计弹窗
 %hook SBThermalController
 - (void)showThermalAlertIfNecessary {
-    if (insulationDisableThermometer) return; // 不再弹出警报
+    if (insulationDisableThermometer) return; 
     %orig;
 }
 - (BOOL)isThermalBlocked {
     if (insulationDisableThermometer) return NO;
     return %orig;
 }
-// 配合 CPU 模式二次限制
 - (NSInteger)levelForCurrentThermalCondition {
     if (insulationCpuMode == 2) return 0;
     if (insulationCpuMode == 1) return 3;
@@ -2470,22 +2448,35 @@ static void registerV160Observers(void) {
 }
 %end
 
-// 4. 禁用口袋高温 (防口袋内误触降低性能)
+// 4. 禁用口袋高温 
 %hook SBPocketStateMonitor
 - (void)pocketStateDidChange:(NSInteger)state {
     if (insulationDisablePocketTemp) {
-        %orig(0); // 0 = OutOfPocket (不在口袋中)，强制骗过系统
+        %orig(0); 
     } else {
         %orig(state);
     }
 }
 %end
 
+// ⚠️ 将入口注册提出来，让所有 APP (包含游戏) 都能挂载防降频 Hook
 %ctor {
+    // 强制每次进程启动时去读取 kPlistPath 下的全局配置
+    LoadPreferences();
+    
+    // 全局监听：只要你在桌面改了配置，游戏里立刻收到通知并应用
+    CFNotificationCenterAddObserver(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        NULL,
+        onCCNotificationReceived,
+        CFSTR(kPrefChangedNotification),
+        NULL,
+        CFNotificationSuspensionBehaviorDeliverImmediately
+    );
+
+    // 下面是只有桌面才会执行的 UI 生成逻辑
     NSString *processName = [NSProcessInfo processInfo].processName;
     if ([processName isEqualToString:@"SpringBoard"]) {
-        LoadPreferences();
-
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             createCPUWindow();
             registerV160Observers();
