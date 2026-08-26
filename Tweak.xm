@@ -201,6 +201,10 @@ static CFAbsoluteTime lastNetSpeedTime = 0;
 static host_cpu_load_info_data_t prev_cpu_load;
 static BOOL has_prev_cpu_load = NO;
 
+// 🟢 [新接入] 保存 MitigationController 的弱引用，以便主动应用策略
+static __weak id sharedMitigationController = nil;
+static const int InsulationUnrestrictedPowerTarget = 65000;
+
 #pragma mark - 4. 所有的底层 C 函数严谨前置声明
 
 static DeviceSpec getDeviceSpec(void);
@@ -210,15 +214,11 @@ static void clampAndPositionFloatingView(CGPoint targetCenter, BOOL animate);
 static void applyVisibility(void);
 static void applyFloatingAlpha(void);
 static void updateFloatingSize(void);
-
-// ✅ 修改声明：接收系统指定的 Scene
-static void createCPUWindow(UIWindowScene *scene);
-
+static void createCPUWindow(void);
 static void openDetailView(void);
 static void openSettings(void);
 static void checkHighCPU(double cpu);
 static void updateCPU(void);
-static void registerV160Observers(void);
 
 static BOOL getBoolPref(CFStringRef key, BOOL defaultVal);
 static float getFloatPref(CFStringRef key, float defaultVal);
@@ -240,8 +240,46 @@ static double getRealCPUFrequency(void);
 static void setHardwareChargingInhibit(BOOL inhibit);
 static NSString *getNetworkType(void);
 
+// 🟢 [新接入] 主动触发温控更新声明
+static void applyMitigationState(void);
 
 #pragma mark - 5. 底层 C 函数具体实现与 CFPreferences 全局引流引擎
+
+// 🟢 [新接入] 主动向 MitigationController 下发策略 (完美还原源码机制)
+static void applyMitigationState(void) {
+    if (!sharedMitigationController) return;
+    @try {
+        if (insulationCpuMode == 1) { // 模拟低电锁频
+            if ([sharedMitigationController respondsToSelector:@selector(setPowerSaveActive:)]) {
+                [sharedMitigationController setPowerSaveActive:YES];
+            }
+            if ([sharedMitigationController respondsToSelector:@selector(setCPULevel:)]) {
+                [sharedMitigationController setCPULevel:2];
+            }
+        } else if (insulationCpuMode == 2) { // 满血强关
+            if ([sharedMitigationController respondsToSelector:@selector(setPowerSaveActive:)]) {
+                [sharedMitigationController setPowerSaveActive:NO];
+            }
+            if ([sharedMitigationController respondsToSelector:@selector(setCPULevel:)]) {
+                [sharedMitigationController setCPULevel:0];
+            }
+        }
+        
+        // 触发硬件调度器更新
+        if ([sharedMitigationController respondsToSelector:@selector(updateCPU)]) {
+            [sharedMitigationController performSelector:@selector(updateCPU)];
+        }
+        
+        // 双重写入，防覆盖（完美还原原版提取代码的逻辑）
+        if (insulationCpuMode == 1) { 
+            if ([sharedMitigationController respondsToSelector:@selector(setPowerSaveActive:)]) [sharedMitigationController setPowerSaveActive:YES];
+            if ([sharedMitigationController respondsToSelector:@selector(setCPULevel:)]) [sharedMitigationController setCPULevel:2];
+        } else if (insulationCpuMode == 2) {
+            if ([sharedMitigationController respondsToSelector:@selector(setPowerSaveActive:)]) [sharedMitigationController setPowerSaveActive:NO];
+            if ([sharedMitigationController respondsToSelector:@selector(setCPULevel:)]) [sharedMitigationController setCPULevel:0];
+        }
+    } @catch (NSException *e) {}
+}
 
 static DeviceSpec getDeviceSpec(void) {
     char machine[256] = {0};
@@ -374,6 +412,9 @@ static void LoadPreferences(void) {
         }
         applySystemRefreshRate();
     }
+    
+    // 🟢 [新接入] 配置读取完毕后，立即触发主动刷新下发底层
+    applyMitigationState();
 }
 
 static void SavePreferencesAndNotify(void) {
@@ -719,14 +760,15 @@ static void updateFloatingSize(void) {
     clampAndPositionFloatingView(floatingView.center, NO);
 }
 
-// ✅ 适配 iOS 15：由系统主动将已经存在的、活跃的 Scene 传给我们，而不是被动去碰运气寻找
-static void createCPUWindow(UIWindowScene *scene) {
-    if (cpuWindow) return; // 如果已经创建了就不管它
-    if (!scene) return;    // 确保绝对存在 Scene
+static void createCPUWindow(void) {
+    if (cpuWindow) return;
+
+    UIWindowScene *scene = getWindowScene();
+    if (!scene) return;
 
     cpuWindow = [[SBCPUWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
-    cpuWindow.windowScene = scene; // iOS 15 铁律：没有挂载 Scene 的 Window 会被直接抹除！
-    cpuWindow.windowLevel = UIWindowLevelStatusBar + 1500.0; // 拉高层级防止被遮挡
+    cpuWindow.windowScene = scene;
+    cpuWindow.windowLevel = UIWindowLevelAlert + 100.0; 
     cpuWindow.backgroundColor = UIColor.clearColor;
     cpuWindow.opaque = NO;
     cpuWindow.rootViewController = [[SBCPURootViewController alloc] init];
@@ -747,15 +789,6 @@ static void createCPUWindow(UIWindowScene *scene) {
 
     applyFloatingAlpha();
     updateFloatingSize();
-    
-    // 只注册一次定时器，防止重复加载
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        registerV160Observers();
-        [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *timer) {
-            updateCPU();
-        }];
-    });
 }
 
 static void openDetailView(void) {
@@ -1604,6 +1637,7 @@ static void applySystemRefreshRate(void) {
     }
 
     if (showTemp) {
+        // ✅ 修复 Bug 2：进一步扩宽温度模块，彻底解决 Emoji 宽度遮挡和偏斜的排版问题
         CGFloat tempW = 60.0f;
         _tempIconLabel.frame = CGRectMake(currentX, padY + 2, 20, 22);
         _tempValueLabel.frame = CGRectMake(currentX + 22, padY, tempW - 22, 14);
@@ -1895,6 +1929,7 @@ static void applySystemRefreshRate(void) {
     _labelsDict[@"设备名称"].text = [NSString stringWithUTF8String:spec.modelName];
     _labelsDict[@"软件版本"].text = [UIDevice currentDevice].systemVersion;
     
+    // ✅ 修复 Bug 3：注入底层的、绝对精准的动态获取 4G/5G/WiFi 的函数
     _labelsDict[@"网络信息"].text = getNetworkType();
     
     NSString *address = @"127.0.0.1";
@@ -2596,33 +2631,72 @@ static void registerV160Observers(void) {
 }
 %end
 
-// ✅ [核心修复] Hook SpringBoard，在 Scene 真正准备好时注入 UIWindow
-%hook SpringBoard
 
-- (void)applicationDidFinishLaunching:(id)application {
-    %orig;
-    
-    // 1. 监听 iOS 15 桌面发出的 Scene 激活信号，100% 成功抓取活跃的 Scene
-    [[NSNotificationCenter defaultCenter] addObserverForName:UISceneDidActivateNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification * _Nonnull note) {
-        UIScene *scene = note.object;
-        if ([scene isKindOfClass:[UIWindowScene class]]) {
-            createCPUWindow((UIWindowScene *)scene);
-        }
-    }];
-    
-    // 2. 应对 Respring 注销等情况（此时可能不会再发 UISceneDidActivate 信号，直接遍历寻找活跃 Scene 即可）
-    for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
-        if ([scene isKindOfClass:[UIWindowScene class]] && scene.activationState == UISceneActivationStateForegroundActive) {
-            createCPUWindow((UIWindowScene *)scene);
-            break;
-        }
+// 🟢 [新接入] 专供底层 thermalmonitord 的精髓代码，完全还原提取的逻辑
+@interface MitigationController : NSObject
+- (void)setPowerSaveActive:(BOOL)arg1;
+- (void)setCPULevel:(int)arg1;
+- (void)updateCPU;
+@end
+
+%group MitigationHooks
+%hook MitigationController
+
+- (void)setPowerSaveActive:(BOOL)active {
+    sharedMitigationController = self;
+    if (insulationCpuMode == 2) {
+        %orig(NO);
+    } else if (insulationCpuMode == 1) {
+        %orig(YES);
+    } else {
+        %orig(active);
+    }
+}
+
+- (void)setCPULevel:(int)level {
+    sharedMitigationController = self;
+    if (insulationCpuMode == 2) {
+        %orig(0);
+    } else if (insulationCpuMode == 1) {
+        %orig(2); // 严格还原提取代码中的限制，强行锁定在 2 级
+    } else {
+        %orig(level);
+    }
+}
+
+- (void)setCPULowPowerTarget:(int)power {
+    if (insulationCpuMode == 2) {
+        %orig(MAX(power, InsulationUnrestrictedPowerTarget));
+    } else {
+        %orig(power);
+    }
+}
+
+- (void)setCPUPowerCeiling:(int)power fromDecisionSource:(int)source {
+    sharedMitigationController = self;
+    if (insulationCpuMode == 2) {
+        %orig(MAX(power, InsulationUnrestrictedPowerTarget), source);
+    } else {
+        %orig(power, source);
+    }
+}
+
+- (void)setCPUPowerZoneTarget:(int)power {
+    if (insulationCpuMode == 2) {
+        %orig(MAX(power, InsulationUnrestrictedPowerTarget));
+    } else {
+        %orig(power);
     }
 }
 
 %end
+%end // MitigationHooks
 
 
 %ctor {
+    // 🟢 [必须接入] 这里的 %init; 用于初始化您原有的全局 Hook（如 NSProcessInfo, SBBacklightController），防止它们丢失失效
+    %init;
+    
     LoadPreferences();
     
     CFNotificationCenterAddObserver(
@@ -2633,9 +2707,20 @@ static void registerV160Observers(void) {
         NULL,
         CFNotificationSuspensionBehaviorDeliverImmediately
     );
-    
-    // ⚠️ 你的原文在这里有一个 `dispatch_after 5秒` 创建悬浮窗的代码。
-    // 这在 iOS 15 系统里是悬浮窗不显示的原因。我已经帮你全部移除！
-    // 交由上方的 %hook SpringBoard 接管生命周期。
+
+    NSString *processName = [NSProcessInfo processInfo].processName;
+    if ([processName isEqualToString:@"SpringBoard"]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            createCPUWindow();
+            registerV160Observers();
+
+            [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *timer) {
+                updateCPU();
+            }];
+        });
+    } else if ([processName isEqualToString:@"thermalmonitord"]) {
+        // 🟢 [新接入] 如果在底层温控进程中，则挂载刚才写的防降频策略
+        %init(MitigationHooks);
+    }
 }
 
