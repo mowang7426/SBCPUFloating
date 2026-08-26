@@ -1,18 +1,9 @@
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunguarded-availability-new"
-#pragma clang diagnostic ignored "-Wunguarded-availability"
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#pragma clang diagnostic ignored "-Wunused-variable"
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wunknown-warning-option"
-
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 #import <mach/mach.h>
 #import <mach/host_info.h>
 #import <mach/processor_info.h>
-#import <mach/mach_time.h>
 #import <signal.h>
 #import <IOKit/IOKitLib.h>
 #import <sys/sysctl.h>
@@ -22,7 +13,6 @@
 #import <net/if.h>
 #import <arpa/inet.h>
 #import <CoreMotion/CoreMotion.h>
-#import <dlfcn.h>
 #import <notify.h>
 
 #ifndef kIOMainPortDefault
@@ -1778,7 +1768,7 @@ static void updateCPU(void) {
 
 @end
 
-#pragma mark - 15. 配置持久化与构造入口 (%ctor 放置在绝对全局顶层作用域)
+#pragma mark - 15. 配置持久化与构造入口 (🔥 绝对在文件最底部全局作用域)
 
 static void LoadPreferences(void) {
     NSDictionary *dict = [NSDictionary dictionaryWithContentsOfFile:kPlistPath];
