@@ -287,7 +287,7 @@ static BOOL isDeviceOverheated(void);
 static void applySystemRefreshRate(void);
 static void applyHardwareCpuGovernor(NSInteger mode);
 
-#pragma mark - 6. 🔥 真实系统级温控 Hook 与低电限频实现 (全局顶层作用域)
+#pragma mark - 6. 🔥 真实系统级温控 Hook 与低电限频实现
 
 %hook NSProcessInfo
 - (NSProcessInfoThermalState)thermalState {
@@ -1232,7 +1232,7 @@ static void applySystemRefreshRate(void) {
 
 @end
 
-#pragma mark - 10. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
+#pragma mark - 13. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
 
 @implementation SBCPUDetailViewController
 
@@ -1352,7 +1352,7 @@ static void applySystemRefreshRate(void) {
     }];
 }
 
-#pragma mark - 11. 真实系统底层 API 数据解析刷新
+#pragma mark - 14. 真实系统底层 API 数据解析刷新
 
 - (void)refreshAllDetailData {
     DeviceSpec spec = getDeviceSpec();
