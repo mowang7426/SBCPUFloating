@@ -295,6 +295,7 @@ static void updateCPU(void);
 static void createCPUWindow(void);
 static BOOL isDeviceOverheated(void);
 static void applySystemRefreshRate(void);
+static void applyHardwareCpuGovernor(NSInteger mode);
 
 #pragma mark - 6. 🔥 真实系统级温控 Hook 与低电限频实现 (全局顶层作用域)
 
@@ -408,7 +409,22 @@ static BOOL isDeviceOverheated(void) {
 }
 %end
 
-#pragma mark - 8. CADisplayLink 帧率监控与 ProMotion 微驱动引擎
+#pragma mark - 8. 真实系统调频守护下发
+
+static void applyHardwareCpuGovernor(NSInteger mode) {
+    Class sbLpmClass = NSClassFromString(@"SBLowPowerModeController");
+    if (sbLpmClass && [sbLpmClass respondsToSelector:@selector(sharedInstance)]) {
+        SBLowPowerModeController *lpm = [sbLpmClass sharedInstance];
+        if ([lpm respondsToSelector:@selector(setLowPowerModeEnabled:)]) {
+            [lpm setLowPowerModeEnabled:(mode == 1)];
+        } else if ([lpm respondsToSelector:@selector(_setLowPowerModeEnabled:)]) {
+            [lpm _setLowPowerModeEnabled:(mode == 1)];
+        }
+    }
+    notify_post("com.apple.system.lowpowermode.changed");
+}
+
+#pragma mark - 9. CADisplayLink 帧率监控与 ProMotion 微驱动引擎
 
 @interface SBCPUFPSHelper : NSObject
 + (instancetype)sharedInstance;
@@ -553,7 +569,7 @@ static void applySystemRefreshRate(void) {
     [[SBCPUFPSHelper sharedInstance] updateFrameRate];
 }
 
-#pragma mark - 9. SBCPUFloatingView 悬浮窗主控件 (完整保留原版布局与紧凑 FPS)
+#pragma mark - 10. SBCPUFloatingView 悬浮窗主控件 (完整保留原版布局与紧凑 FPS)
 
 @implementation SBCPUFloatingView
 
@@ -1762,7 +1778,7 @@ static void updateCPU(void) {
 
 @end
 
-#pragma mark - 15. 配置持久化与构造入口 (%ctor 独立于任何 block 之外)
+#pragma mark - 15. 配置持久化与构造入口 (%ctor 放置在绝对全局顶层作用域)
 
 static void LoadPreferences(void) {
     NSDictionary *dict = [NSDictionary dictionaryWithContentsOfFile:kPlistPath];
