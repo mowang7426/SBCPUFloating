@@ -277,7 +277,7 @@ static BOOL has_prev_cpu_load = NO;
 static UIWindowScene *getWindowScene(void);
 static UIInterfaceOrientation getActiveInterfaceOrientation(void);
 static double getSystemCPUUsage(void);
-static double getRealHardwareCPUFrequency(void);
+static double getCPUFrequencyMHz(double currentCpuUsage);
 static double getBatteryTemperatureInternal(void);
 static double getBatteryCurrentInternal(void);
 static BOOL isChargingInternal(void);
@@ -1242,7 +1242,7 @@ static void applySystemRefreshRate(void) {
 
 @end
 
-#pragma mark - 10. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
+#pragma mark - 11. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
 
 @implementation SBCPUDetailViewController
 
