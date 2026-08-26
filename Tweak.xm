@@ -181,7 +181,7 @@ static UIWindow *cpuWindow = nil;
 static SBCPUFloatingView *floatingView = nil;
 static SBCPUDetailViewController *detailVC = nil;
 
-static BOOL isEnabled = YES; 
+static BOOL isEnabled = YES; // 必须强制为 YES
 static CGFloat floatingScale = 1.0;
 static CGFloat floatingFontSize = 13.0;
 
@@ -206,11 +206,11 @@ static BOOL smartDockEnable = YES;
 static NSInteger dockMode = 0;
 static BOOL rememberPositionEnable = YES;
 
-static BOOL showCpuUsage = YES;                  // 💡 新增：是否显示 CPU 占用
+static BOOL showCpuUsage = YES;                  
 static BOOL showCpuFrequency = YES;
-static BOOL showFps = YES;                       // 📊 显示 FPS 帧率开关
-static BOOL force120HzEnable = NO;               // 🎮 强制 120Hz 高刷模式
-static BOOL thermalProtectionEnable = YES;       // 🛡️ 智能温控降频保护开关
+static BOOL showFps = YES;                       
+static BOOL force120HzEnable = NO;               
+static BOOL thermalProtectionEnable = YES;       
 
 static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
@@ -1672,7 +1672,10 @@ static void applyVisibility(void) {
 
 static void LoadPreferences(void) {
     NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
-    if ([def objectForKey:@"isEnabled"]) isEnabled = [def boolForKey:@"isEnabled"];
+    
+    // 💡 强行救场！代码直接锁定开启，不读之前的配置锁死自己
+    isEnabled = YES; 
+
     if ([def objectForKey:@"autoCollapseEnable"]) autoCollapseEnable = [def boolForKey:@"autoCollapseEnable"];
     if ([def objectForKey:@"autoCollapseDelay"]) autoCollapseDelay = [def integerForKey:@"autoCollapseDelay"];
 
@@ -1690,7 +1693,6 @@ static void LoadPreferences(void) {
     if ([def objectForKey:@"dockMode"]) dockMode = [def integerForKey:@"dockMode"];
     if ([def objectForKey:@"rememberPositionEnable"]) rememberPositionEnable = [def boolForKey:@"rememberPositionEnable"];
     
-    // 💡 读取 CPU 占用显示开关 (默认为 YES)
     if ([def objectForKey:@"showCpuUsage"]) showCpuUsage = [def boolForKey:@"showCpuUsage"];
     if ([def objectForKey:@"showCpuFrequency"]) showCpuFrequency = [def boolForKey:@"showCpuFrequency"];
     if ([def objectForKey:@"showFps"]) showFps = [def boolForKey:@"showFps"];
@@ -1732,7 +1734,6 @@ static void SavePreferencesAndNotify(void) {
     [def setInteger:dockMode forKey:@"dockMode"];
     [def setBool:rememberPositionEnable forKey:@"rememberPositionEnable"];
     
-    // 💡 存储 CPU 占用显示开关
     [def setBool:showCpuUsage forKey:@"showCpuUsage"];
     [def setBool:showCpuFrequency forKey:@"showCpuFrequency"];
     [def setBool:showFps forKey:@"showFps"];
@@ -2034,7 +2035,7 @@ static void updateCPU(void) {
     if (section == 2) return 4; // 🔲 悬浮窗外观
     if (section == 3) return 3; // 🧠 智能选项
     if (section == 4) return 2; // 🎮 性能与高刷锁定
-    return 8;                   // 📍 位置与显示 (增加了 CPU使用率 开关)
+    return 7;                   // 📍 移除了原有的"全局启用悬浮窗"，数量降回7
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
@@ -2161,49 +2162,44 @@ static void updateCPU(void) {
             cell.accessoryView = sw;
         }
     } else if (indexPath.section == 5) {
+        // 💡 索引全都往前平移了一位，因为全局启用的坑人开关已经被删了
         if (indexPath.row == 0) {
-            cell.textLabel.text = @"全局启用悬浮窗";
-            UISwitch *sw = [UISwitch new];
-            sw.on = isEnabled;
-            [sw addTarget:self action:@selector(changeIsEnabled:) forControlEvents:UIControlEventValueChanged];
-            cell.accessoryView = sw;
-        } else if (indexPath.row == 1) {
             cell.textLabel.text = @"记忆悬浮窗位置";
             UISwitch *sw = [UISwitch new];
             sw.on = rememberPositionEnable;
             [sw addTarget:self action:@selector(changeRememberPosition:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
-        } else if (indexPath.row == 2) {
+        } else if (indexPath.row == 1) {
             cell.textLabel.text = @"显示 CPU 占用";
             UISwitch *sw = [UISwitch new];
             sw.on = showCpuUsage;
             [sw addTarget:self action:@selector(changeShowCpuUsage:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
-        } else if (indexPath.row == 3) {
+        } else if (indexPath.row == 2) {
             cell.textLabel.text = @"显示 CPU 频率";
             UISwitch *sw = [UISwitch new];
             sw.on = showCpuFrequency;
             [sw addTarget:self action:@selector(changeShowCpuFreq:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
-        } else if (indexPath.row == 4) {
+        } else if (indexPath.row == 3) {
             cell.textLabel.text = @"显示 FPS 帧率";
             UISwitch *sw = [UISwitch new];
             sw.on = showFps;
             [sw addTarget:self action:@selector(changeShowFps:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
-        } else if (indexPath.row == 5) {
+        } else if (indexPath.row == 4) {
             cell.textLabel.text = @"显示电池百分比";
             UISwitch *sw = [UISwitch new];
             sw.on = showBatteryPercent;
             [sw addTarget:self action:@selector(changeShowBattery:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
-        } else if (indexPath.row == 6) {
+        } else if (indexPath.row == 5) {
             cell.textLabel.text = @"显示电池温度";
             UISwitch *sw = [UISwitch new];
             sw.on = showBatteryTemperature;
             [sw addTarget:self action:@selector(changeShowTemp:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
-        } else if (indexPath.row == 7) {
+        } else if (indexPath.row == 6) {
             cell.textLabel.text = @"显示实时电流";
             UISwitch *sw = [UISwitch new];
             sw.on = showBatteryCurrent;
@@ -2270,11 +2266,7 @@ static void updateCPU(void) {
     }
 }
 
-- (void)changeIsEnabled:(UISwitch *)sw {
-    isEnabled = sw.isOn;
-    SavePreferencesAndNotify();
-    applyVisibility();
-}
+// - (void)changeIsEnabled:(UISwitch *)sw { ... }  <-- 危险函数已永久删除！
 
 - (void)changeAutoCollapse:(UISwitch *)sw {
     autoCollapseEnable = sw.isOn;
@@ -2304,7 +2296,7 @@ static void updateCPU(void) {
     SavePreferencesAndNotify();
 }
 
-- (void)changeShowCpuUsage:(UISwitch *)sw { showCpuUsage = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); } // 💡 新增的 CPU开关保存触发事件
+- (void)changeShowCpuUsage:(UISwitch *)sw { showCpuUsage = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
 - (void)changeShowCpuFreq:(UISwitch *)sw { showCpuFrequency = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
 - (void)changeShowFps:(UISwitch *)sw { showFps = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
 - (void)changeShowBattery:(UISwitch *)sw { showBatteryPercent = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
