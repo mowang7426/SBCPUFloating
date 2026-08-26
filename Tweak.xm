@@ -44,7 +44,6 @@
 - (void)setAllowsVirtualModes:(BOOL)allows;
 - (void)setMinimumRefreshRate:(float)rate;
 - (void)setMaximumRefreshRate:(float)rate;
-- (void)setIdealRefreshRate:(float)rate;
 - (float)minimumRefreshRate;
 - (float)maximumRefreshRate;
 - (float)idealRefreshRate;
@@ -1220,6 +1219,7 @@ static void applySystemRefreshRate(void) {
     _currentValueLabel.text = [NSString stringWithFormat:@"%.0fmA", current];
     _statusLabel.text = isCharging ? @"🟢 正在充电" : @"⚪ 未在充电";
 
+    // 🔋 实时根据当前电量百分比计算绿色指示条宽度
     if (isCharging) {
         CGFloat capsuleW = _bottomCapsule.bounds.size.width;
         CGFloat capsuleH = _bottomCapsule.bounds.size.height > 0 ? _bottomCapsule.bounds.size.height : 20.0f;
@@ -1242,7 +1242,7 @@ static void applySystemRefreshRate(void) {
 
 @end
 
-#pragma mark - 11. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
+#pragma mark - 10. 详细状态 UI 面板与数据绑定 (SBCPUDetailViewController)
 
 @implementation SBCPUDetailViewController
 
@@ -1778,7 +1778,7 @@ static void updateCPU(void) {
 
 @end
 
-#pragma mark - 15. 配置持久化与构造入口 (%ctor 放置在绝对全局顶层作用域)
+#pragma mark - 15. 配置持久化与构造入口 (🔥 绝对保证 %ctor 在最外层全局作用域)
 
 static void LoadPreferences(void) {
     NSDictionary *dict = [NSDictionary dictionaryWithContentsOfFile:kPlistPath];
