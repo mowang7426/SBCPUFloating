@@ -1,9 +1,18 @@
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
+#pragma clang diagnostic ignored "-Wunguarded-availability"
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#pragma clang diagnostic ignored "-Wunused-variable"
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wunknown-warning-option"
+
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 #import <mach/mach.h>
 #import <mach/host_info.h>
 #import <mach/processor_info.h>
+#import <mach/mach_time.h>
 #import <signal.h>
 #import <IOKit/IOKitLib.h>
 #import <sys/sysctl.h>
@@ -13,6 +22,7 @@
 #import <net/if.h>
 #import <arpa/inet.h>
 #import <CoreMotion/CoreMotion.h>
+#import <dlfcn.h>
 #import <notify.h>
 
 #ifndef kIOMainPortDefault
@@ -38,6 +48,7 @@
 - (float)minimumRefreshRate;
 - (float)maximumRefreshRate;
 - (float)idealRefreshRate;
+- (void)setUserBrightness:(float)brightness;
 @end
 
 #pragma mark - 2. Insulation 温控破限系统类声明
@@ -202,7 +213,7 @@ static DeviceSpec getDeviceSpec(void) {
 - (void)refreshAllDetailData;
 @end
 
-#pragma mark - 5. 全局状态变量 (完整保留原版所有变量与新增 Insulation 变量)
+#pragma mark - 5. 全局状态变量 (保留原版所有变量并加入 Insulation 控制)
 
 static UIWindow *cpuWindow = nil;
 static SBCPUFloatingView *floatingView = nil;
@@ -242,8 +253,8 @@ static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
 
-// 🔥 Insulation 专属破限状态变量
-static NSInteger cpuMode = 2;                     // 0: 原生, 1: 模拟低电, 2: 防降频
+// 🔥 Insulation 专属控制变量 (0: 原生温控, 1: 模拟低电频率, 2: 防止温控降频)
+static NSInteger cpuMode = 2;                     
 static BOOL disableThermalDimming = YES;          // 温控暗屏
 static BOOL blockThermalAlert = NO;               // 禁温度计弹窗
 static BOOL disablePocketThermal = YES;           // 禁用口袋高温
@@ -284,8 +295,9 @@ static void updateCPU(void);
 static void createCPUWindow(void);
 static BOOL isDeviceOverheated(void);
 static void applySystemRefreshRate(void);
+static void applyHardwareCpuGovernor(NSInteger mode);
 
-#pragma mark - 6. 🔥 Insulation 温控与降频内核 Hook 注入
+#pragma mark - 6. 🔥 真实系统级温控 Hook 与低电限频实现
 
 %hook NSProcessInfo
 - (NSProcessInfoThermalState)thermalState {
@@ -293,6 +305,7 @@ static void applySystemRefreshRate(void);
     if (cpuMode == 1) return NSProcessInfoThermalStateFair;
     return %orig;
 }
+
 - (BOOL)isLowPowerModeEnabled {
     if (cpuMode == 1) return YES;
     if (cpuMode == 2) return NO;
@@ -355,6 +368,7 @@ static BOOL isDeviceOverheated(void) {
     return NO;
 }
 
+// Hook 1: 底层窗口合成器，锁定 120Hz 刷新率
 %hook CAWindowServerDisplay
 - (float)minimumRefreshRate {
     if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
@@ -378,6 +392,7 @@ static BOOL isDeviceOverheated(void) {
 }
 %end
 
+// Hook 2: 全局 CAAnimation 默认优先使用 120Hz
 %hook CAAnimation
 - (CAFrameRateRange)preferredFrameRateRange {
     if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
@@ -387,6 +402,7 @@ static BOOL isDeviceOverheated(void) {
 }
 %end
 
+// Hook 3: UIScreen 突破系统低电量或节能限制
 %hook UIScreen
 - (NSInteger)maximumFramesPerSecond {
     if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
@@ -396,7 +412,22 @@ static BOOL isDeviceOverheated(void) {
 }
 %end
 
-#pragma mark - 8. CADisplayLink 帧率监控与 ProMotion 微驱动引擎
+#pragma mark - 8. 真实系统调频守护下发
+
+static void applyHardwareCpuGovernor(NSInteger mode) {
+    Class sbLpmClass = NSClassFromString(@"SBLowPowerModeController");
+    if (sbLpmClass && [sbLpmClass respondsToSelector:@selector(sharedInstance)]) {
+        SBLowPowerModeController *lpm = [sbLpmClass sharedInstance];
+        if ([lpm respondsToSelector:@selector(setLowPowerModeEnabled:)]) {
+            [lpm setLowPowerModeEnabled:(mode == 1)];
+        } else if ([lpm respondsToSelector:@selector(_setLowPowerModeEnabled:)]) {
+            [lpm _setLowPowerModeEnabled:(mode == 1)];
+        }
+    }
+    notify_post("com.apple.system.lowpowermode.changed");
+}
+
+#pragma mark - 9. CADisplayLink 帧率监控与 ProMotion 微驱动引擎
 
 @interface SBCPUFPSHelper : NSObject
 + (instancetype)sharedInstance;
@@ -541,7 +572,7 @@ static void applySystemRefreshRate(void) {
     [[SBCPUFPSHelper sharedInstance] updateFrameRate];
 }
 
-#pragma mark - 9. SBCPUFloatingView 悬浮窗主控件 (完整保留原版所有布局与手势逻辑)
+#pragma mark - 10. SBCPUFloatingView 悬浮窗主控件 (完整保留原版布局，并将 FPS 格子调窄紧凑)
 
 @implementation SBCPUFloatingView
 
@@ -621,7 +652,7 @@ static void applySystemRefreshRate(void) {
         _div1.backgroundColor = [UIColor colorWithWhite:1.0f alpha:0.18f];
         [content addSubview:_div1];
 
-        // 🔥 将 FPS 宽度调整得更紧凑 (36px)，解决格子太大问题
+        // 🔥 调窄 FPS 宽度至 34px，排版紧凑
         _fpsValueLabel = [[UILabel alloc] init];
         _fpsValueLabel.textColor = [UIColor colorWithRed:0.85f green:0.55f blue:1.0f alpha:1.0f];
         _fpsValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:12.5 weight:UIFontWeightBold];
@@ -880,7 +911,6 @@ static void applySystemRefreshRate(void) {
     [_blurView.layer addAnimation:animation forKey:@"plugBounce"];
 }
 
-// 🔥 精准紧凑排列：FPS 格子调窄至 34px，整体更精致
 - (void)updateLayoutWithShowCpuFreq:(BOOL)showFreq showFps:(BOOL)showF showBatteryPercent:(BOOL)showB showBatteryTemp:(BOOL)showT showBatteryCurrent:(BOOL)showC isCharging:(BOOL)isCharging {
     if (_isCollapsed) return;
 
@@ -897,7 +927,7 @@ static void applySystemRefreshRate(void) {
     currentX += 4.5f;
 
     if (showF) {
-        CGFloat fpsW = 34.0f; // 紧凑型宽度
+        CGFloat fpsW = 34.0f;
         _fpsValueLabel.frame = CGRectMake(currentX, padY, fpsW, 14);
         _fpsSubLabel.frame = CGRectMake(currentX, padY + 14, fpsW, 11);
         currentX += fpsW + 4.0f;
@@ -1198,7 +1228,7 @@ static void applySystemRefreshRate(void) {
     _labelsDict[@"设备运行"].text = [NSString stringWithFormat:@"%ld天 %ld小时 %ld分", (long)days, (long)hours, (long)mins];
 }
 
-#pragma mark - 12. 🔥 真实硬件测频与同步引擎 (彻底解决电话助手与主频不一致问题)
+#pragma mark - 12. 真实硬件测频与同步引擎 (🔥 彻底解决电话助手与主频不一致问题)
 
 static double getRealHardwareCPUFrequency(void) {
     DeviceSpec spec = getDeviceSpec();
