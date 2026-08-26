@@ -132,12 +132,13 @@ static DeviceSpec getDeviceSpec(void) {
 - (void)expandFromEdgeAnimated:(BOOL)animated;
 - (void)triggerPlugAnimation;
 
-- (void)updateLayoutWithShowCpuFreq:(BOOL)showFreq
-                            showFps:(BOOL)showFps
-                 showBatteryPercent:(BOOL)showBattery
-                    showBatteryTemp:(BOOL)showTemp
-                 showBatteryCurrent:(BOOL)showCurrent
-                         isCharging:(BOOL)isCharging;
+- (void)updateLayoutWithShowCpuUsage:(BOOL)showCpu
+                         showCpuFreq:(BOOL)showFreq
+                             showFps:(BOOL)showFps
+                  showBatteryPercent:(BOOL)showBattery
+                     showBatteryTemp:(BOOL)showTemp
+                  showBatteryCurrent:(BOOL)showCurrent
+                          isCharging:(BOOL)isCharging;
 
 - (void)updateDataWithCPU:(double)cpu 
                   cpuFreq:(double)cpuFreq
@@ -205,6 +206,7 @@ static BOOL smartDockEnable = YES;
 static NSInteger dockMode = 0;
 static BOOL rememberPositionEnable = YES;
 
+static BOOL showCpuUsage = YES;                  // 💡 新增：是否显示 CPU 占用
 static BOOL showCpuFrequency = YES;
 static BOOL showFps = YES;                       // 📊 显示 FPS 帧率开关
 static BOOL force120HzEnable = NO;               // 🎮 强制 120Hz 高刷模式
@@ -231,7 +233,7 @@ static BOOL has_prev_cpu_load = NO;
 static UIWindowScene *getWindowScene(void);
 static UIInterfaceOrientation getActiveInterfaceOrientation(void);
 static double getSystemCPUUsage(void);
-static double getCPUFrequencyMHz(double currentCpuUsage);
+static double getRealCPUFrequency(void);
 static double getBatteryTemperatureInternal(void);
 static double getBatteryCurrentInternal(void);
 static BOOL isChargingInternal(void);
@@ -538,6 +540,7 @@ static void applySystemRefreshRate(void) {
         _fpsValueLabel = [[UILabel alloc] init];
         _fpsValueLabel.textColor = [UIColor colorWithRed:0.85f green:0.55f blue:1.0f alpha:1.0f];
         _fpsValueLabel.font = [UIFont monospacedDigitSystemFontOfSize:13 weight:UIFontWeightBold];
+        _fpsValueLabel.textAlignment = NSTextAlignmentCenter;
         _fpsValueLabel.adjustsFontSizeToFitWidth = YES;
         _fpsValueLabel.minimumScaleFactor = 0.5f;
         [content addSubview:_fpsValueLabel];
@@ -546,6 +549,7 @@ static void applySystemRefreshRate(void) {
         _fpsSubLabel.text = @"FPS";
         _fpsSubLabel.textColor = [UIColor colorWithWhite:0.65f alpha:1.0f];
         _fpsSubLabel.font = [UIFont systemFontOfSize:8.5f weight:UIFontWeightMedium];
+        _fpsSubLabel.textAlignment = NSTextAlignmentCenter;
         [content addSubview:_fpsSubLabel];
 
         _divFps = [[UIView alloc] init];
@@ -790,29 +794,8 @@ static void applySystemRefreshRate(void) {
     UIView *parent = self.superview;
     CGRect containerBounds = parent ? parent.bounds : [UIScreen mainScreen].bounds;
 
-    self.cpuTitleLabel.hidden = NO;
-    self.cpuValueLabel.hidden = NO;
-    self.cpuFreqLabel.hidden = !showCpuFrequency;
-    self.div1.hidden = NO;
-    
-    self.fpsValueLabel.hidden = !showFps;
-    self.fpsSubLabel.hidden = !showFps;
-
-    self.batteryIconLabel.hidden = !showBatteryPercent;
-    self.batteryValueLabel.hidden = !showBatteryPercent;
-    self.batterySubLabel.hidden = !showBatteryPercent;
-    
-    self.tempIconLabel.hidden = !showBatteryTemperature;
-    self.tempValueLabel.hidden = !showBatteryTemperature;
-    self.tempSubLabel.hidden = !showBatteryTemperature;
-
-    BOOL actualShowCurrent = showBatteryCurrent && charging;
-    self.currentIconLabel.hidden = !actualShowCurrent;
-    self.currentValueLabel.hidden = !actualShowCurrent;
-    self.currentSubLabel.hidden = !actualShowCurrent;
-    self.bottomCapsule.hidden = !charging;
-
-    [self updateLayoutWithShowCpuFreq:showCpuFrequency
+    [self updateLayoutWithShowCpuUsage:showCpuUsage
+                           showCpuFreq:showCpuFrequency
                                showFps:showFps
                     showBatteryPercent:showBatteryPercent
                        showBatteryTemp:showBatteryTemperature
@@ -949,15 +932,19 @@ static void applySystemRefreshRate(void) {
     [_blurView.layer addAnimation:glowAnim forKey:@"borderGlow"];
 }
 
-- (void)updateLayoutWithShowCpuFreq:(BOOL)showFreq
-                            showFps:(BOOL)showFps
-                 showBatteryPercent:(BOOL)showBattery
-                    showBatteryTemp:(BOOL)showTemp
-                 showBatteryCurrent:(BOOL)showCurrent
-                         isCharging:(BOOL)isCharging {
+- (void)updateLayoutWithShowCpuUsage:(BOOL)showCpu
+                         showCpuFreq:(BOOL)showFreq
+                             showFps:(BOOL)showFps
+                  showBatteryPercent:(BOOL)showBattery
+                     showBatteryTemp:(BOOL)showTemp
+                  showBatteryCurrent:(BOOL)showCurrent
+                          isCharging:(BOOL)isCharging {
     if (_isCollapsed) return;
 
+    _cpuTitleLabel.hidden = !showCpu;
+    _cpuValueLabel.hidden = !showCpu;
     _cpuFreqLabel.hidden = !showFreq;
+    
     _fpsValueLabel.hidden = !showFps;
     _fpsSubLabel.hidden = !showFps;
 
@@ -979,15 +966,24 @@ static void applySystemRefreshRate(void) {
     CGFloat currentX = 10.0f;
     CGFloat padY = 8.0f;
 
-    CGFloat cpuW = 68.0f;
-    _cpuTitleLabel.frame = CGRectMake(currentX, padY, 28, 14);
-    _cpuValueLabel.frame = CGRectMake(currentX + 28, padY, cpuW - 28, 14);
+    // 1. CPU Section
+    BOOL hasCpuSection = showCpu || showFreq;
+    if (hasCpuSection) {
+        CGFloat cpuW = 68.0f;
+        if (showCpu) {
+            _cpuTitleLabel.frame = CGRectMake(currentX, padY, 28, 14);
+            _cpuValueLabel.frame = CGRectMake(currentX + 28, padY, cpuW - 28, 14);
+        }
+        if (showFreq) {
+            CGFloat fY = showCpu ? (padY + 15) : (padY + 7); // 如果没开占用率居中排版
+            _cpuFreqLabel.frame = CGRectMake(currentX, fY, cpuW, 14);
+        }
+        currentX += cpuW + 6.0f;
+    }
 
-    if (showFreq) _cpuFreqLabel.frame = CGRectMake(currentX, padY + 15, cpuW, 14);
-    else _cpuFreqLabel.frame = CGRectZero;
-    currentX += cpuW + 6.0f;
-
-    if (showFps || showBattery || showTemp || actualShowCurrent) {
+    // Divider 1
+    BOOL showSection2 = showFps || showBattery || showTemp || actualShowCurrent;
+    if (hasCpuSection && showSection2) {
         _div1.hidden = NO;
         _div1.frame = CGRectMake(currentX, padY + 2, 0.5f, 26.0f);
         currentX += 6.5f;
@@ -995,13 +991,15 @@ static void applySystemRefreshRate(void) {
         _div1.hidden = YES;
     }
 
+    // 2. FPS Section - Width Adjusted to be Compact (28.0f for 3 digits)
     if (showFps) {
-        CGFloat fpsW = 42.0f;
+        CGFloat fpsW = 28.0f;
         _fpsValueLabel.frame = CGRectMake(currentX, padY, fpsW, 14);
         _fpsSubLabel.frame = CGRectMake(currentX, padY + 14, fpsW, 11);
         currentX += fpsW + 6.0f;
 
-        if (showBattery || showTemp || actualShowCurrent) {
+        BOOL showSection3 = showBattery || showTemp || actualShowCurrent;
+        if (showSection3) {
             _divFps.hidden = NO;
             _divFps.frame = CGRectMake(currentX, padY + 2, 0.5f, 26.0f);
             currentX += 6.5f;
@@ -1057,6 +1055,7 @@ static void applySystemRefreshRate(void) {
     }
 
     CGFloat finalW = currentX + 4.0f;
+    if (finalW < 40.0f) finalW = 40.0f; // Minimum Width protection
     CGFloat currentY = padY + 28.0f;
 
     if (isCharging) {
@@ -1327,7 +1326,7 @@ static void applySystemRefreshRate(void) {
     double systemCpu = getSystemCPUUsage();
     _labelsDict[@"CPU信息"].text = [NSString stringWithFormat:@"%s %ld核心 %.0f%%", spec.chipName, (long)spec.cores, systemCpu];
 
-    double freq = getCPUFrequencyMHz(systemCpu);
+    double freq = getRealCPUFrequency();
     double fps = [SBCPUFPSHelper sharedInstance].currentFPS;
     _labelsDict[@"CPU主频 / FPS"].text = [NSString stringWithFormat:@"%.0fMHz | %.0fFPS", freq, fps];
 
@@ -1474,22 +1473,23 @@ static double getSystemCPUUsage(void) {
     return ((double)(user + system + nice) / (double)total) * 100.0;
 }
 
-static double getCPUFrequencyMHz(double currentCpuUsage) {
+// 📌 核心修复逻辑：移除虚假随机频率，统一从系统 sysctl 查询物理主频，若无权限则应用 DeviceSpec，保证和电话助手等APP一致。
+static double getRealCPUFrequency(void) {
+    uint64_t freq = 0;
+    size_t size = sizeof(freq);
+    
+    // 优先尝试读取系统当前 CPU 频率
+    if (sysctlbyname("hw.cpufrequency", &freq, &size, NULL, 0) == 0 && freq > 0) {
+        return freq / 1000000.0;
+    }
+    // 获取硬件最大允许频率
+    if (sysctlbyname("hw.cpufrequency_max", &freq, &size, NULL, 0) == 0 && freq > 0) {
+        return freq / 1000000.0;
+    }
+    
+    // 若 iOS 高版本屏蔽该接口，则使用准确的内置 SoC 硬件设计数据
     DeviceSpec spec = getDeviceSpec();
-    double maxMHz = spec.maxFreqMHz;
-    double minMHz = 800.0;
-
-    double loadFactor = (currentCpuUsage / 100.0);
-    if (loadFactor < 0.05) loadFactor = 0.05;
-    if (loadFactor > 1.0) loadFactor = 1.0;
-
-    double dynamicFreq = minMHz + (maxMHz - minMHz) * (0.2 + 0.8 * loadFactor);
-    dynamicFreq += ((double)(arc4random() % 30) - 15.0);
-
-    if (dynamicFreq > maxMHz) dynamicFreq = maxMHz;
-    if (dynamicFreq < minMHz) dynamicFreq = minMHz;
-
-    return dynamicFreq;
+    return spec.maxFreqMHz;
 }
 
 - (NSString *)getLocalIPAddress {
@@ -1690,6 +1690,8 @@ static void LoadPreferences(void) {
     if ([def objectForKey:@"dockMode"]) dockMode = [def integerForKey:@"dockMode"];
     if ([def objectForKey:@"rememberPositionEnable"]) rememberPositionEnable = [def boolForKey:@"rememberPositionEnable"];
     
+    // 💡 读取 CPU 占用显示开关 (默认为 YES)
+    if ([def objectForKey:@"showCpuUsage"]) showCpuUsage = [def boolForKey:@"showCpuUsage"];
     if ([def objectForKey:@"showCpuFrequency"]) showCpuFrequency = [def boolForKey:@"showCpuFrequency"];
     if ([def objectForKey:@"showFps"]) showFps = [def boolForKey:@"showFps"];
     if ([def objectForKey:@"force120HzEnable"]) force120HzEnable = [def boolForKey:@"force120HzEnable"];
@@ -1730,6 +1732,8 @@ static void SavePreferencesAndNotify(void) {
     [def setInteger:dockMode forKey:@"dockMode"];
     [def setBool:rememberPositionEnable forKey:@"rememberPositionEnable"];
     
+    // 💡 存储 CPU 占用显示开关
+    [def setBool:showCpuUsage forKey:@"showCpuUsage"];
     [def setBool:showCpuFrequency forKey:@"showCpuFrequency"];
     [def setBool:showFps forKey:@"showFps"];
     [def setBool:force120HzEnable forKey:@"force120HzEnable"];
@@ -1766,7 +1770,8 @@ static void updateFloatingSize(void) {
     floatingView.transform = CGAffineTransformIdentity;
 
     if (!floatingView.isCollapsed) {
-        [floatingView updateLayoutWithShowCpuFreq:showCpuFrequency
+        [floatingView updateLayoutWithShowCpuUsage:showCpuUsage
+                                       showCpuFreq:showCpuFrequency
                                            showFps:showFps
                                 showBatteryPercent:showBatteryPercent
                                    showBatteryTemp:showBatteryTemperature
@@ -1891,7 +1896,7 @@ static void updateCPU(void) {
     if (!isEnabled) return;
 
     double cpu = getSystemCPUUsage();
-    double cpuFreq = getCPUFrequencyMHz(cpu);
+    double cpuFreq = getRealCPUFrequency();
     double fps = [SBCPUFPSHelper sharedInstance].currentFPS;
 
     checkHighCPU(cpu);
@@ -2029,7 +2034,7 @@ static void updateCPU(void) {
     if (section == 2) return 4; // 🔲 悬浮窗外观
     if (section == 3) return 3; // 🧠 智能选项
     if (section == 4) return 2; // 🎮 性能与高刷锁定
-    return 7;                   // 📍 位置与显示
+    return 8;                   // 📍 位置与显示 (增加了 CPU使用率 开关)
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
@@ -2042,7 +2047,6 @@ static void updateCPU(void) {
     return @"📍 位置与显示";
 }
 
-// 📝 在 Section 4（图一位置）增加详细的功能说明文字
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     (void)tableView;
     if (section == 4) {
@@ -2170,30 +2174,36 @@ static void updateCPU(void) {
             [sw addTarget:self action:@selector(changeRememberPosition:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
         } else if (indexPath.row == 2) {
+            cell.textLabel.text = @"显示 CPU 占用";
+            UISwitch *sw = [UISwitch new];
+            sw.on = showCpuUsage;
+            [sw addTarget:self action:@selector(changeShowCpuUsage:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = sw;
+        } else if (indexPath.row == 3) {
             cell.textLabel.text = @"显示 CPU 频率";
             UISwitch *sw = [UISwitch new];
             sw.on = showCpuFrequency;
             [sw addTarget:self action:@selector(changeShowCpuFreq:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
-        } else if (indexPath.row == 3) {
+        } else if (indexPath.row == 4) {
             cell.textLabel.text = @"显示 FPS 帧率";
             UISwitch *sw = [UISwitch new];
             sw.on = showFps;
             [sw addTarget:self action:@selector(changeShowFps:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
-        } else if (indexPath.row == 4) {
+        } else if (indexPath.row == 5) {
             cell.textLabel.text = @"显示电池百分比";
             UISwitch *sw = [UISwitch new];
             sw.on = showBatteryPercent;
             [sw addTarget:self action:@selector(changeShowBattery:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
-        } else if (indexPath.row == 5) {
+        } else if (indexPath.row == 6) {
             cell.textLabel.text = @"显示电池温度";
             UISwitch *sw = [UISwitch new];
             sw.on = showBatteryTemperature;
             [sw addTarget:self action:@selector(changeShowTemp:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
-        } else if (indexPath.row == 6) {
+        } else if (indexPath.row == 7) {
             cell.textLabel.text = @"显示实时电流";
             UISwitch *sw = [UISwitch new];
             sw.on = showBatteryCurrent;
@@ -2294,6 +2304,7 @@ static void updateCPU(void) {
     SavePreferencesAndNotify();
 }
 
+- (void)changeShowCpuUsage:(UISwitch *)sw { showCpuUsage = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); } // 💡 新增的 CPU开关保存触发事件
 - (void)changeShowCpuFreq:(UISwitch *)sw { showCpuFrequency = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
 - (void)changeShowFps:(UISwitch *)sw { showFps = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
 - (void)changeShowBattery:(UISwitch *)sw { showBatteryPercent = sw.isOn; SavePreferencesAndNotify(); updateFloatingSize(); }
