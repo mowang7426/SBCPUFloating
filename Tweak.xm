@@ -213,7 +213,7 @@ static DeviceSpec getDeviceSpec(void) {
 - (void)refreshAllDetailData;
 @end
 
-#pragma mark - 5. 全局状态变量 (保留原版所有变量并加入 Insulation 控制)
+#pragma mark - 5. 全局状态变量
 
 static UIWindow *cpuWindow = nil;
 static SBCPUFloatingView *floatingView = nil;
@@ -253,8 +253,8 @@ static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
 
-// 🔥 Insulation 专属控制变量 (0: 原生温控, 1: 模拟低电频率, 2: 防止温控降频)
-static NSInteger cpuMode = 2;                     
+// 🔥 Insulation 专属状态变量
+static NSInteger cpuMode = 2;                     // 0: 原生, 1: 模拟低电, 2: 防降频
 static BOOL disableThermalDimming = YES;          // 温控暗屏
 static BOOL blockThermalAlert = NO;               // 禁温度计弹窗
 static BOOL disablePocketThermal = YES;           // 禁用口袋高温
@@ -277,7 +277,7 @@ static BOOL has_prev_cpu_load = NO;
 static UIWindowScene *getWindowScene(void);
 static UIInterfaceOrientation getActiveInterfaceOrientation(void);
 static double getSystemCPUUsage(void);
-static double getCPUFrequencyMHz(double currentCpuUsage);
+static double getRealHardwareCPUFrequency(void);
 static double getBatteryTemperatureInternal(void);
 static double getBatteryCurrentInternal(void);
 static BOOL isChargingInternal(void);
@@ -297,7 +297,7 @@ static BOOL isDeviceOverheated(void);
 static void applySystemRefreshRate(void);
 static void applyHardwareCpuGovernor(NSInteger mode);
 
-#pragma mark - 6. 🔥 真实系统级温控 Hook 与低电限频实现
+#pragma mark - 6. 🔥 真实系统级温控 Hook 与低电限频实现 (全局顶层作用域)
 
 %hook NSProcessInfo
 - (NSProcessInfoThermalState)thermalState {
@@ -368,7 +368,6 @@ static BOOL isDeviceOverheated(void) {
     return NO;
 }
 
-// Hook 1: 底层窗口合成器，锁定 120Hz 刷新率
 %hook CAWindowServerDisplay
 - (float)minimumRefreshRate {
     if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
@@ -392,7 +391,6 @@ static BOOL isDeviceOverheated(void) {
 }
 %end
 
-// Hook 2: 全局 CAAnimation 默认优先使用 120Hz
 %hook CAAnimation
 - (CAFrameRateRange)preferredFrameRateRange {
     if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
@@ -402,7 +400,6 @@ static BOOL isDeviceOverheated(void) {
 }
 %end
 
-// Hook 3: UIScreen 突破系统低电量或节能限制
 %hook UIScreen
 - (NSInteger)maximumFramesPerSecond {
     if (force120HzEnable && (!thermalProtectionEnable || !isDeviceOverheated())) {
@@ -572,7 +569,7 @@ static void applySystemRefreshRate(void) {
     [[SBCPUFPSHelper sharedInstance] updateFrameRate];
 }
 
-#pragma mark - 10. SBCPUFloatingView 悬浮窗主控件 (完整保留原版布局，并将 FPS 格子调窄紧凑)
+#pragma mark - 10. SBCPUFloatingView 悬浮窗控件 (完整保留原版布局与紧凑 FPS)
 
 @implementation SBCPUFloatingView
 
@@ -1228,7 +1225,7 @@ static void applySystemRefreshRate(void) {
     _labelsDict[@"设备运行"].text = [NSString stringWithFormat:@"%ld天 %ld小时 %ld分", (long)days, (long)hours, (long)mins];
 }
 
-#pragma mark - 12. 真实硬件测频与同步引擎 (🔥 彻底解决电话助手与主频不一致问题)
+#pragma mark - 12. 🔥 真实硬件测频与同步引擎 (彻底解决电话助手与主频不一致问题)
 
 static double getRealHardwareCPUFrequency(void) {
     DeviceSpec spec = getDeviceSpec();
@@ -1518,7 +1515,7 @@ static void updateCPU(void) {
 
 @end
 
-#pragma mark - 15. 配置持久化与构造入口 (%ctor)
+#pragma mark - 15. 配置持久化与构造入口 (%ctor 必须在最外层)
 
 static void LoadPreferences(void) {
     NSDictionary *dict = [NSDictionary dictionaryWithContentsOfFile:kPlistPath];
