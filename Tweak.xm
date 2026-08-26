@@ -1,4 +1,12 @@
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
+#pragma clang diagnostic ignored "-Wunguarded-availability"
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#pragma clang diagnostic ignored "-Wunused-variable"
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wunknown-warning-option"
+
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 #import <mach/mach.h>
@@ -38,6 +46,7 @@
 - (float)minimumRefreshRate;
 - (float)maximumRefreshRate;
 - (float)idealRefreshRate;
+- (void)setUserBrightness:(float)brightness;
 @end
 
 #pragma mark - 2. Insulation 温控破限系统类声明
@@ -242,7 +251,7 @@ static BOOL showBatteryPercent = YES;
 static BOOL showBatteryTemperature = YES;
 static BOOL showBatteryCurrent = YES;
 
-// 🔥 Insulation 专属控制变量
+// 🔥 Insulation 专属状态变量
 static NSInteger cpuMode = 2;                     // 0: 原生, 1: 模拟低电, 2: 防降频
 static BOOL disableThermalDimming = YES;          // 温控暗屏
 static BOOL blockThermalAlert = NO;               // 禁温度计弹窗
@@ -286,7 +295,7 @@ static BOOL isDeviceOverheated(void);
 static void applySystemRefreshRate(void);
 static void applyHardwareCpuGovernor(NSInteger mode);
 
-#pragma mark - 6. 🔥 Insulation 温控与低电限频内核 Hook 注入
+#pragma mark - 6. 🔥 真实系统级温控 Hook 与低电限频实现 (全局顶层作用域)
 
 %hook NSProcessInfo
 - (NSProcessInfoThermalState)thermalState {
@@ -294,6 +303,7 @@ static void applyHardwareCpuGovernor(NSInteger mode);
     if (cpuMode == 1) return NSProcessInfoThermalStateFair;
     return %orig;
 }
+
 - (BOOL)isLowPowerModeEnabled {
     if (cpuMode == 1) return YES;
     if (cpuMode == 2) return NO;
@@ -1350,7 +1360,7 @@ static void applySystemRefreshRate(void) {
     }];
 }
 
-#pragma mark - 11. 真实系统底层 API 数据解析刷新
+#pragma mark - 12. 真实系统底层 API 数据解析刷新
 
 - (void)refreshAllDetailData {
     DeviceSpec spec = getDeviceSpec();
@@ -1476,7 +1486,7 @@ static void applySystemRefreshRate(void) {
     _labelsDict[@"设备运行"].text = [NSString stringWithFormat:@"%ld天 %ld小时 %ld分", (long)days, (long)hours, (long)mins];
 }
 
-#pragma mark - 12. 真实硬件测频与同步引擎 (🔥 彻底解决电话助手与主频不一致问题)
+#pragma mark - 13. 真实硬件测频与同步引擎 (🔥 彻底解决电话助手与主频不一致问题)
 
 static double getRealHardwareCPUFrequency(void) {
     DeviceSpec spec = getDeviceSpec();
@@ -1572,7 +1582,7 @@ static double getCPUFrequencyMHz(double currentCpuUsage) {
     return getRealHardwareCPUFrequency();
 }
 
-#pragma mark - 13. 视图穿透与容器
+#pragma mark - 14. 视图穿透与容器
 
 @implementation SBCPUPassthroughView
 - (UIView *)hitTest:(CGPoint)p withEvent:(UIEvent *)e {
@@ -1659,7 +1669,7 @@ static void updateCPU(void) {
     });
 }
 
-#pragma mark - 14. 设置控制器与 UIMenu 菜单实现
+#pragma mark - 15. 设置控制器与 UIMenu 菜单实现
 
 @implementation SBCPUSettingsController
 
@@ -1766,7 +1776,7 @@ static void updateCPU(void) {
 
 @end
 
-#pragma mark - 15. 配置持久化与构造入口 (🔥 绝对在文件最底部全局作用域)
+#pragma mark - 16. 配置持久化与构造入口 (🔥 绝对在文件最底部全局作用域)
 
 static void LoadPreferences(void) {
     NSDictionary *dict = [NSDictionary dictionaryWithContentsOfFile:kPlistPath];
@@ -1799,6 +1809,59 @@ static void onPrefChangedNotification(CFNotificationCenterRef center, void *obse
     LoadPreferences();
 }
 
+static void registerV160Observers(void) {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
+
+        [nc addObserverForName:UIDeviceOrientationDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+            (void)n;
+            if (cpuWindow && floatingView) updateFloatingSize();
+        }];
+
+        [nc addObserverForName:UIKeyboardWillShowNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+            if (settingsShowing || detailShowing || !keyboardAvoidEnable) return;
+            if (cpuWindow && floatingView) {
+                UIWindowScene *scene = getWindowScene();
+                CGRect screenBounds = scene ? scene.coordinateSpace.bounds : UIScreen.mainScreen.bounds;
+                if (CGRectGetMidY(floatingView.frame) < CGRectGetMidY(screenBounds)) return;
+
+                if (!keyboardMoved) keyboardBeforeFrame = floatingView.frame;
+                
+                NSDictionary *info = n.userInfo;
+                NSValue *endFrameValue = info[UIKeyboardFrameEndUserInfoKey];
+                CGFloat keyboardHeight = 220.0;
+                if (endFrameValue) {
+                    CGRect keyboardFrame = [endFrameValue CGRectValue];
+                    keyboardHeight = MIN(320.0, keyboardFrame.size.height);
+                }
+
+                CGRect f = keyboardBeforeFrame;
+                f.origin.y = MAX(20.0, f.origin.y - keyboardHeight);
+                [UIView animateWithDuration:0.25 animations:^{ floatingView.frame = f; }];
+                keyboardMoved = YES;
+            }
+        }];
+
+        [nc addObserverForName:UIKeyboardWillHideNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+            (void)n;
+            if (!settingsShowing && !detailShowing && keyboardMoved && floatingView) {
+                [UIView animateWithDuration:0.25 animations:^{ floatingView.frame = keyboardBeforeFrame; }];
+                keyboardMoved = NO;
+            }
+        }];
+
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            NULL,
+            onCCNotificationReceived,
+            CFSTR(kToggleNotification),
+            NULL,
+            CFNotificationSuspensionBehaviorDeliverImmediately
+        );
+    });
+}
+
 %ctor {
     NSString *processName = [NSProcessInfo processInfo].processName;
     LoadPreferences();
@@ -1815,6 +1878,7 @@ static void onPrefChangedNotification(CFNotificationCenterRef center, void *obse
     if ([processName isEqualToString:@"SpringBoard"]) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 4 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             createCPUWindow();
+            registerV160Observers();
             [[SBCPUFPSHelper sharedInstance] startMonitoring];
             [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *timer) { updateCPU(); }];
         });
