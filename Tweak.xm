@@ -44,6 +44,7 @@
 - (void)setAllowsVirtualModes:(BOOL)allows;
 - (void)setMinimumRefreshRate:(float)rate;
 - (void)setMaximumRefreshRate:(float)rate;
+- (void)setIdealRefreshRate:(float)rate;
 - (float)minimumRefreshRate;
 - (float)maximumRefreshRate;
 - (float)idealRefreshRate;
@@ -294,7 +295,6 @@ static void updateCPU(void);
 static void createCPUWindow(void);
 static BOOL isDeviceOverheated(void);
 static void applySystemRefreshRate(void);
-static void applyHardwareCpuGovernor(NSInteger mode);
 
 #pragma mark - 6. 🔥 真实系统级温控 Hook 与低电限频实现 (全局顶层作用域)
 
@@ -408,22 +408,7 @@ static BOOL isDeviceOverheated(void) {
 }
 %end
 
-#pragma mark - 8. 真实系统调频守护下发
-
-static void applyHardwareCpuGovernor(NSInteger mode) {
-    Class sbLpmClass = NSClassFromString(@"SBLowPowerModeController");
-    if (sbLpmClass && [sbLpmClass respondsToSelector:@selector(sharedInstance)]) {
-        SBLowPowerModeController *lpm = [sbLpmClass sharedInstance];
-        if ([lpm respondsToSelector:@selector(setLowPowerModeEnabled:)]) {
-            [lpm setLowPowerModeEnabled:(mode == 1)];
-        } else if ([lpm respondsToSelector:@selector(_setLowPowerModeEnabled:)]) {
-            [lpm _setLowPowerModeEnabled:(mode == 1)];
-        }
-    }
-    notify_post("com.apple.system.lowpowermode.changed");
-}
-
-#pragma mark - 9. CADisplayLink 帧率监控与 ProMotion 微驱动引擎
+#pragma mark - 8. CADisplayLink 帧率监控与 ProMotion 微驱动引擎
 
 @interface SBCPUFPSHelper : NSObject
 + (instancetype)sharedInstance;
@@ -568,7 +553,7 @@ static void applySystemRefreshRate(void) {
     [[SBCPUFPSHelper sharedInstance] updateFrameRate];
 }
 
-#pragma mark - 10. SBCPUFloatingView 悬浮窗主控件 (完整保留原版布局与紧凑 FPS)
+#pragma mark - 9. SBCPUFloatingView 悬浮窗主控件 (完整保留原版布局与紧凑 FPS)
 
 @implementation SBCPUFloatingView
 
@@ -1219,7 +1204,6 @@ static void applySystemRefreshRate(void) {
     _currentValueLabel.text = [NSString stringWithFormat:@"%.0fmA", current];
     _statusLabel.text = isCharging ? @"🟢 正在充电" : @"⚪ 未在充电";
 
-    // 🔋 实时根据当前电量百分比计算绿色指示条宽度
     if (isCharging) {
         CGFloat capsuleW = _bottomCapsule.bounds.size.width;
         CGFloat capsuleH = _bottomCapsule.bounds.size.height > 0 ? _bottomCapsule.bounds.size.height : 20.0f;
@@ -1778,7 +1762,7 @@ static void updateCPU(void) {
 
 @end
 
-#pragma mark - 15. 配置持久化与构造入口 (🔥 绝对保证 %ctor 在最外层全局作用域)
+#pragma mark - 15. 配置持久化与构造入口 (%ctor 独立于任何 block 之外)
 
 static void LoadPreferences(void) {
     NSDictionary *dict = [NSDictionary dictionaryWithContentsOfFile:kPlistPath];
